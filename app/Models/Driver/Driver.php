@@ -70,10 +70,17 @@ class Driver extends Model
      */
     // أضف هذه الدالة داخل كلاس Driver
 // داخل كلاس Driver
-public function vehicles(): \Illuminate\Database\Eloquent\Relations\HasMany
+/**
+ * علاقة السائق بالمركبة الخاصة به
+ * بناءً على جدول vehicles
+ */
+public function vehicle()
 {
-    // تأكد أن الموديل المستدعى هو App\Models\Driver\Vehicle
-    return $this->hasMany(\App\Models\Driver\Vehicle::class, 'driver_id');
+    // إذا كان موديل الـ Vehicle يقع في المجلد الرئيسي للـ Models استخدم:
+    return $this->hasOne(\App\Models\Driver\Vehicle::class, 'driver_id');
+    
+    // 💡 ملاحظة: إذا كان موديل الـ Vehicle يقع أيضاً داخل مجلد Driver الفرعي، استبدل السطر العلوي بهذا:
+    // return $this->hasOne(\App\Models\Driver\Vehicle::class, 'driver_id');
 }
 
     /**

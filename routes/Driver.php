@@ -82,6 +82,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('preferences/defaults', [DriverPreferenceController::class, 'defaults'])
         ->name('api.driver.preferences.defaults');
 
+    // --- أضف هذه المسارات داخل مجموعة الـ auth:sanctum ---
+
+// 1. مسار لعرض المستندات والوثائق الرسمية الحالية للسائق
+Route::get('profile/legal-data', [ProfileController::class, 'showLegalData'])
+->name('api.driver.profile.legal-data.show');
+
+// 2. مسار لعرض بيانات المركبة الحالية للسائق
+Route::get('profile/vehicle', [ProfileController::class, 'showVehicle'])
+->name('api.driver.profile.vehicle.show');    
+
     // مسار لعرض جميع المناطق المتاحة في النظام للسائق ليتمكن من اختيارها
 Route::get('zones', [ZoneController::class, 'index'])
 ->name('api.driver.zones.index');    

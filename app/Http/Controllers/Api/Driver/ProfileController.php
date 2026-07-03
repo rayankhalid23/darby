@@ -202,4 +202,93 @@ class ProfileController extends Controller
             ], 500);
         }
     }
+/**
+ * عرض المستندات الحالية للسائق مع ملفات الوثائق المرفوعة
+ * بناءً على جداول النظام الموضحة في image_075cae.png و image_075cae.png
+ */
+public function showLegalData(Request $request)
+{
+    // جلب المستخدم وتحميل بيانات السائق والوثائق المرتبطة به دفعة واحدة
+    $user = $request->user()->load(['driver.documents']);
+
+    // التحقق من وجود حساب سائق
+    if (!$user->driver) {
+        return response()->json([
+            'status'  => false,
+            'message' => 'لم يتم العثور على بيانات رسمية لهذا الحساب.'
+        ], 404);
+    }
+
+    return response()->json([
+        'status'  => true,
+        'message' => 'تم استرجاع الوثائق الرسمية بنجاح.',
+        'data'    => [
+            // 1. البيانات الأساسية من جدول drivers
+            'national_id'    => $user->driver->national_id,
+            'license_number' => $user->driver->license_number,
+            'license_expiry' => $user->driver->license_expiry,
+            'driver_status'  => $user->driver->status, // حالة السائق العامة
+
+            'uploaded_files' => $user->driver->documents->map(function ($document) {
+                return [
+                    'id'                    => $document->id,
+                    'vehicle_id'            => $document->vehicle_id,
+                    'doc_type'              => $document->doc_type,
+                    'file_url'              => $document->file_url,
+                    'license_expiry_date'   => $document->license_expiry_date,
+                    'insurance_expiry_date' => $document->insurance_expiry_date,
+                    'document_status'       => $document->status,
+                    'feedback'              => $document->feedback,
+                    
+                    // التعديل هنا: نستخدم Carbon::parse لمعالجة النص القادم من قاعدة البيانات بأمان
+                    'uploaded_at'           => $document->uploaded_at 
+                        ? \Carbon\Carbon::parse($document->uploaded_at)->toDateTimeString() 
+                        : null,
+                ];
+            })
+        ]
+    ], 200);
+}
+
+/**
+ * عرض بيانات وتفاصيل المركبة الحالية للسائق
+ * بناءً علىโครงสร้าง جدول vehicles في image_074e49.png
+ */
+public function showVehicle(Request $request)
+{
+    // جلب المستخدم وتحميل السائق مع مركبته (Nested Eager Loading)
+    $user = $request->user()->load('driver.vehicle');
+
+    // التحقق من وجود السائق ووجود مركبة مرتبطة به
+    if (!$user->driver || !$user->driver->vehicle) {
+        return response()->json([
+            'status'     => false,
+            'error_code' => 'VEHICLE_NOT_FOUND',
+            'message'    => 'لم يتم تسجيل أي مركبة لهذا السائق حتى الآن.'
+        ], 404);
+    }
+
+    $vehicle = $user->driver->vehicle;
+
+    return response()->json([
+        'status'  => true,
+        'message' => 'تم استرجاع بيانات المركبة بنجاح.',
+        'data'    => [
+            'id'                => $vehicle->id,
+            'plate_number'      => $vehicle->plate_number,
+            'brand'             => $vehicle->brand,
+            'model'             => $vehicle->model,
+            'year'              => $vehicle->year,
+            'color'             => $vehicle->color,
+            'type'              => $vehicle->type,
+            'capacity_manual'   => $vehicle->capacity_manual,
+            'capacity_ai'       => $vehicle->capacity_ai,
+            'is_verified'       => (bool) $vehicle->is_verified,
+            'vehicle_image_url' => $vehicle->vehicle_image_url,
+            'has_ac'            => (bool) $vehicle->has_ac,
+            'status'            => $vehicle->status,
+        ]
+    ], 200);
+}
+    
 }

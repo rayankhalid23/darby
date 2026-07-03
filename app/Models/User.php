@@ -82,6 +82,7 @@ class User extends Authenticatable
     {
         return $this->hasOne(Driver::class, 'user_id');
     }
+    
 
     public function admin()
     {

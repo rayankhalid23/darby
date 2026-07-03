@@ -43,4 +43,12 @@ class DriverApproval extends Model
     {
         return $this->belongsTo(\App\Models\Admin\Admin::class, 'admin_id');
     }
+    /**
+ * علاقة السائق بالوثائق المرفوعة
+ * بناءً على جدول driver_documents في image_075cae.png
+ */
+public function documents()
+{
+    return $this->hasMany(DriverDocument::class, 'driver_id');
+}
 }
