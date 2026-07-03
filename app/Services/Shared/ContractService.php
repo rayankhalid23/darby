@@ -4,106 +4,116 @@ namespace App\Services\Shared;
 
 use App\Models\Shared\Contract;
 use App\Models\Shared\SubscriptionRequest;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Auth;
+use App\Models\Shared\Clause;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
+use niklasravnsborg\LaravelPdf\Facades\Pdf as PDF;
 use Exception;
 
 class ContractService
 {
+    private string $primaryColor = '#007A99';
+    private string $accentColor  = '#F59E0B';
+
+    // ============================================================
+    // توليد العقد تلقائياً عند القبول
+    // ============================================================
+
     /**
-     * معالجة وإنشاء العقد وتحديث حالة الطلب داخل خادم آمن
+     * ينشئ سجل العقد في قاعدة البيانات + يولّد ملف PDF موقّعاً بهوية Darby
+     *
+     * @param SubscriptionRequest $req الطلب المقبول
+     * @return Contract
+     * @throws Exception
      */
-    // 1. جلب الطلب الأساسي وقفل السجل للحماية من التعديل المتزامن
-    protected $table = 'requests';
-    public function createContractForDriver(array $data): Contract
+    public function generateContract(SubscriptionRequest $req): Contract
     {
-        // استخدام Transaction لضمان تنفيذ العمليتين معاً بنجاح أو إلغائهما معاً
-        return DB::transaction(function () use ($data) {
-                // هذا هو السطر الذي يجلب البيانات فعلياً ويضعها في المتغير:
-        $subRequest = SubscriptionRequest::findOrFail($data['subscription_request_id']);
-            
+        // 1. تحميل جميع العلاقات اللازمة
+        $req->load(['children.school', 'parent.user', 'driver.user', 'driver.vehicles']);
 
-            // جلب معرف السائق المرتبط بالمستخدم المسجل حالياً
-            $driverId = \App\Models\Driver\Driver::where('user_id', Auth::id())->value('id');
+        // 2. جلب الشروط من قاعدة البيانات
+        $clauses = Clause::all()->pluck('clause_text')->toArray();
 
-            // المقارنة الآن تتم بين معرف السائق في الطلب ومعرف السائق الفعلي في جدول السائقين
-            if ((int)$subRequest->driver_id !== (int)$driverId) {
-                  throw new Exception("خطأ صلاحية: السائق الفعلي (ID: $driverId) لا يطابق صاحب الطلب (ID: {$subRequest->driver_id})", 403);
-            }
+        // 3. إنشاء رقم العقد الفريد
+        $contractNumber = Contract::generateContractNumber();
 
-            if (!in_array($subRequest->status, ['accepted'])) {
-                throw new Exception("خطأ: لا يمكن إنشاء عقد. الحالة الحالية للطلب هي: " . $subRequest->status, 403);
-           }
+        // 4. إنشاء سجل العقد في قاعدة البيانات
+        $contract = Contract::create([
+            'subscription_request_id' => $req->id,
+            'parent_id'               => $req->parent_id,
+            'driver_id'               => $req->driver_id,
+            'contract_number'         => $contractNumber,
+            'subscription_type'       => $req->subscription_type,
+            'direction'               => $req->direction,
+            'timing'                  => $req->timing,
+            'pickup_time'             => $req->pickup_time ?? '07:00:00',
+            'dropoff_time'            => $req->dropoff_time ?? '14:00:00',
+            'max_waiting_time' => $req->max_waiting_time ?? 15,
+            'start_date'              => $req->start_date,
+            'end_date'                => $req->end_date,
+            'days_count'              => $req->days_count,
+            'total_price'             => $req->total_price,
+            'clauses'                 => $clauses,
+            'status'                  => 'active',
+            'signed_at'               => now(),
+        ]);
 
-            // 4. إنشاء سجل العقد الجديد
-            $contract = Contract::create([
-                'subscription_request_id' => $subRequest->id,
-                'parent_id'               => $subRequest->parent_id,
-                'driver_id'               => Auth::id(),
-                'price'                   => $data['price'],
-                'pickup_time'             => $data['pickup_time'],
-                'dropoff_time'            => $data['dropoff_time'],
-                'max_waiting_time'        => $data['max_waiting_time'],
-                'selected_clauses'        => $data['selected_clauses'],
-                'status'                  => 'pending_parent_approval', // الحالة الافتراضية
-            ]);
+        // 5. توليد PDF
+        try {
+            $pdfPath = $this->generatePdf($contract);
+            $contract->update(['pdf_path' => $pdfPath]);
+        } catch (Exception $e) {
+            Log::error("فشل توليد PDF للعقد {$contractNumber}: " . $e->getMessage());
+            // لا نوقف العملية بسبب فشل PDF فقط
+        }
 
-            // 5. تحديث حالة الطلب الأساسي إلى "تم تقديم العقد"
-            $subRequest->update([
-                'status' => 'contract_offered'
-            ]);
-
-            return $contract->load(['parent', 'driver', 'subscriptionRequest.children.school']);
-        });
-    }
-    /**
-     * موافقة وتوقيع ولي الأمر على العقد
-     */
-    public function acceptContract(int $id): Contract
-    {
-        return DB::transaction(function () use ($id) {
-            $contract = Contract::lockForUpdate()->findOrFail($id);
-
-            // تأمين: التأكد أن ولي الأمر الحالي هو صاحب العقد
-            $parentProfile = \App\Models\Parent\ParentModel::where('user_id', Auth::id())->first();
-            if (!$parentProfile || $contract->parent_id !== $parentProfile->id) {
-                throw new Exception('غير مصرح لك بتوقيع هذا العقد.', 403);
-            }
-
-            if ($contract->status !== 'pending_parent_approval') {
-                throw new Exception('لا يمكن تعديل حالة هذا العقد، قد يكون مفعلاً أو مرفوضاً مسبقاً.', 400);
-            }
-
-            // تحديث حالة العقد والطلب الأساسي
-            $contract->update(['status' => 'activated']);
-            $contract->subscriptionRequest->update(['status' => 'accepted']);
-
-            return $contract->load(['parent', 'driver']);
-        });
+        return $contract->load(['subscriptionRequest', 'parent.user', 'driver.user', 'activeSubscriptions']);
     }
 
+    // ============================================================
+    // توليد ملف PDF
+    // ============================================================
+
     /**
-     * رفض العقد من قِبل ولي الأمر
+     * يولّد ملف PDF من قالب HTML احترافي بهوية Darby
+     * ويحفظه في storage/app/public/contracts/
      */
-    public function rejectContract(int $id): Contract
+    private function generatePdf(Contract $contract): string
     {
-        return DB::transaction(function () use ($id) {
-            $contract = Contract::lockForUpdate()->findOrFail($id);
+        $contract->load([
+            'driver.user',
+            'driver.vehicles',
+            'parent.user',
+            'subscriptionRequest.children.school',
+        ]);
 
-            $parentProfile = \App\Models\Parent\ParentModel::where('user_id', Auth::id())->first();
-            if (!$parentProfile || $contract->parent_id !== $parentProfile->id) {
-                throw new Exception('غير مصرح لك باتخاذ هذا الإجراء.', 403);
-            }
+        $pdf = PDF::loadView('Pdf.contract', ['contract' => $contract]);
 
-            if ($contract->status !== 'pending_parent_approval') {
-                throw new Exception('لا يمكن تعديل حالة هذا العقد.', 400);
-            }
+        $filename  = "contracts/{$contract->contract_number}.pdf";
+        $directory = storage_path("app/public/contracts");
 
-            // تحديث حالة العقد والطلب الأساسي للرفض
-            $contract->update(['status' => 'rejected']);
-            $contract->subscriptionRequest->update(['status' => 'rejected']);
+        if (!is_dir($directory)) {
+            mkdir($directory, 0755, true);
+        }
 
-            return $contract->load(['parent', 'driver']);
-        });
+        $pdf->save(storage_path("app/public/{$filename}"));
+
+        return $filename;
+    }
+
+    // ============================================================
+    // جلب رابط PDF للعقد
+    // ============================================================
+
+    /**
+     * يرجع المسار الكامل لملف PDF إذا كان موجوداً
+     */
+    public function getContractPdfPath(Contract $contract): ?string
+    {
+        if (!$contract->pdf_path) {
+            return null;
+        }
+        $fullPath = storage_path("app/public/{$contract->pdf_path}");
+        return file_exists($fullPath) ? $fullPath : null;
     }
 }

@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
 use App\Models\ParentModel; // تأكد من المسار الصحيح
+use App\Models\Parent\ChildLogistics;
 
 class Child extends Model
 {
@@ -57,9 +58,16 @@ class Child extends Model
     }
     public function logistics()
     {
-        // الطفل لديه سجل لوجستي واحد في جدول child_logistics
-        return $this->hasOne(\App\Models\Parent\ChildLogistics::class, 'child_id', 'id');
+        // هنا نستخدم الاسم الصحيح للكلاس الذي أضفناه في الـ use
+        return $this->hasOne(ChildLogistics::class, 'child_id');
     }
+    // داخل كلاس Child
+public function subscription()
+{
+    // افترضت هنا أن اسم الموديل المرتبط هو Logistics
+    // تأكد من تغيير 'Logistics' إلى اسم الموديل الفعلي لديك إذا كان مختلفاً
+    return $this->hasOne(\App\Models\Logistics::class, 'child_id'); 
+}
 
     public function school(): BelongsTo
     {

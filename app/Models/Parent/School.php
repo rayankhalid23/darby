@@ -22,9 +22,10 @@ class School extends Model
         'name',
         'lat',
         'lng',
+        'address',
         'address_text',
         'status',
-        'zone_id', // 👈 تم إضافة الحقل هنا لربط المدرسة بـ زون جغرافية دقيقة
+        'zone_id', // لربط المدرسة بمنطقة جغرافية دقيقة
     ];
 
     /**

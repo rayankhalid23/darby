@@ -23,9 +23,9 @@ class DatabaseSeeder extends Seeder
 
             // 4. بناء البيانات الأساسية للنظام (الصلاحيات، الأدوار، المستخدمين الافتراضيين)
             SystemInitialSeeder::class,
-            
-            // ملاحظة: ZoneSeeder تم دمجه منطقياً ضمن TripoliGeographySeeder، 
-            // إذا كان لا يزال يحتوي على بيانات فريدة، يمكنك إضافته هنا.
+
+            // 5. بيانات وهمية شاملة لاختبار دالة البحث والفلترة والتسعير
+            DriverSearchTestSeeder::class,
         ]);
     }
 }

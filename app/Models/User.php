@@ -87,4 +87,9 @@ class User extends Authenticatable
     {
         return $this->hasOne(Admin::class, 'user_id');
     }
+    // في ملف User.php
+public function parent()
+{
+    return $this->hasOne(ParentModel::class); // تأكد من اسم الكلاس الصحيح
+}
 }

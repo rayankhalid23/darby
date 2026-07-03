@@ -51,6 +51,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [ChildrenController::class, 'show']);
         Route::post('/{id}', [ChildrenController::class, 'update']);
         Route::delete('/{id}', [ChildrenController::class, 'destroy']);
+        Route::get('/{id}/subscription', [ChildrenController::class, 'getSubscription']);
     });
 
     // مسارات إدارة العناوين والمواقع الجغرافية لولي الأمر

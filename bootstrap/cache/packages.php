@@ -10,6 +10,34 @@
       0 => 'L5Swagger\\L5SwaggerServiceProvider',
     ),
   ),
+  'knuckleswtf/scribe' => 
+  array (
+    'providers' => 
+    array (
+      0 => 'Knuckles\\Scribe\\ScribeServiceProvider',
+    ),
+  ),
+  'laravel/breeze' => 
+  array (
+    'providers' => 
+    array (
+      0 => 'Laravel\\Breeze\\BreezeServiceProvider',
+    ),
+  ),
+  'laravel/pail' => 
+  array (
+    'providers' => 
+    array (
+      0 => 'Laravel\\Pail\\PailServiceProvider',
+    ),
+  ),
+  'laravel/pao' => 
+  array (
+    'providers' => 
+    array (
+      0 => 'Laravel\\Pao\\Laravel\\ServiceProvider',
+    ),
+  ),
   'laravel/sanctum' => 
   array (
     'providers' => 
@@ -29,6 +57,24 @@
     'providers' => 
     array (
       0 => 'Carbon\\Laravel\\ServiceProvider',
+    ),
+  ),
+  'niklasravnsborg/laravel-pdf' => 
+  array (
+    'providers' => 
+    array (
+      0 => 'niklasravnsborg\\LaravelPdf\\PdfServiceProvider',
+    ),
+    'aliases' => 
+    array (
+      'PDF' => 'niklasravnsborg\\LaravelPdf\\Facades\\Pdf',
+    ),
+  ),
+  'nunomaduro/collision' => 
+  array (
+    'providers' => 
+    array (
+      0 => 'NunoMaduro\\Collision\\Adapters\\Laravel\\CollisionServiceProvider',
     ),
   ),
   'nunomaduro/termwind' => 

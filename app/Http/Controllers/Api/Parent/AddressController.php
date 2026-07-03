@@ -21,16 +21,21 @@ class AddressController extends Controller
     }
 
     public function index(): JsonResponse
-    {
-        $parentId = 1; // سيتم استبدالها بـ auth()->user()->parent->id عند تفعيل الـ Auth
-        $addresses = $this->addressService->getParentAddresses($parentId);
+{
+    // الحصول على معرف المستخدم الحالي بدلاً من القيمة الثابتة 1
+    $userId = auth()->id();
 
-        return response()->json([
-            'success' => true,
-            'message' => 'تم جلب دفتر العناوين بنجاح.',
-            'data'    => AddressResource::collection($addresses)
-        ], Response::HTTP_OK);
-    }
+    // استدعاء الخدمة لجلب العناوين
+    $addresses = $this->addressService->getParentAddresses($userId);
+
+    return response()->json([
+        'success' => true,
+        'message' => 'تم جلب دفتر العناوين بنجاح.',
+        'data'    => AddressResource::collection($addresses)
+    ], Response::HTTP_OK);
+}
+
+   
 
     public function store(StoreAddressRequest $request): JsonResponse
     {

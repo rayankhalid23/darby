@@ -4,6 +4,7 @@ namespace App\Http\Requests\Api\Shared;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use App\Models\Shared\SubscriptionRequest;
 
 class StoreSubscriptionRequest extends FormRequest
 {
@@ -22,17 +23,25 @@ class StoreSubscriptionRequest extends FormRequest
     public function rules(): array
 {
     return [
-        'driver_id'                      => 'required|integer|exists:drivers,id',
-        'school_id'                      => 'required|integer|exists:schools,id',
-        'timing'                         => 'required|string|in:MORNING,EVENING,BOTH',
-        'notes'                          => 'nullable|string|max:500',
+        'driver_id'         => 'required|integer|exists:drivers,id',
+        'school_id'         => 'required|integer|exists:schools,id',
+        'subscription_type' => 'required|string|in:monthly,daily',
         
-        // التحقق الصارم من مصفوفة الأطفال وحقولها الداخلية
-        'children'                       => 'required|array|min:1',
-        'children.*.child_id'            => 'required|integer|exists:children,id',
-        'children.*.pickup_location_id'  => 'required|integer|exists:addresses,id',
-        'children.*.dropoff_location_id' => 'required|integer|exists:addresses,id', // 💡 هذا السطر يضمن عبور القيمة وعدم حذفها
-        'children.*.notes'               => 'nullable|string|max:255',
+        // تم توحيد القيم لتطابق الموديل
+        'direction' => 'required|string|in:' . 
+    SubscriptionRequest::DIRECTION_GO . ',' . 
+    SubscriptionRequest::DIRECTION_RETURN . ',' . 
+    SubscriptionRequest::DIRECTION_BOTH,
+        
+        'timing'            => 'required|string|in:MORNING,EVENING,BOTH',
+        'start_date'        => 'required|date|after_or_equal:today',
+        'end_date'          => 'nullable|date|after:start_date',
+        
+        'children'          => 'required|array|min:1',
+        'children.*.child_id'         => 'required|integer|exists:children,id',
+        'children.*.pickup_address_id'  => 'required|integer|exists:addresses,id',
+        'children.*.dropoff_address_id' => 'required|integer|exists:addresses,id',
+        'children.*.price_per_child'    => 'required|numeric|min:0',
     ];
 }
     /**
