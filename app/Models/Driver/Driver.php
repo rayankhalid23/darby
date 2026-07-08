@@ -17,6 +17,7 @@ class Driver extends Model
     // إلغاء الـ timestamps للمحافظة على هيكلية جدولك الحالي
     public $timestamps = false;
     protected $table = 'drivers';
+    protected $guarded = [];
 
     protected $fillable = [
         'user_id', 
@@ -74,13 +75,9 @@ class Driver extends Model
  * علاقة السائق بالمركبة الخاصة به
  * بناءً على جدول vehicles
  */
-public function vehicle()
+public function vehicles(): HasMany // قمت بتغييرها من vehicle إلى vehicles
 {
-    // إذا كان موديل الـ Vehicle يقع في المجلد الرئيسي للـ Models استخدم:
-    return $this->hasOne(\App\Models\Driver\Vehicle::class, 'driver_id');
-    
-    // 💡 ملاحظة: إذا كان موديل الـ Vehicle يقع أيضاً داخل مجلد Driver الفرعي، استبدل السطر العلوي بهذا:
-    // return $this->hasOne(\App\Models\Driver\Vehicle::class, 'driver_id');
+    return $this->hasMany(\App\Models\Driver\Vehicle::class, 'driver_id');
 }
 
     /**
@@ -126,5 +123,22 @@ public function vehicle()
         return $query->whereHas('vehicles', function ($q) use ($requiredSeats) {
             $q->whereRaw('(capacity - (select count(*) from students where students.driver_id = drivers.id)) >= ?', [$requiredSeats]);
         });
+    }
+    // جلب الاشتراكات الفعالة التابعة للسائق
+    public function activeSubscriptions()
+    {
+        return $this->hasMany(\App\Models\Shared\ActiveSubscription::class, 'driver_id');
+    }
+
+    // جلب كافة الرحلات اليومية للسائق
+    public function trips()
+    {
+        return $this->hasMany(\App\Models\Shared\Trip::class, 'driver_id');
+    }
+
+    // جلب المسارات الخاصة بالسائق
+    public function routes()
+    {
+        return $this->hasMany(\App\Models\Shared\Route::class, 'driver_id');
     }
 }

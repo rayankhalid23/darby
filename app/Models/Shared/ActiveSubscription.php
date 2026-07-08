@@ -4,7 +4,7 @@ namespace App\Models\Shared;
 
 use App\Models\Parent\Child;
 use App\Models\Driver\Driver;
-use App\Models\Parent\ParentModel;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -56,6 +56,10 @@ class ActiveSubscription extends Model
 
     public function parent(): BelongsTo
     {
-        return $this->belongsTo(ParentModel::class, 'parent_id');
+        return $this->belongsTo(User::class, 'parent_id');
+    }
+    public function school()
+    {
+        return $this->belongsTo(\App\Models\Parent\School::class, 'school_id');
     }
 }

@@ -45,6 +45,9 @@ class SubscriptionRequest extends Model
         'end_date',
         'days_count',
         'total_price',
+        'pickup_time',
+        'dropoff_time',
+        'max_waiting_time',
         'status',
         'rejection_reason',
         'notes',
@@ -72,6 +75,12 @@ class SubscriptionRequest extends Model
                     ->withPivot([
                         'pickup_address_id',
                         'dropoff_address_id',
+                        'home_lat',
+                        'home_lng',
+                        'home_label',
+                        'school_lat',
+                        'school_lng',
+                        'school_label',
                         'price_per_child',
                         'child_notes'
                     ])

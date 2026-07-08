@@ -197,5 +197,28 @@ public function generatePdf($id)
         ], 500);
     }
 }
+// داخل ContractController.php
+
+public function show($id)
+{
+    try {
+        // استرجاع العقد مع العلاقات التي قد تحتاجها
+        $contract = \App\Models\Shared\Contract::with(['parent', 'driver', 'subscriptionRequest'])
+            ->findOrFail($id);
+
+        return response()->json([
+            'status'  => true,
+            'message' => 'تم جلب بيانات العقد بنجاح',
+            'data'    => $contract
+        ], 200);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'status'  => false,
+            'message' => 'العقد غير موجود أو حدث خطأ أثناء الجلب',
+            'error'   => $e->getMessage()
+        ], 404);
+    }
+}
 
 }

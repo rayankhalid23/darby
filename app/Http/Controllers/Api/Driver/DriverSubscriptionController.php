@@ -28,49 +28,61 @@ class DriverSubscriptionController extends Controller
     /**
      * عرض قائمة طلبات الاشتراك الخاصة بالسائق
      */
-    public function index(): JsonResponse
-    {
-        // 1. جلب السائق بناءً على الـ user_id للمستخدم المسجل حالياً
-        $driver = Driver::where('user_id', auth()->id())->first();
+   /**
+ * عرض قائمة طلبات الاشتراك الخاصة بالسائق
+ */
+public function index(): JsonResponse
+{
+    // 1. جلب بيانات السائق بناءً على الـ user_id للمستخدم المسجل حالياً
+    $driver = Driver::where('user_id', auth()->id())->first();
 
-        \Log::info('Debug Driver:', [
-            'auth_id' => auth()->id(),
-            'found_driver' => $driver ? $driver->toArray() : 'null',
-            'driver_id_to_save' => $driver ? $driver->id : 'none'
-        ]);
+    // 2. التحقق من وجود السائق
+    if (!$driver) {
+        \Log::warning('Driver profile not found for user ID: ' . auth()->id());
+        return response()->json([
+            'success' => false,
+            'message' => 'لم يتم العثور على ملف السائق الخاص بك.'
+        ], 403);
+    }
 
-        // 2. التحقق من وجود السائق
-        if (!$driver) {
-            return response()->json([
-                'success' => false,
-                'message' => 'لم يتم العثور على ملف السائق الخاص بك. تأكد أنك مسجل كسائق.'
-            ], 403);
-        }
-
-        // 3. جلب الطلبات المرتبطة بهذا السائق
+    try {
+        // 3. جلب الطلبات المرتبطة بهذا السائق مع علاقاتها
+        // قمت بتقليل استهلاك الذاكرة بجلب الحقول الضرورية فقط إذا كانت القائمة طويلة جداً
         $requests = SubscriptionRequest::where('driver_id', $driver->id)
-            ->with(['parent.user', 'school', 'children']) // جلب البيانات المرتبطة
+            ->with([
+                'parent.user:id,full_name,phone', // جلب حقول محددة فقط لزيادة الأداء
+                'school:id,name',
+                'children'
+            ])
             ->orderBy('id', 'desc')
             ->get();
 
         // 4. إرجاع النتيجة
         return response()->json([
             'success' => true,
+            'count'   => $requests->count(), // مفيد جداً للموبايل
             'data'    => $requests
         ], 200);
+
+    } catch (\Exception $e) {
+        \Log::error('Error fetching driver requests: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'حدث خطأ أثناء جلب البيانات، يرجى المحاولة لاحقاً.'
+        ], 500);
     }
+}
   
 
     /**
      * تحديث حالة الطلب من قبل السائق
      */
-    public function updateStatus(Request $request, $id, ContractService $contractService): JsonResponse
+    public function updateStatus(Request $request, $id): JsonResponse
 {
     $request->validate([
-        'status' => 'required|in:accepted,rejected', 
+        'status' => 'required|in:accepted,rejected',
     ]);
 
-    // 1. جلب السائق أولاً والتأكد من وجوده
     $user = auth()->user();
     $driver = \App\Models\Driver\Driver::where('user_id', $user->id)->first();
 
@@ -80,62 +92,59 @@ class DriverSubscriptionController extends Controller
 
     $req = \App\Models\Shared\SubscriptionRequest::findOrFail($id);
 
-    // 2. تصحيح: تنفيذ التحديث فقط إذا كان السائق موجوداً
-    DB::transaction(function () use ($req, $request, $contractService, $driver) {
-        
-        $updateData = [
-            'status' => $request->status,
-        ];
+    if ($req->driver_id !== $driver->id) {
+        return response()->json(['success' => false, 'message' => 'هذا الطلب غير موجه لك.'], 403);
+    }
 
-        // فقط عند القبول نربط الطلب بالسائق
-        if ($request->status === 'accepted') {
-            $updateData['driver_id'] = $driver->id; // نستخدم الـ ID الفعلي من جدول السائقين
-            
-            // استدعاء خدمة العقود
-            $contract = $contractService->generateContract($req);
+    try {
+        $this->subscriptionService->updateStatus(
+            $req,
+            $request->status,
+            $request->input('rejection_reason')
+        );
 
-            // إنشاء الاشتراكات (كما في السابق)
-            foreach ($req->children as $child) {
-                \App\Models\Shared\ActiveSubscription::create([
-                    'contract_id'   => $contract->id,
-                    'child_id'      => $child->id,
-                    'driver_id'     => $driver->id, // تأكد من استخدام ID السائق هنا أيضاً
-                    'parent_id'     => $req->parent_id,
-                    'pickup_lat'    => $child->pivot->pickup_lat ?? null,
-                    'pickup_lng'    => $child->pivot->pickup_lng ?? null,
-                    'dropoff_lat'   => $child->pivot->dropoff_lat ?? null,
-                    'dropoff_lng' => $child->pivot->dropoff_lng ?? null,
-                    'status'        => 'active',
-                ]);
-            }
-        }
-
-        // 3. التحديث النهائي
-        $req->update($updateData);
-    });
-
-    return response()->json([
-        'success' => true,
-        'message' => 'تمت العملية بنجاح.'
-    ]);
+        return response()->json([
+            'success' => true,
+            'message' => 'تمت العملية بنجاح.'
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => $e->getMessage()
+        ], 500);
+    }
 }
 
     /**
      * عرض تفاصيل طلب اشتراك معين
      */
     public function show($id): JsonResponse
-    {
-        $driver = auth()->user()->driver;
+{
+    $driver = auth()->user()->driver;
 
-        // جلب الطلب مع التأكد أنه يخص السائق الحالي فقط (حماية أمنية)
-        $subscriptionRequest = SubscriptionRequest::where('id', $id)
-            ->where('driver_id', $driver->id)
-            ->with(['parent.user', 'school', 'children']) // نفس العلاقات التي استخدمتها في index
-            ->firstOrFail(); // إذا لم يجد الطلب، سيرمي 404 تلقائياً
-
-        return response()->json([
-            'success' => true,
-            'data'    => $subscriptionRequest
-        ], 200);
+    if (!$driver) {
+        return response()->json(['success' => false, 'message' => 'بيانات السائق غير موجودة.'], 403);
     }
+
+    $subscriptionRequest = SubscriptionRequest::where('id', $id)
+        ->where('driver_id', $driver->id)
+        ->with(['parent.user', 'school', 'children'])
+        ->first();
+
+    if (!$subscriptionRequest) {
+        return response()->json([
+            'success' => false, 
+            'message' => 'الطلب غير موجود أو أنه غير مخصص لهذا السائق.',
+            'debug_info' => [
+                'requested_id' => $id,
+                'driver_id' => $driver->id
+            ]
+        ], 404);
+    }
+
+    return response()->json([
+        'success' => true,
+        'data'    => $subscriptionRequest
+    ], 200);
+}
 }

@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\Parent\ParentSchoolController;
 use App\Http\Controllers\Api\Admin\ZoneController;
 use App\Http\Controllers\Api\Parent\DriverSearchController;
 use App\Http\Controllers\Api\Admin\SchoolController;
+use App\Http\Controllers\API\Trip\ParentChildController;
 
 /*
 |--------------------------------------------------------------------------
@@ -43,6 +44,19 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // مسار جلب المدارس المعتمدة (الآن أصبح: api/parent/schools فوراً وبشكل صحيح)
     Route::get('schools', [SchoolController::class, 'index']);
+
+    Route::prefix('children/{childId}')->group(function () {
+        
+        // جدولة غياب طفل في تواريخ معينة
+        Route::post('set-absence', [ParentChildController::class, 'setAbsence']);
+        
+        // إلغاء غياب مجدول مسبقاً للطفل
+        Route::post('cancel-absence', [ParentChildController::class, 'cancelAbsence']);
+        
+        // التأكيد اليدوي لصعود الطفل (بديل الـ QR في حال تعطل هاتف السائق أو كاميرته)
+        Route::post('confirm-pickup/{tripId}', [ParentChildController::class, 'confirmManualPickup']);
+        
+    });
     
     // إدارة الأبناء والطلبة المضافين
     Route::prefix('children')->group(function () {

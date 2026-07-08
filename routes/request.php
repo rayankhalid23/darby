@@ -4,19 +4,31 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\API\Parent\ParentSubscriptionController;
 use App\Http\Controllers\API\Driver\DriverSubscriptionController;
 use App\Http\Controllers\API\Shared\ContractController;
-
+use App\Http\Controllers\API\Driver\DriverRouteController;
 Route::middleware('auth:sanctum')->group(function () {
 
-    Route::prefix('contracts')->group(function () {
-
-        Route::get('contracts/{id}/pdf', [ContractController::class, 'generatePdf']);
-        Route::get('/clauses', [ContractController::class, 'clauses']);
-        Route::post('/', [ContractController::class, 'store']);
-        Route::get('/{id}', [ContractController::class, 'show']);
-        Route::put('/{id}/accept', [ContractController::class, 'accept']);
-        Route::put('/{id}/reject', [ContractController::class, 'reject']);
-        
-    });
+    // ============================================================
+// مسارات العقود (Shared) - تم الإصلاح هنا
+// ============================================================
+Route::prefix('contracts')->group(function () {
+    // الآن المسار سيكون: /api/contracts/{id}/pdf
+    Route::get('/{id}/pdf', [ContractController::class, 'generatePdf']);
+    
+    // المسار سيكون: /api/contracts/clauses
+    Route::get('/clauses', [ContractController::class, 'clauses']);
+    
+    // المسار سيكون: /api/contracts
+    Route::post('/', [ContractController::class, 'store']);
+    
+    // المسار سيكون: /api/contracts/{id}
+    Route::get('/{id}', [ContractController::class, 'show']);
+    
+    // المسار سيكون: /api/contracts/{id}/accept
+    Route::put('/{id}/accept', [ContractController::class, 'accept']);
+    
+    // المسار سيكون: /api/contracts/{id}/reject
+    Route::put('/{id}/reject', [ContractController::class, 'reject']);
+});
     // مسارات أولياء الأمور لإرسال واستعراض طلبات الاشتراك
 // مسارات أولياء الأمور لإرسال واستعراض طلبات الاشتراك
 Route::prefix('parent')->group(function () {
@@ -33,10 +45,15 @@ Route::prefix('parent')->group(function () {
     Route::get('/requests/{id}', [ParentSubscriptionController::class, 'show']); 
 });
 
-    // مسارات السائقين لاستقبال والرد على طلبات الاشتراك
-    Route::prefix('driver')->group(function () {
-        Route::get('/', [DriverSubscriptionController::class, 'index']);           // هذا موجود لديك
-        Route::get('/{id}', [DriverSubscriptionController::class, 'show']);         // **أضف هذا المسار**
-        Route::put('{id}/status', [DriverSubscriptionController::class, 'updateStatus']); 
-    });
+Route::prefix('driver')->group(function () {
+    // 1. مسارات ثابتة أولاً
+    Route::get('/', [DriverSubscriptionController::class, 'index']);
+    Route::get('/routes', [DriverRouteController::class, 'index']); // تأكد أن هذا المسار في الأعلى
+    Route::post('/trips/start', [TripController::class, 'startTrip']);
+    
+    // 2. مسارات تحتوي على متغيرات (Parameters) أخيراً
+    Route::put('/routes/{route}', [DriverRouteController::class, 'update']);
+    Route::get('/{id}', [DriverSubscriptionController::class, 'show']); // هذا كان يسبب التعارض
+    Route::put('{id}/status', [DriverSubscriptionController::class, 'updateStatus']); 
+});
 });

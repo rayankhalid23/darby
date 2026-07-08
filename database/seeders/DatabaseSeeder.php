@@ -26,6 +26,9 @@ class DatabaseSeeder extends Seeder
 
             // 5. بيانات وهمية شاملة لاختبار دالة البحث والفلترة والتسعير
             DriverSearchTestSeeder::class,
+
+            // 6. بيانات اختبار E2E للمسارات والرحلات
+            E2eTestSeeder::class,
         ]);
     }
 }

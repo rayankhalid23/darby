@@ -5,7 +5,8 @@ use App\Http\Controllers\Api\Driver\DriverRegisterController;
 use App\Http\Controllers\Api\Driver\ProfileController;
 use App\Http\Controllers\Api\Driver\DriverPreferenceController;
 use App\Http\Controllers\Api\Driver\AddressController;
-use App\Http\Controllers\Api\Driver\ZoneController; // لا تنسَ هذا السطر في الأعلى
+use App\Http\Controllers\Api\Driver\ZoneController; 
+use App\Http\Controllers\API\Trip\DriverTripController;
 /*
 |--------------------------------------------------------------------------
 | Driver Routes (تم إزالة الـ prefix التكراري ليطابق v1/driver مباشرة)
@@ -49,6 +50,30 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{address}', [AddressController::class, 'destroy']); // حذف العنوان ناعماً
 
     });   
+    Route::post('subscriptions/{id}/status', [App\Http\Controllers\Api\SubscriptionController::class, 'updateStatus']);
+
+    
+    Route::prefix('trips')->group(function () {
+        
+        // بدء الرحلة (صباحية / مسائية)
+        Route::post('start', [DriverTripController::class, 'start']);
+        
+        // تحديث إحداثيات الموقع الحالي للسائق (بث الـ GPS المستمر)
+        Route::post('{tripId}/location', [DriverTripController::class, 'updateLocation']);
+        
+        // تخطي محطة طفل معين (إعادة حساب المسار تلقائياً)
+        Route::post('{tripId}/skip/{childId}', [DriverTripController::class, 'skip']);
+        
+        // التحقق من كود الـ QR عند صعود الطفل بسلام
+        Route::post('{tripId}/verify-qr/{childId}', [DriverTripController::class, 'verifyQr']);
+        
+        // تسجيل غياب السائق (تواريخ مجدولة مسبقاً)
+        Route::post('register-absence', [DriverTripController::class, 'registerAbsence']);
+        
+        // إنهاء الرحلة وإغلاقها نهائياً
+        Route::post('{tripId}/complete', [DriverTripController::class, 'complete']);
+        
+    });
 
     // عرض بيانات الملف الشخصي للسائق وعلاقاته
     Route::get('profile', [ProfileController::class, 'show'])

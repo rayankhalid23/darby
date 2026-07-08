@@ -68,20 +68,19 @@ class Contract extends Model
     }
 
     /**
-     * الاشتراكات النشطة المولّدة من هذا العقد (طفل بطفل)
-     */
-    public function activeSubscription()
-    {
-        // بافتراض أن جدول العقود يحتوي على active_subscription_id
-        return $this->belongsTo(ActiveSubscription::class, 'active_subscription_id');
-    }
-
-    /**
      * الاشتراكات النشطة المرتبطة بهذا العقد
      */
     public function activeSubscriptions(): HasMany
     {
         return $this->hasMany(ActiveSubscription::class, 'contract_id');
+    }
+
+    /**
+     * المسارات المولّدة من هذا العقد
+     */
+    public function routes(): HasMany
+    {
+        return $this->hasMany(Route::class, 'contract_id');
     }
 
     // ============================================================

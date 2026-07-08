@@ -5,7 +5,7 @@ namespace App\Models\Parent;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
-use App\Models\ParentModel; // تأكد من المسار الصحيح
+use App\Models\parent\ParentModel; // تأكد من المسار الصحيح
 use App\Models\Parent\ChildLogistics;
 
 class Child extends Model
