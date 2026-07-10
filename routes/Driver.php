@@ -50,7 +50,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{address}', [AddressController::class, 'destroy']); // حذف العنوان ناعماً
 
     });   
-    Route::post('subscriptions/{id}/status', [App\Http\Controllers\Api\SubscriptionController::class, 'updateStatus']);
+    
 
     
     Route::prefix('trips')->group(function () {

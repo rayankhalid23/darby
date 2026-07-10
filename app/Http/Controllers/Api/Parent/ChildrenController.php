@@ -89,4 +89,56 @@ class ChildrenController extends Controller
             'data'    => new SubscriptionResource($child->logistics) 
         ], 200);
     }
+    /**
+     * تعديل بيانات الطفل والاشتراك اللوجستي
+     */
+    public function update(UpdateChildRequest $request, $id): JsonResponse
+    {
+        $userId = auth()->id();
+
+        // جلب الطفل والتحقق من صلاحية ولي الأمر الحالي
+        $child = Child::where('id', $id)->where('parent_id', $userId)->first();
+
+        if (!$child) {
+            return response()->json([
+                'success' => false,
+                'message' => 'عذراً، هذا السجل غير موجود أو لا تملك صلاحية تعديله.'
+            ], 404);
+        }
+
+        // استدعاء السيرفس لتنفيذ التحديث الفعلي مع رفع الصورة
+        $updatedChild = $this->childService->updateChild($child, $request->validated());
+
+        return response()->json([
+            'success' => true,
+            'message' => 'تم تحديث بيانات الطفل بنجاح.',
+            'data'    => new ChildResource($updatedChild->load('logistics'))
+        ], 200);
+    }
+
+    /**
+     * حذف الطفل نهائياً أو (Soft Delete) من حساب ولي الأمر
+     */
+    public function destroy($id): JsonResponse
+    {
+        $userId = auth()->id();
+
+        // جلب الطفل والتحقق من الصلاحية قبل الحذف
+        $child = Child::where('id', $id)->where('parent_id', $userId)->first();
+
+        if (!$child) {
+            return response()->json([
+                'success' => false,
+                'message' => 'عذراً، هذا السجل غير موجود أو لا تملك صلاحية حذفه.'
+            ], 404);
+        }
+
+        // استدعاء السيرفس لحذف السجل وملف الصورة المادي
+        $this->childService->deleteChild($child);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'تم حذف بيانات الطفل وإلغاء اشتراكه بنجاح.'
+        ], 200);
+    }
 }

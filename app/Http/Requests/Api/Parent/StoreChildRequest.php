@@ -38,6 +38,7 @@ class StoreChildRequest extends FormRequest
             'start_date'          => 'required|date|after_or_equal:today',
             'end_date'            => 'required|date|after:start_date',
             'subscription_type'   => ['required', Rule::in(['daily', 'monthly'])],
+            'is_active'           => 'sometimes|boolean',
         ];
     }
 

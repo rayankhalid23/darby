@@ -15,10 +15,11 @@ class SubscriptionResource extends JsonResource
     public function toArray($request)
     {
         return [
+            'id'                  => $this->id,
             'preferred_time_slot' => $this->preferred_time_slot,
             'trip_direction'      => $this->trip_direction,
-            'pickup_time'         => $this->pickup_time,
-            'dropoff_time'        => $this->dropoff_time,
+            'pickup_time'         => $this->pickup_time ? \Carbon\Carbon::parse($this->pickup_time)->format('H:i') : null,
+            'dropoff_time'        => $this->dropoff_time ? \Carbon\Carbon::parse($this->dropoff_time)->format('H:i') : null,
             'start_date'          => $this->start_date,
             'end_date'            => $this->end_date,
             'subscription_type'   => $this->subscription_type,

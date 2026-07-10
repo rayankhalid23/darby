@@ -57,26 +57,36 @@ class ChildService
         });
     }
 
-    /**
-     * تحديث بيانات طفل موجود مسبقاً، مع معالجة تحديث الصورة وحذف القديمة.
+   /**
+     * تحديث بيانات الطفل وبيانات اشتراكه اللوجستي في نفس الوقت.
      */
-    public function updateChild(Child $child, array $data): Child
-    {
-        // 1. تأمين البيانات: نمنع تعديل الـ token يدوياً من الـ Request
-        unset($data['qr_code_token']);
+   public function updateChild(Child $child, array $data): Child
+   {
+       // 1. تأمين البيانات
+       unset($data['qr_code_token']);
 
-        // 2. إذا قام ولي الأمر برفع صورة جديدة
-        if (isset($data['photo']) && $data['photo'] instanceof UploadedFile) {
-            $this->deletePhoto($child->photo_url);
-            $data['photo_url'] = $this->uploadPhoto($data['photo']);
-            unset($data['photo']);
-        }
+       // 2. معالجة تحديث الصورة
+       if (isset($data['photo']) && $data['photo'] instanceof UploadedFile) {
+           $this->deletePhoto($child->photo_url);
+           $data['photo_url'] = $this->uploadPhoto($data['photo']);
+           unset($data['photo']);
+       }
 
-        // 3. تحديث البيانات
-        $child->update($data);
+       // 3. تحديث بيانات الطفل الأساسية
+       $child->update($data);
 
-        return $child;
-    }
+       // 4. تحديث بيانات الاشتراك (Logistics) إذا تم إرسال أي منها في الطلب
+       // نتحقق من وجود أي حقل خاص بالاشتراك قبل التحديث
+       $logisticsFields = ['preferred_time_slot', 'trip_direction', 'pickup_time', 'dropoff_time', 'start_date', 'end_date', 'subscription_type', 'is_active'];
+       
+       $logisticsData = array_intersect_key($data, array_flip($logisticsFields));
+
+       if (!empty($logisticsData)) {
+           $child->logistics()->update($logisticsData);
+       }
+
+       return $child;
+   }
 
     /**
      * حذف طفل من النظام نهائياً مع حذف صورته المرفقة.
