@@ -9,6 +9,8 @@ use App\Http\Controllers\Api\Admin\ZoneController;
 use App\Http\Controllers\Api\Parent\DriverSearchController;
 use App\Http\Controllers\Api\Admin\SchoolController;
 use App\Http\Controllers\API\Trip\ParentChildController;
+use App\Http\Controllers\Api\Parent\DriverReviewController;
+use App\Http\Controllers\Api\Parent\ComplaintController;
 
 /*
 |--------------------------------------------------------------------------
@@ -84,5 +86,23 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // مسار بحث وفلترة السائقين المتقدم لولي الأمر
     Route::post('/drivers/search', [DriverSearchController::class, 'search']);
- 
+
+    // مسارات تقييم السائقين لولي الأمر
+    Route::prefix('driver-reviews')->group(function () {
+        Route::get('/driver/{driverId}', [DriverReviewController::class, 'index']);
+        Route::post('/', [DriverReviewController::class, 'store']);
+        Route::post('/{id}', [DriverReviewController::class, 'update']);
+        Route::delete('/{id}', [DriverReviewController::class, 'destroy']);
+    });
+
+    // مسارات الشكاوى لولي الأمر
+    Route::prefix('complaints')->group(function () {
+        Route::get('/', [ComplaintController::class, 'index']);
+        Route::get('/{id}', [ComplaintController::class, 'show']);
+        Route::post('/', [ComplaintController::class, 'store']);
+        Route::post('/{id}', [ComplaintController::class, 'update']);
+        Route::delete('/{id}', [ComplaintController::class, 'destroy']);
+        Route::get('/driver/{driverId}/trips', [ComplaintController::class, 'driverTrips']);
+    });
+
 });

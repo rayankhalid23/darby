@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\API\Driver;
+namespace App\Http\Controllers\Api\Driver;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Driver\UpdateSubscriptionStatusRequest;

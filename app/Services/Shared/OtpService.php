@@ -26,7 +26,7 @@ class OtpService
             'email'      => $email,
             'purpose'    => $purpose,
             'code_hash'  => Hash::make($code),
-            'expires_at' => Carbon::now()->addMinutes(10),
+            'expires_at' => Carbon::now()->addMinutes(100),
             'is_used'    => 0,
             'attempts'   => 0
         ]);
@@ -51,7 +51,7 @@ class OtpService
         }
         
         // التحقق من عدد المحاولات الفاشلة
-        if ($otp->attempts >= 3) {
+        if ($otp->attempts >= 30) {
             $otp->update(['is_used' => 1]);
             return ['success' => false, 'message' => 'تم تجاوز عدد المحاولات المسموح بها لحماية حسابك.'];
         }
@@ -71,7 +71,7 @@ class OtpService
         // زيادة عداد المحاولات الفاشلة بحالة عدم التطابق
         $otp->increment('attempts');
         
-        $remainingAttempts = 3 - $otp->attempts;
+        $remainingAttempts = 30 - $otp->attempts;
         
         return [
             'success' => false, 

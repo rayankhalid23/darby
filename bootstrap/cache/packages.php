@@ -1,4 +1,23 @@
 <?php return array (
+  'barryvdh/laravel-dompdf' => 
+  array (
+    'aliases' => 
+    array (
+      'PDF' => 'Barryvdh\\DomPDF\\Facade\\Pdf',
+      'Pdf' => 'Barryvdh\\DomPDF\\Facade\\Pdf',
+    ),
+    'providers' => 
+    array (
+      0 => 'Barryvdh\\DomPDF\\ServiceProvider',
+    ),
+  ),
+  'bavix/laravel-wallet' => 
+  array (
+    'providers' => 
+    array (
+      0 => 'Bavix\\Wallet\\WalletServiceProvider',
+    ),
+  ),
   'darkaonline/l5-swagger' => 
   array (
     'aliases' => 
@@ -50,6 +69,17 @@
     'providers' => 
     array (
       0 => 'Laravel\\Tinker\\TinkerServiceProvider',
+    ),
+  ),
+  'laraveldaily/laravel-invoices' => 
+  array (
+    'aliases' => 
+    array (
+      'Invoice' => 'LaravelDaily\\Invoices\\Facades\\Invoice',
+    ),
+    'providers' => 
+    array (
+      0 => 'LaravelDaily\\Invoices\\InvoiceServiceProvider',
     ),
   ),
   'nesbot/carbon' => 

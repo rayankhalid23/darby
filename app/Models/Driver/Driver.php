@@ -141,4 +141,10 @@ public function vehicles(): HasMany // قمت بتغييرها من vehicle إل
     {
         return $this->hasMany(\App\Models\Shared\Route::class, 'driver_id');
     }
+
+    // جلب تقييمات السائق من أولياء الأمور
+    public function reviews()
+    {
+        return $this->hasMany(\App\Models\Shared\DriverReview::class, 'driver_id');
+    }
 }

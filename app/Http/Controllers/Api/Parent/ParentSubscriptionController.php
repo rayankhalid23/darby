@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\API\Parent;
+namespace App\Http\Controllers\Api\Parent;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Shared\StoreSubscriptionRequest;

@@ -5,7 +5,8 @@ use App\Http\Controllers\Api\Admin\AdminController;
 use App\Http\Controllers\Api\Admin\SchoolController;
 use App\Http\Controllers\Api\Admin\AdminDriverController; 
 use App\Http\Controllers\Api\Admin\ZoneController;
-
+use App\Http\Controllers\Api\Admin\DriverReviewController as AdminDriverReviewController;
+use App\Http\Controllers\Api\Admin\ComplaintController as AdminComplaintController;
 // =========================================================================
 // 🔒 المسارات المحمية (تتطلب تسجيل الدخول وحمل توكن Sanctum)
 // =========================================================================
@@ -69,6 +70,23 @@ Route::prefix('zones')->group(function () {
     Route::delete('/{id}', [ZoneController::class, 'destroy']); // حذف منطقة
 });
 Route::get('/zones-tree', [ZoneController::class, 'index']);
+
+  // --- 📊 مسارات إدارة تقييمات السائقين للأدمن (بالاسم الصريح الحاسم) ---
+Route::prefix('driver-reviews')->group(function () {
+    // استدعاء مباشر للكلاس بالكامل لمنع أي تداخل مع الكاش
+    Route::get('/all', [\App\Http\Controllers\Api\Admin\DriverReviewController::class, 'allReviews']); 
+    Route::get('/driver/{driverId}', [\App\Http\Controllers\Api\Admin\DriverReviewController::class, 'index']); 
+    Route::delete('/{id}', [\App\Http\Controllers\Api\Admin\DriverReviewController::class, 'destroy']); 
+});
+
+    // --- 📋 مسارات إدارة الشكاوى للأدمن ---
+    Route::prefix('complaints')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Admin\ComplaintController::class, 'index']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\Admin\ComplaintController::class, 'show']);
+        Route::get('/driver/{driverId}', [\App\Http\Controllers\Api\Admin\ComplaintController::class, 'driverComplaints']);
+        Route::post('/{id}/review', [\App\Http\Controllers\Api\Admin\ComplaintController::class, 'review']);
+    });
+
 });
 
 // =========================================================================
