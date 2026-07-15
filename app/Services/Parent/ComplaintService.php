@@ -40,7 +40,7 @@ class ComplaintService
     {
         $parentId = $this->getParentRecordId($parentUserId);
 
-        $contract = Contract::where('parent_id', $parentUserId)
+        $contract = Contract::where('parent_id', $parentId)
             ->where('driver_id', $data['driver_id'])
             ->whereIn('status', ['active', 'cancelled', 'terminated'])
             ->first();
@@ -104,19 +104,27 @@ class ComplaintService
 
     public function getDriverTripsForParent(int $parentUserId, int $driverId): \Illuminate\Support\Collection
     {
-        $contract = Contract::where('parent_id', $parentUserId)
+        // 1. تحويل معرّف المستخدم إلى معرّف ولي الأمر الحقيقي لضمان نجاح التحقق
+        $parentId = $this->getParentRecordId($parentUserId);
+    
+        $contract = Contract::where('parent_id', $parentId)
             ->where('driver_id', $driverId)
             ->whereIn('status', ['active', 'cancelled', 'terminated'])
             ->first();
-
+    
         if (!$contract) {
             return collect();
         }
-
+    
+        // 2. جلب معرفات المسارات المربوطة بالعقد
         $routeIds = \App\Models\Shared\Route::where('contract_id', $contract->id)->pluck('id');
-
-        return Trip::whereIn('route_id', $routeIds)
-            ->where('driver_id', $driverId)
+    
+        // 3. استعلام ذكي يجلب الرحلات المنتمية للمسارات أو التي تنتمي للسائق مباشرة لضمان عدم سقوط أي رحلة [NULL]
+        return Trip::where('driver_id', $driverId)
+            ->where(function ($query) use ($routeIds) {
+                $query->whereIn('route_id', $routeIds)
+                      ->orWhereNull('route_id'); // لضمان جلب الرحلات التي تظهر في قاعدة بياناتك بـ [NULL]
+            })
             ->orderBy('trip_date', 'desc')
             ->orderBy('scheduled_at', 'desc')
             ->get(['id', 'trip_date', 'trip_type', 'status', 'scheduled_at']);

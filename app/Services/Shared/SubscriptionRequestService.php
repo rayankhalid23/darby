@@ -285,4 +285,57 @@ private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent
             }
         }
     }
+    public function getParentSubscriptions(int $userId, ?string $status = null)
+    {
+        $parent = ParentModel::where('user_id', $userId)->first();
+        if (!$parent) {
+            throw new Exception('هذا الحساب غير مسجل كولي أمر في النظام.');
+        }
+
+        $query = SubscriptionRequest::with(['children.school', 'driver.user', 'school', 'contract'])
+            ->where('parent_id', $parent->id);
+
+        if (!empty($status)) {
+            $query->where('status', $status);
+        }
+
+        // ترتيب الطلبات من الأحدث للأقدم
+        return $query->latest()->get();
+    }
+
+    // ============================================================
+    // جلب تفاصيل اشتراك معين لولي الأمر (الدالة الجديدة)
+    // ============================================================
+
+    /**
+     * جلب كافة تفاصيل طلب اشتراك معين مع التأكد من ملكيته لولي الأمر.
+     * * @param int $requestId رقم الطلب
+     * @param int $userId معرف المستخدم لولي الأمر
+     * @return SubscriptionRequest
+     * @throws Exception
+     */
+    public function getSubscriptionDetails(int $requestId, int $userId): SubscriptionRequest
+    {
+        $parent = ParentModel::where('user_id', $userId)->first();
+        if (!$parent) {
+            throw new Exception('هذا الحساب غير مسجل كولي أمر في النظام.');
+        }
+
+        $request = SubscriptionRequest::with([
+            'children.school', 
+            'driver.user', 
+            'driver.vehicles', 
+            'school', 
+            'contract'
+        ])
+        ->where('id', $requestId)
+        ->where('parent_id', $parent->id) // حماية أمنية: التأكد من أن الطلب يخص هذا العميل
+        ->first();
+
+        if (!$request) {
+            throw new Exception('طلب الاشتراك غير موجود، أو لا تملك صلاحية الوصول إليه.');
+        }
+
+        return $request;
+    }
 }

@@ -5,6 +5,7 @@ use App\Http\Controllers\API\Parent\ParentSubscriptionController;
 use App\Http\Controllers\API\Driver\DriverSubscriptionController;
 use App\Http\Controllers\API\Shared\ContractController;
 use App\Http\Controllers\API\Driver\DriverRouteController;
+
 Route::middleware('auth:sanctum')->group(function () {
 
     // ============================================================
@@ -43,6 +44,11 @@ Route::prefix('parent')->group(function () {
     
     // عرض تفاصيل طلب اشتراك محدد
     Route::get('/requests/{id}', [ParentSubscriptionController::class, 'show']); 
+   // راوت جلب جميع الاشتراكات
+   Route::get('/subscriptions', [ParentSubscriptionController::class, 'index']);
+    
+   // راوت جلب تفاصيل اشتراك محدد
+   Route::get('/subscriptions/{id}', [ParentSubscriptionController::class, 'show']);
 });
 
 Route::prefix('driver')->group(function () {

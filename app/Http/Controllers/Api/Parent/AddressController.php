@@ -19,27 +19,26 @@ class AddressController extends Controller
     {
         $this->addressService = $addressService;
     }
-
     public function index(): JsonResponse
-{
-    // الحصول على معرف المستخدم الحالي بدلاً من القيمة الثابتة 1
-    $userId = auth()->id();
+    {
+        // التصحيح هنا: نجلب رقم ولي الأمر الفعلي المرتبط بالمستخدم، وليس رقم المستخدم نفسه
+        $parentId = auth()->user()->parent->id;
 
-    // استدعاء الخدمة لجلب العناوين
-    $addresses = $this->addressService->getParentAddresses($userId);
+        // استدعاء الخدمة لجلب العناوين
+        $addresses = $this->addressService->getParentAddresses($parentId);
 
-    return response()->json([
-        'success' => true,
-        'message' => 'تم جلب دفتر العناوين بنجاح.',
-        'data'    => AddressResource::collection($addresses)
-    ], Response::HTTP_OK);
-}
-
-   
+        return response()->json([
+            'success' => true,
+            'message' => 'تم جلب دفتر العناوين بنجاح.',
+            'data'    => AddressResource::collection($addresses)
+        ], Response::HTTP_OK);
+    }
 
     public function store(StoreAddressRequest $request): JsonResponse
     {
-        $parentId = 1; // سيتم استبدالها بـ auth()->user()->parent->id
+        // التصحيح هنا: استبدال الرقم الثابت بالرقم الفعلي لولي الأمر
+        $parentId = auth()->user()->parent->id; 
+        
         $address = $this->addressService->createAddress($parentId, $request->validated());
 
         return response()->json([
@@ -51,7 +50,9 @@ class AddressController extends Controller
 
     public function update(UpdateAddressRequest $request, Address $address): JsonResponse
     {
-        $parentId = 1; // سيتم استبدالها بـ auth()->user()->parent->id
+        // التصحيح هنا أيضاً: استبدال الرقم الثابت
+        $parentId = auth()->user()->parent->id; 
+        
         $updatedAddress = $this->addressService->updateAddress($address, $parentId, $request->validated());
 
         return response()->json([
@@ -59,25 +60,5 @@ class AddressController extends Controller
             'message' => 'تم تحديث بيانات العنوان بنجاح.',
             'data'    => new AddressResource($updatedAddress)
         ], Response::HTTP_OK);
-    }
-
-    public function destroy(Address $address): JsonResponse
-    {
-        try {
-            $this->addressService->deleteAddress($address);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'تم حذف العنوان بنجاح من دفتر عناوينك.'
-            ], Response::HTTP_OK);
-
-        } catch (\Exception $e) {
-            // إمساك خطأ الارتباط وعرض الرسالة التجارية لولي الأمر
-            return response()->json([
-                'success'    => false,
-                'error_code' => 'ADDRESS_ALREADY_IN_USE',
-                'message'    => $e->getMessage()
-            ], Response::HTTP_UNPROCESSABLE_ENTITY); // Code: 422
-        }
     }
 }

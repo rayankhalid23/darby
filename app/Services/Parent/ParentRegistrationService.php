@@ -110,19 +110,27 @@ class ParentRegistrationService
             throw $e;
         }
     }
-
     public function updateParentProfile(int $userId, array $data)
     {
         Log::info("Service: Starting updateParentProfile for User ID: {$userId}");
 
         try {
             return DB::transaction(function () use ($userId, $data) {
+                // 1. جلب بيانات المستخدم
                 $user = User::where('id', $userId)->where('role_id', 3)->firstOrFail();
 
-                Log::info("Service: User fields updated for ID: {$userId}");
+                // 2. تحديث البيانات الأساسية (باستثناء البريد الإلكتروني لأنه يحتاج تأكيد)
+                $updateData = collect($data)->except(['email'])->toArray();
+                
+                if (!empty($updateData)) {
+                    // وضع البيانات الجديدة في الـ Model
+                    $user->fill($updateData); 
+                }
 
+                // 3. معالجة منطق تغيير البريد الإلكتروني (إن وجد)
                 if (array_key_exists('email', $data) && strtolower(trim($data['email'])) !== strtolower($user->email)) {
                     $newEmail = trim($data['email']);
+                    
                     if (User::where('email', $newEmail)->where('id', '!=', $userId)->exists()) {
                         Log::warning("Service: Email update blocked. Email {$newEmail} already in use.");
                         throw new Exception("البريد الإلكتروني الجديد مستخدم بالفعل.");
@@ -134,8 +142,14 @@ class ParentRegistrationService
                     $approveUrl = URL::temporarySignedRoute('parent.profile.email.approve', now()->addMinutes(30), ['id' => $user->id]);
                     $this->emailService->sendParentEmailChangeLink($newEmail, $user->full_name, $approveUrl, $approveUrl);
 
+                    // إضافة متغير (Flag) للاستخدام في الـ Controller لإظهار رسالة مناسبة
                     $user->email_change_pending = true;
                 }
+
+                // 4. حفظ التعديلات فعلياً في قاعدة البيانات
+                $user->save();
+
+                Log::info("Service: User fields updated and saved successfully for ID: {$userId}");
 
                 return $user;
             });
