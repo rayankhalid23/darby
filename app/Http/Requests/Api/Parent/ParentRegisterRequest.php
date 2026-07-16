@@ -27,6 +27,7 @@ class ParentRegisterRequest extends FormRequest
             'device_name'           => 'nullable|string',
             'platform'              => 'nullable|string',
             'fcm_token'             => 'nullable|string'
+            'avatar' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
         ];
     }
 
@@ -59,7 +60,12 @@ class ParentRegisterRequest extends FormRequest
             // رقم الهاتف (الرسائل المخصصة الجديدة)
             'phone_number.required'      => 'عذراً، خانة رقم الهاتف الأساسي لا يمكن أن تكون فارغة.',
             'phone_number.min'           => 'رقم الهاتف يجب ألا يقل عن 7 أرقام.',
-            'phone_number.unique'        => 'رقم الهاتف هذا مسجل لدينا بالفعل لحساب آخر، يرجى استخدام رقم مختلف أو تسجيل الدخول.'
+            'phone_number.unique'        => 'رقم الهاتف هذا مسجل لدينا بالفعل لحساب آخر، يرجى استخدام رقم مختلف أو تسجيل الدخول.',
+
+            // الصورة الشخصية
+'avatar.image' => 'الملف المرفق يجب أن يكون صورة صحيحة.',
+'avatar.mimes' => 'صيغة الصورة يجب أن تكون: jpeg, png, jpg, gif, أو svg.',
+'avatar.max'   => 'حجم الصورة الشخصية يجب ألا يتجاوز 2 ميجابايت.',
         ];
     }
 

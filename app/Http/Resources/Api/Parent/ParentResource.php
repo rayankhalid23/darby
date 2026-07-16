@@ -12,28 +12,54 @@ class ParentResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        // التحقق الذكي من أصل الكائن الممرر (سواء كان User ومعه الـ profile أو العكس)
-        $user = $this->user ?? ($this->resource instanceof \App\Models\User ? $this->resource : null);
-        
-        // جلب الـ profile التابع لجدول parents بشكل آمن
-        $parentProfile = $this->parentProfile ?? ($this->resource instanceof \App\Models\User ? $this->parentProfile : $this);
+        // 1. حماية قصوى: إذا كان الكائن الممرر فارغاً تماماً، نرجع مصفوفة فارغة فوراً لتجنب انهيار السيرفر
+        if (!$this->resource) {
+            return [];
+        }
 
-        return [
-            'id'                => (int) ($parentProfile?->id ?? $this->id),
-            'account_id'        => (int) ($user?->id ?? $this->user_id),
-            'full_name'         => $user?->full_name ?? $this->full_name ?? '',
-            'email'             => $user?->email ?? $this->email ?? '',
-            'phone_number'      => $user?->phone_number ?? $this->phone_number ?? '',
-            'alternative_phone' => $user?->alternative_phone ?? $this->alternative_phone ?? null, 
-            'role'              => 'parent',
-            'is_active'         => (bool) ($user?->is_active ?? $this->is_active ?? false),
+        // 2. التحقق الذكي والدقيق لتحديد كائن المستخدم (User) وكائن الملف الشخصي (Parent Profile)
+        $user = null;
+        $parentProfile = null;
+
+        if ($this->resource instanceof \App\Models\User) {
+            // إذا كان الكائن الأساسي هو المستخدم (User)
+            $user = $this->resource;
             
-            // 🚀 إضافة الحقل الخاص بجدول الـ parents الذي قمنا بتحديثه في السيرفس
-            'is_trusted'        => (bool) ($parentProfile?->is_trusted ?? false),
+            // نجلب الملف الشخصي بدعم ديناميكي لكل مسميات العلاقات المتوقعة في Laravel
+            $parentProfile = $this->parentProfile ?? $this->parent ?? $this->profile ?? null;
+        } else {
+            // إذا كان الكائن الأساسي هو موديل الملف الشخصي لولي الأمر نفسه
+            $parentProfile = $this->resource;
+            $user = $this->user ?? null;
+        }
 
-            // 🚀 التنبيه الذكي للـ Front-end: إذا كان هناك بريد إلكتروني قيد التحقق والتأكيد حالياً
-            'email_change_pending' => (bool) ($user?->email_change_pending ?? $this->email_change_pending ?? false),
-            'access_token'         => $this->when(isset($this->access_token) || isset($user->access_token), $this->access_token ?? $user?->access_token),
+        // 3. بناء المصفوفة مع وضع قيم بديلة (Fallbacks) ذكية لكل حقل لتفادي أي خطأ
+        return [
+            'id'                   => (int) ($parentProfile?->id ?? $user?->id ?? $this->id),
+            'account_id'           => (int) ($user?->id ?? $parentProfile?->user_id ?? $this->user_id ?? 0),
+            'full_name'            => $user?->full_name ?? $parentProfile?->full_name ?? $this->full_name ?? '',
+            'email'                => $user?->email ?? $parentProfile?->email ?? $this->email ?? '',
+            'phone_number'         => $user?->phone_number ?? $parentProfile?->phone_number ?? $this->phone_number ?? '',
+            'alternative_phone'    => $user?->alternative_phone ?? $parentProfile?->alternative_phone ?? $this->alternative_phone ?? null, 
+            'role'                 => 'parent',
+            'is_active'            => (bool) ($user?->is_active ?? $parentProfile?->is_active ?? $this->is_active ?? false),
+            
+            // جلب حالة الحساب الموثوق
+            'is_trusted'           => (bool) ($parentProfile?->is_trusted ?? false),
+            
+            // جلب رابط الصورة بشكل مرن وسلس سواء كانت مخزنة في جدول المستخدم أو الملف الشخصي لولي الأمر
+            'avatar_url'           => ($user?->avatar_url ?? $parentProfile?->avatar_url) 
+                                        ? asset($user?->avatar_url ?? $parentProfile?->avatar_url) 
+                                        : null,
+
+            // التنبيه الخاص بتعديل البريد الإلكتروني المعلق
+            'email_change_pending' => (bool) ($user?->email_change_pending ?? $parentProfile?->email_change_pending ?? $this->email_change_pending ?? false),
+            
+            // عرض الـ Access Token بشكل آمن ومحمي عند توفره فقط
+            'access_token'         => $this->when(
+                (isset($this->access_token) || ($user && isset($user->access_token))), 
+                $this->access_token ?? $user?->access_token
+            ),
         ];
     }
 }

@@ -73,6 +73,7 @@ class ParentRegistrationService
                     'is_active'         => 1,
                     'email_verified_at' => Carbon::now(),
                     'last_login_at'     => Carbon::now(),
+                    'avatar_url'        => $data['avatar_url'] ?? null,
                 ]);
                 Log::info("Service: User record created for ID: {$user->id}");
 
@@ -118,6 +119,11 @@ class ParentRegistrationService
             return DB::transaction(function () use ($userId, $data) {
                 // 1. جلب بيانات المستخدم
                 $user = User::where('id', $userId)->where('role_id', 3)->firstOrFail();
+                if (!empty($data['avatar_url'])) {
+    if (!empty($user->avatar_url) && file_exists(public_path($user->avatar_url))) {
+        @unlink(public_path($user->avatar_url));
+    }
+}
 
                 // 2. تحديث البيانات الأساسية (باستثناء البريد الإلكتروني لأنه يحتاج تأكيد)
                 $updateData = collect($data)->except(['email'])->toArray();
@@ -126,6 +132,9 @@ class ParentRegistrationService
                     // وضع البيانات الجديدة في الـ Model
                     $user->fill($updateData); 
                 }
+
+                // متغير مؤقت لتتبع ما إذا كان هناك طلب لتغيير البريد الإلكتروني
+                $isEmailChanged = false;
 
                 // 3. معالجة منطق تغيير البريد الإلكتروني (إن وجد)
                 if (array_key_exists('email', $data) && strtolower(trim($data['email'])) !== strtolower($user->email)) {
@@ -142,12 +151,17 @@ class ParentRegistrationService
                     $approveUrl = URL::temporarySignedRoute('parent.profile.email.approve', now()->addMinutes(30), ['id' => $user->id]);
                     $this->emailService->sendParentEmailChangeLink($newEmail, $user->full_name, $approveUrl, $approveUrl);
 
-                    // إضافة متغير (Flag) للاستخدام في الـ Controller لإظهار رسالة مناسبة
-                    $user->email_change_pending = true;
+                    // نحدد المتغير المؤقت بـ true بدلاً من إضافته للـ Model مباشرة هنا
+                    $isEmailChanged = true;
                 }
 
-                // 4. حفظ التعديلات فعلياً في قاعدة البيانات
+                // 4. حفظ التعديلات الفعلية في قاعدة البيانات (الآن آمنة 100%)
                 $user->save();
+
+                // 5. تعيين المتغير المؤقت بعد الحفظ مباشرة ليمر إلى الـ Resource دون تضارب مع قاعدة البيانات
+                if ($isEmailChanged) {
+                    $user->email_change_pending = true;
+                }
 
                 Log::info("Service: User fields updated and saved successfully for ID: {$userId}");
 

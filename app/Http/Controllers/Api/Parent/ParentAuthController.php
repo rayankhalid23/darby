@@ -73,7 +73,16 @@ class ParentAuthController extends Controller
         Log::info("Parent: Registration attempt started for: " . $request->email);
 
         try {
-            $user = $this->registrationService->registerParent($request->validated());
+            $data = $request->validated();
+
+if ($request->hasFile('avatar')) {
+    $file = $request->file('avatar');
+    $filename = 'parent_avatar_' . time() . '.' . $file->getClientOriginalExtension();
+    $file->move(public_path('uploads/parents/avatars'), $filename);
+    $data['avatar_url'] = 'uploads/parents/avatars/' . $filename;
+}
+
+$user = $this->registrationService->registerParent($data);
             $token = $user->createToken('parent_token')->plainTextToken;
 
             Log::info("Parent: Account created successfully for user ID: " . $user->id);
@@ -113,7 +122,16 @@ class ParentAuthController extends Controller
         Log::info("Parent: Update profile initiated for user ID: " . $request->user()->id);
 
         try {
-            $user = $this->registrationService->updateParentProfile($request->user()->id, $request->validated());
+            $data = $request->validated();
+
+if ($request->hasFile('avatar')) {
+    $file = $request->file('avatar');
+    $filename = 'parent_avatar_' . time() . '.' . $file->getClientOriginalExtension();
+    $file->move(public_path('uploads/parents/avatars'), $filename);
+    $data['avatar_url'] = 'uploads/parents/avatars/' . $filename;
+}
+
+$user = $this->registrationService->updateParentProfile($request->user()->id, $data);
             
             $message = 'تم تحديث بيانات الملف الشخصي بنجاح.';
             if (isset($user->email_change_pending) && $user->email_change_pending === true) {

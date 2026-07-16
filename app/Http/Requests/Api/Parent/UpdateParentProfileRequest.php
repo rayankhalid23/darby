@@ -46,6 +46,14 @@ class UpdateParentProfileRequest extends FormRequest
                 'min:7', 
                 Rule::unique('users', 'phone_number')->ignore($userId)
             ],
+            // التحقق من الصورة أثناء التحديث (تعديل جزئي)
+'avatar' => [
+    'sometimes',
+    'nullable',
+    'image',
+    'mimes:jpeg,png,jpg,gif,svg',
+    'max:2048'
+],
 
             // الرقم البديل: اختياري دائماً
             'alternative_phone' => ['nullable', 'string', 'min:7'],
@@ -83,6 +91,9 @@ class UpdateParentProfileRequest extends FormRequest
             
             'password.min'           => 'كلمة المرور الجديدة يجب ألا تقل عن 7 خانات لحماية الحساب.',
             'password.regex'         => 'كلمة المرور الجديدة يجب أن تحتوي على أرقام وحروف، ويُمنع استخدام الرموز الخاصة.',
+            'avatar.image' => 'الملف المرفق يجب أن يكون صورة صحيحة.',
+'avatar.mimes' => 'صيغة الصورة يجب أن تكون: jpeg, png, jpg, gif, أو svg.',
+'avatar.max'   => 'حجم الصورة الشخصية يجب ألا يتجاوز 2 ميجابايت.',
         ];
     }
 
