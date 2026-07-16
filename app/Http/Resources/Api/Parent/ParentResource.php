@@ -35,8 +35,11 @@ class ParentResource extends JsonResource
 
         // 3. بناء المصفوفة مع وضع قيم بديلة (Fallbacks) ذكية لكل حقل لتفادي أي خطأ
         return [
-            'id'                   => (int) ($parentProfile?->id ?? $user?->id ?? $this->id),
-            'account_id'           => (int) ($user?->id ?? $parentProfile?->user_id ?? $this->user_id ?? 0),
+            // المعرفات المضافة حديثاً بناءً على طلبك لتحديد الهوية بدقة للـ API
+            'id_user'              => (int) ($user?->id ?? $parentProfile?->user_id ?? 0),
+            'id_parent'            => $parentProfile?->id ? (int) $parentProfile->id : null,
+
+           
             'full_name'            => $user?->full_name ?? $parentProfile?->full_name ?? $this->full_name ?? '',
             'email'                => $user?->email ?? $parentProfile?->email ?? $this->email ?? '',
             'phone_number'         => $user?->phone_number ?? $parentProfile?->phone_number ?? $this->phone_number ?? '',

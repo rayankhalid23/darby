@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Auth\LoginRequest;
 use App\Http\Resources\Api\UserResource;
+use App\Http\Resources\Api\Parent\ParentResource; // ⬅️ استيراد ريسورس ولي الأمر الجديد
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
@@ -77,13 +78,20 @@ class LoginController extends Controller
                 default => 'مستخدم',
             };
 
+            // 7. تحويل كائن المستخدم إلى الـ Resource المناسب لدوره (هندسة ذكية وقابلة للتوسع)
+            $userResourceData = match ((int) $user->role_id) {
+                3 => new ParentResource($user), // إذا كان ولي أمر، استخدم الريسورس الخاص به ليرجع بـ id_parent و id_user
+                // 4 => new DriverResource($user), // يمكنك تفعيلها مستقبلاً إذا أنشأت ريسورس مخصص للسائق
+                default => new UserResource($user), // المشرفين والمدراء وباقي المستخدمين يعودون بالريسورس العام
+            };
+
             return response()->json([
                 'status' => true, 
-                'message' => "مرحباً {$user->full_name}، تم تسجيل الدخول بنجاح!", // رسالة الترحيب الديناميكية
+                'message' => "مرحباً {$user->full_name}، تم تسجيل الدخول بنجاح!", 
                 'access_token' => $token,
                 'token_type' => 'Bearer',
-                'role_name' => $roleName, // إضافة اسم الدور هنا
-                'user' => new UserResource($user)
+                'role_name' => $roleName, 
+                'user' => $userResourceData // ⬅️ تم استبدال الريسورس الثابت بالمتغير الديناميكي الذكي
             ], 200);
 
         } catch (\Exception $e) {
