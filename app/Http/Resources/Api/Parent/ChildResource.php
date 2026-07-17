@@ -13,6 +13,7 @@ class ChildResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $rawPhoto = (!empty($this->photo_url) && !empty(trim($this->photo_url))) ? trim($this->photo_url) : null;
         return [
             'id'                  => $this->id,
             'parent_id'           => $this->parent_id,
@@ -27,7 +28,8 @@ class ChildResource extends JsonResource
             'age'                 => $this->age,
             'grade'               => $this->grade,
             
-            'photo_url'           => $this->photo_url ? asset(Storage::url($this->photo_url)) : asset('assets/images/default-child.png'),
+           // الحل الجذري والآمن للصورة الافتراضية أو المرفوعة
+    'photo_url'           => $rawPhoto ? Storage::url($rawPhoto) : asset('assets/images/default-child.png'),
             'medical_notes'       => $this->medical_notes ?? 'لا توجد ملاحظات طبية',
             'qr_code_token'       => $this->qr_code_token,
             

@@ -11,6 +11,8 @@ use App\Http\Controllers\Api\Admin\SchoolController;
 use App\Http\Controllers\API\Trip\ParentChildController;
 use App\Http\Controllers\Api\Parent\DriverReviewController;
 use App\Http\Controllers\Api\Parent\ComplaintController;
+use App\Http\Controllers\Api\Parent\WalletController;
+use App\Http\Controllers\Api\Shared\InvoiceController;
 
 /*
 |--------------------------------------------------------------------------
@@ -103,6 +105,19 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{id}', [ComplaintController::class, 'update']);
         Route::delete('/{id}', [ComplaintController::class, 'destroy']);
         Route::get('/driver/{driverId}/trips', [ComplaintController::class, 'driverTrips']);
+    });
+
+    // مسارات المحفظة المالية والشحن
+    Route::prefix('wallet')->group(function () {
+        Route::get('/balance', [WalletController::class, 'balance']);
+        Route::get('/payment-methods', [WalletController::class, 'paymentMethods']);
+        Route::post('/recharge', [WalletController::class, 'recharge']);
+    });
+
+    // مسارات الفواتير
+    Route::prefix('invoices')->group(function () {
+        Route::get('/', [InvoiceController::class, 'index']);
+        Route::get('/{id}', [InvoiceController::class, 'show']);
     });
 
 });

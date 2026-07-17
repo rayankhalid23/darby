@@ -87,6 +87,22 @@ Route::prefix('driver-reviews')->group(function () {
         Route::post('/{id}/review', [\App\Http\Controllers\Api\Admin\ComplaintController::class, 'review']);
     });
 
+    // --- 💰 مسارات الإدارة المالية للأدمن ---
+    Route::prefix('financial')->group(function () {
+        Route::get('/invoices', [\App\Http\Controllers\Api\Admin\FinancialController::class, 'invoices']);
+        Route::get('/invoices/{id}', [\App\Http\Controllers\Api\Admin\FinancialController::class, 'invoiceDetail']);
+        Route::get('/withdrawals', [\App\Http\Controllers\Api\Admin\FinancialController::class, 'withdrawals']);
+        Route::post('/withdrawals/{id}/process', [\App\Http\Controllers\Api\Admin\FinancialController::class, 'processWithdrawal']);
+        Route::get('/recharges', [\App\Http\Controllers\Api\Admin\FinancialController::class, 'rechargeRequests']);
+        Route::post('/recharges/{id}/process', [\App\Http\Controllers\Api\Admin\FinancialController::class, 'processRecharge']);
+    });
+
+    // مسارات الفواتير للأدمن (قراءة فقط)
+    Route::prefix('invoices')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Shared\InvoiceController::class, 'index']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\Shared\InvoiceController::class, 'show']);
+    });
+
 });
 
 // =========================================================================

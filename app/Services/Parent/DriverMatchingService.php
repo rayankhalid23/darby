@@ -33,23 +33,27 @@ class DriverMatchingService
      * matchDrivers
      * ─────────────────────────────────────────
      * @param  array  $filters  الفلاتر المُرسلة من الـ Request
-     * @param  int    $parentId معرّف ولي الأمر الحالي
+     * @param  int    $parentId معرّف ولي الأمر الحالي الفعلي
      * @return LengthAwarePaginator
      */
     public function matchDrivers(array $filters, int $parentId): LengthAwarePaginator
     {
-        // ① جلب الأطفال المعنيين (المحددون أو كل أطفال ولي الأمر)
+        // ① جلب الأطفال المعنيين بناء على الـ parent_id الفعلي الممرر
         $children = $this->resolveChildren($filters['child_ids'] ?? [], $parentId);
 
-        // ② بناء الاستعلام الأساسي للسائقين المعتمدين
+        // ② بناء الاستعلام الأساسي مع تحديد اختيار حقول السائقين صراحةً لمنع اختلاط المعرفات
         $query = Driver::query()
+            ->select('drivers.*') // 🔥 حماية الـ id الأصلي للسائق من التداخل مع الـ users
             ->whereIn('drivers.status', ['Approved', 'Active'])
             ->with(['user', 'vehicles', 'zones']);
 
+        // ─── فحص وجود بحث نصي لمنع تقييد النتائج جغرافياً ───
+        $hasSearchQuery = !empty($filters['search_query']);
+
         // ─── تطبيق الفلاتر ───
 
-        // أ) البحث النصي بالاسم أو الهاتف (لو موجود يُطبَّق مع باقي الفلاتر)
-        if (!empty($filters['search_query'])) {
+        // أ) البحث النصي بالاسم أو الهاتف
+        if ($hasSearchQuery) {
             $this->applyTextSearch($query, $filters['search_query']);
         }
 
@@ -66,8 +70,9 @@ class DriverMatchingService
             }
         }
 
-        // د) الفلترة الذكية المشتقة من بيانات الأطفال
-        if ($children->isNotEmpty()) {
+        // د) الفلترة الذكية الجغرافية المشتقة من بيانات الأطفال
+        // 💡 تُطبق فقط إذا لم يكن هناك بحث نصي عن اسم محدد لتجاوز قيود المناطق عند طلب سائق معين
+        if ($children->isNotEmpty() && !$hasSearchQuery) {
             $this->applyChildrenSmartFilters($query, $children);
         }
 
@@ -119,27 +124,27 @@ class DriverMatchingService
      * فلترة السائقين بالاسم أو رقم الهاتف
      * تدعم: البحث الجزئي + تطبيع الألف (أ / إ / آ → ا)
      */
-    private function applyTextSearch($query, string $keyword): void
-    {
-        $keyword           = trim($keyword);
-        $normalizedKeyword = str_replace(['أ', 'إ', 'آ'], 'ا', $keyword);
+   /**
+     * فلترة السائقين بالاسم أو رقم الهاتف بشكل دقيق واحترافي
+     */
+   private function applyTextSearch($query, string $keyword): void
+   {
+       $keyword           = trim($keyword);
+       $normalizedKeyword = str_replace(['أ', 'إ', 'آ'], 'ا', $keyword);
 
-        $query->whereHas('user', function ($q) use ($keyword, $normalizedKeyword) {
-            $q->where(function ($sub) use ($keyword, $normalizedKeyword) {
-                // البحث بالاسم الكامل (مع تطبيع الألف)
-                $sub->where('users.full_name', 'like', "%{$keyword}%")
-                    ->orWhere('users.full_name', 'like', "%{$normalizedKeyword}%")
-                    ->orWhereRaw(
-                        "REPLACE(REPLACE(REPLACE(users.full_name, 'أ', 'ا'), 'إ', 'ا'), 'آ', 'ا') LIKE ?",
-                        ["%{$normalizedKeyword}%"]
-                    )
-                    // البحث برقم الهاتف الأساسي
-                    ->orWhere('users.phone_number', 'like', "%{$keyword}%")
-                    // البحث برقم الهاتف الاحتياطي
-                    ->orWhere('users.alternative_phone', 'like', "%{$keyword}%");
-            });
-        });
-    }
+       $query->whereHas('user', function ($q) use ($keyword, $normalizedKeyword) {
+           $q->where(function ($sub) use ($keyword, $normalizedKeyword) {
+               $sub->where('users.full_name', 'like', "%{$keyword}%")
+                   ->orWhere('users.full_name', 'like', "%{$normalizedKeyword}%")
+                   ->orWhereRaw(
+                       "REPLACE(REPLACE(REPLACE(users.full_name, 'أ', 'ا'), 'إ', 'ا'), 'آ', 'ا') LIKE ?",
+                       ["%{$normalizedKeyword}%"]
+                   )
+                   ->orWhere('users.phone_number', 'like', "%{$keyword}%")
+                   ->orWhere('users.alternative_phone', 'like', "%{$keyword}%");
+           });
+       });
+   }
 
     // ─────────────────────────────────────────────────────────
     // الفلترة الذكية بناءً على بيانات الأطفال

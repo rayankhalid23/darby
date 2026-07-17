@@ -6,15 +6,18 @@ use App\Models\User;
 use App\Models\Student;
 use App\Models\Shared\Zone;
 use App\Enums\driver\DriverShift;
+use Bavix\Wallet\Interfaces\Wallet;
+use Bavix\Wallet\Traits\HasWallet;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
-class Driver extends Model
+class Driver extends Model implements Wallet
 {
-    // إلغاء الـ timestamps للمحافظة على هيكلية جدولك الحالي
+    use HasWallet;
+
     public $timestamps = false;
     protected $table = 'drivers';
     protected $guarded = [];
@@ -23,11 +26,11 @@ class Driver extends Model
         'user_id', 
         'gender',
         'shift',
-        'subscription_type', // الحقل الجديد المرتبط بنظام الجغرافيا والاشتراكات الجديد
+        'subscription_type',
         'national_id', 
         'license_number', 
         'license_expiry', 
-        'status',          // معتمد في منطق الموافقة الادارية (Pending, Active, Suspended)
+        'status',
         'current_lat', 
         'current_lng', 
         'last_ping_at'

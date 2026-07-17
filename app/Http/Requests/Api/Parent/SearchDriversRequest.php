@@ -3,42 +3,53 @@
 namespace App\Http\Requests\Api\Parent;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class SearchDriversRequest extends FormRequest
 {
+    /**
+     * تحديد ما إذا كان المستخدم مخولاً لإجراء هذا الطلب.
+     */
     public function authorize(): bool
     {
         return true;
     }
 
+    /**
+     * قواعد التحقق من البيانات
+     */
     public function rules(): array
     {
+        // جلب الـ parent_id الفعلي المقابل للمستخدم المسجل حالياً لضمان دقة التحقق
+        $parent = DB::table('parents')->where('user_id', auth()->id())->first();
+        $parentId = $parent ? $parent->id : 0;
+
         return [
-            // ───── البحث النصي (اسم السائق أو رقم هاتفه) ─────
-            'search_query'  => 'nullable|string|max:100',
-
-            // ───── فلاتر السائق المباشرة ─────
-            'driver_gender' => 'nullable|in:male,female',
-            'has_ac'        => 'nullable|boolean',
-
-            // ───── تحديد الأطفال (اختياري – إذا فارغ يعمل على كل الأطفال) ─────
-            'child_ids'     => 'nullable|array',
+            'search_query'  => ['nullable', 'string', 'max:255'],
+            'driver_gender' => ['nullable', 'string', Rule::in(['male', 'female', 'both'])],
+            'has_ac'        => ['nullable'],
+            
+            // تحقق ذكي وصارم للتأكد من وجود الأطفال وتبعيّتهم الفعليه لولي الأمر الحالي
+            'child_ids'     => ['nullable', 'array'],
             'child_ids.*'   => [
                 'integer',
-                // التحقق أن الطفل فعلاً يتبع لولي الأمر الحالي
-                'exists:children,id,parent_id,' . auth()->id(),
+                // 🔥 تم إضافة "use ($parentId)" هنا لكي يرى الكود المتغير بالداخل بدون مشاكل
+                Rule::exists('children', 'id')->where(function ($query) use ($parentId) {
+                    $query->where('parent_id', $parentId);
+                }),
             ],
         ];
     }
 
+    /**
+     * تخصيص رسائل الخطأ لتظهر بشكل احترافي في الفرونت إند
+     */
     public function messages(): array
     {
         return [
-            'driver_gender.in'     => 'جنس السائق يجب أن يكون male أو female.',
-            'has_ac.boolean'       => 'حقل المكيف يجب أن يكون true أو false.',
-            'child_ids.array'      => 'child_ids يجب أن يكون مصفوفة.',
-            'child_ids.*.integer'  => 'كل عنصر في child_ids يجب أن يكون رقماً صحيحاً.',
-            'child_ids.*.exists'   => 'أحد الأطفال المحددين غير موجود أو لا ينتمي لحسابك.',
+            'child_ids.*.exists' => 'أحد الأطفال المحددين غير موجود أو لا ينتمي لحسابك.',
+            'driver_gender.in'   => 'جنس السائق المحدد غير صحيح.',
         ];
     }
 }

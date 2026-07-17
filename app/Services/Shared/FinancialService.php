@@ -1,0 +1,252 @@
+<?php
+
+namespace App\Services\Shared;
+
+use App\Models\Shared\Contract;
+use App\Models\Shared\Invoice;
+use App\Models\Shared\Trip;
+use App\Models\Shared\TripStudentAttendance;
+use App\Models\Shared\ActiveSubscription;
+use App\Models\Parent\ParentModel;
+use App\Models\Driver\Driver;
+use App\Notifications\CustomDatabaseNotification;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+class FinancialService
+{
+    public function generateProformaInvoice(Contract $contract): Invoice
+    {
+        $contract->load(['parent.user', 'driver']);
+
+        $invoiceNumber = 'INV-' . $contract->contract_number;
+
+        $parent = $contract->parent;
+        $parentUserId = null;
+        if ($parent) {
+            $parentUserId = $parent->user_id ?? $parent->id;
+        }
+
+        $totalTrips = $this->calculateTotalTrips($contract);
+
+        return Invoice::create([
+            'contract_id'      => $contract->id,
+            'parent_id'        => $parentUserId,
+            'driver_id'        => $contract->driver_id,
+            'invoice_number'   => $invoiceNumber,
+            'amount'           => $contract->total_price ?? 0,
+            'type'             => 'proforma',
+            'status'           => 'pending',
+            'due_date'         => $contract->end_date ?? now()->addDays(30),
+            'subscription_type'=> $contract->subscription_type,
+            'total_trips'      => $totalTrips,
+            'completed_trips'  => 0,
+            'driver_absences'  => 0,
+            'student_absences' => 0,
+        ]);
+    }
+
+    public function settleContract(Contract $contract): Invoice
+    {
+        return DB::transaction(function () use ($contract) {
+            $contract->load(['parent', 'driver']);
+
+            $parent = $contract->parent;
+            $driver = $contract->driver;
+
+            if (!$parent || !$driver) {
+                throw new \Exception('بيانات العقد غير مكتملة.');
+            }
+
+            $proforma = Invoice::where('contract_id', $contract->id)
+                ->where('type', 'proforma')
+                ->where('status', 'pending')
+                ->latest()
+                ->first();
+
+            if (!$proforma) {
+                $proforma = $this->generateProformaInvoice($contract);
+            }
+
+            $trips = Trip::whereHas('route', function ($q) use ($contract) {
+                $q->where('contract_id', $contract->id);
+            })->where('driver_id', $contract->driver_id)->get();
+
+            $totalTrips = max($trips->count(), 1);
+            $completedTrips = $trips->where('status', 'completed');
+            $completedCount = $completedTrips->count();
+
+            $driverAbsences = $completedTrips->where('driver_attendance', false)->count();
+            $studentAbsences = 0;
+
+            $tripIds = $completedTrips->pluck('id');
+            if ($tripIds->isNotEmpty()) {
+                $studentAbsences = TripStudentAttendance::whereIn('trip_id', $tripIds)
+                    ->whereIn('attendance_status', ['absent', 'late'])
+                    ->count();
+            }
+
+            $perTripCost = $contract->total_price / $totalTrips;
+            $totalCost = $completedCount * $perTripCost;
+            $deductions = $driverAbsences * $perTripCost;
+            $netAmount = max($totalCost - $deductions, 0);
+
+            $parentWallet = $parent;
+            $driverWallet = $driver;
+
+            $parentBalance = $parentWallet->balance;
+            $sufficient = $parentBalance >= $netAmount;
+
+            if ($sufficient) {
+                $parentWallet->transfer($driverWallet, $netAmount);
+
+                $proforma->update([
+                    'status'            => 'paid',
+                    'type'              => 'final',
+                    'completed_trips'   => $completedCount,
+                    'driver_absences'   => $driverAbsences,
+                    'student_absences'  => $studentAbsences,
+                    'calculated_amount' => $netAmount,
+                    'paid_at'           => now(),
+                ]);
+
+                if ($parent->user) {
+                    $parent->user->notify(new CustomDatabaseNotification([
+                        'title'   => 'تم تسوية الاشتراك',
+                        'message' => "تم خصم {$netAmount} د.ل من محفظتك لقاء العقد رقم {$contract->contract_number}.",
+                        'type'    => 'settlement_paid',
+                    ]));
+                }
+
+                if ($driver->user) {
+                    $driver->user->notify(new CustomDatabaseNotification([
+                        'title'   => 'تم إيداع مستحقات الاشتراك',
+                        'message' => "تم إيداع {$netAmount} د.ل في محفظتك لقاء العقد رقم {$contract->contract_number}.",
+                        'type'    => 'settlement_received',
+                    ]));
+                }
+            } else {
+                $overdueInvoices = Invoice::where('contract_id', $contract->id)
+                    ->where('status', 'overdue')
+                    ->exists();
+
+                if ($overdueInvoices) {
+                    $contract->update(['status' => 'terminated']);
+
+                    ActiveSubscription::where('contract_id', $contract->id)
+                        ->update(['status' => 'suspended_unpaid']);
+                }
+
+                $proforma->update([
+                    'status'            => 'overdue',
+                    'type'              => 'final',
+                    'completed_trips'   => $completedCount,
+                    'driver_absences'   => $driverAbsences,
+                    'student_absences'  => $studentAbsences,
+                    'calculated_amount' => $netAmount,
+                    'action_taken'      => 'overdue_unpaid',
+                ]);
+
+                if ($parent->user) {
+                    $parent->user->notify(new CustomDatabaseNotification([
+                        'title'   => 'فاتورة غير مدفوعة',
+                        'message' => "رصيد محفظتك غير كافٍ لتسوية {$netAmount} د.ل للعقد {$contract->contract_number}. يرجى شحن المحفظة.",
+                        'type'    => 'settlement_overdue',
+                    ]));
+                }
+            }
+
+            return $proforma->fresh();
+        });
+    }
+
+    public function sendPreSettlementWarning(Contract $contract): void
+    {
+        $parent = $contract->parent;
+        if (!$parent || !$parent->user) return;
+
+        $invoice = Invoice::where('contract_id', $contract->id)
+            ->where('type', 'proforma')
+            ->where('status', 'pending')
+            ->first();
+
+        if (!$invoice) {
+            $invoice = $this->generateProformaInvoice($contract);
+        }
+
+        $parent->user->notify(new CustomDatabaseNotification([
+            'title'   => 'تذكير بتسوية الاشتراك',
+            'message' => "سيتم تسوية العقد رقم {$contract->contract_number} بقيمة {$invoice->amount} د.ل بعد 3 أيام. يرجى شحن محفظتك.",
+            'type'    => 'settlement_warning',
+            'action_url' => '/parent/wallet',
+        ]));
+    }
+
+    public function getParentInvoices(int $parentUserId, array $filters = [])
+    {
+        $query = Invoice::with(['contract', 'driver.user'])
+            ->where('parent_id', $parentUserId);
+
+        if (!empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
+        return $query->latest()->paginate(15);
+    }
+
+    public function getDriverInvoices(int $driverId, array $filters = [])
+    {
+        $query = Invoice::with(['contract', 'parent'])
+            ->where('driver_id', $driverId);
+
+        if (!empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
+        return $query->latest()->paginate(15);
+    }
+
+    public function getAllInvoices(array $filters = [])
+    {
+        $query = Invoice::with(['contract', 'parent', 'driver.user']);
+
+        if (!empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+        if (!empty($filters['type'])) {
+            $query->where('type', $filters['type']);
+        }
+        if (!empty($filters['driver_id'])) {
+            $query->where('driver_id', $filters['driver_id']);
+        }
+
+        return $query->latest()->paginate(15);
+    }
+
+    public function getInvoiceById(int $id): Invoice
+    {
+        return Invoice::with(['contract', 'parent', 'driver.user'])->findOrFail($id);
+    }
+
+    private function calculateTotalTrips(Contract $contract): int
+    {
+        $daysCount = $contract->days_count ?? 1;
+
+        if ($contract->subscription_type === 'daily') {
+            return $daysCount;
+        }
+
+        if ($contract->start_date && $contract->end_date) {
+            $weekdays = 0;
+            $start = $contract->start_date->copy();
+            $end = $contract->end_date->copy();
+            while ($start->lte($end)) {
+                if ($start->isWeekday()) $weekdays++;
+                $start->addDay();
+            }
+            return max($weekdays, 1);
+        }
+
+        return $daysCount;
+    }
+}

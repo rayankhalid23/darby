@@ -10,7 +10,8 @@ use App\Services\Parent\ChildService;
 use App\Http\Resources\Api\Parent\ChildResource;
 use Illuminate\Http\JsonResponse;
 use App\Http\Resources\Api\Parent\SubscriptionResource;
-use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class ChildrenController extends Controller
 {
@@ -21,26 +22,53 @@ class ChildrenController extends Controller
         $this->childService = $childService;
     }
 
+    /**
+     * جلب معرف الولي الفعلي المقابل للمستخدم الحالي
+     */
+    private function getActualParentId(): ?int
+    {
+        $parent = DB::table('parents')->where('user_id', auth()->id())->first();
+        return $parent ? (int) $parent->id : null;
+    }
+
     public function index(): JsonResponse
-{
-    // نستخدم ID المستخدم مباشرة لأن الصورة أظهرت أن parent_id في جدول الأطفال يساوي User ID
-    $userId = auth()->id(); 
+    {
+        $parentId = $this->getActualParentId();
 
-    $children = Child::where('parent_id', $userId)
-        ->with(['school', 'address', 'logistics']) 
-        ->get();
+        if (!$parentId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'عذراً، لم يتم العثور على ملف ولي أمر مرتبط بهذا الحساب.'
+            ], 404);
+        }
 
-    // إذا كنت لا تزال تحصل على مصفوفة فارغة، فالسبب هو عدم وجود بيانات تطابق هذا الـ ID
-    // أو أن العلاقات (Relationships) في الموديل لم تُعرف بشكل صحيح.
-    return response()->json([
-        'success' => true,
-        'data'    => ChildResource::collection($children)
-    ], 200);
-}
+        // الاستعلام الصحيح باستخدام parent_id الفعلي وليس user_id
+        $children = Child::where('parent_id', $parentId)
+            ->with(['school', 'address', 'logistics']) 
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data'    => ChildResource::collection($children)
+        ], 200);
+    }
 
     public function store(StoreChildRequest $request): JsonResponse
     {
-        $child = $this->childService->createChild($request->validated());
+        $parentId = $this->getActualParentId();
+        
+        if (!$parentId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'لا يمكن إضافة طفل لعدم وجود ملف ولي أمر نشط.'
+            ], 400);
+        }
+
+        // دمج الـ parent_id الصحيح داخل البيانات الممررة للسيرفس لضمان التخزين السليم
+        $data = $request->validated();
+        $data['parent_id'] = $parentId;
+
+        $child = $this->childService->createChild($data);
 
         return response()->json([
             'success' => true,
@@ -51,16 +79,14 @@ class ChildrenController extends Controller
 
     public function show($id): JsonResponse
     {
-        // نستخدم الـ ID الخاص بالمستخدم الحالي (8) لأن جدول الأطفال يستخدم الـ User ID كـ parent_id
-        $userId = auth()->id();
+        $parentId = $this->getActualParentId();
     
-        // نقوم بالبحث عن الطفل الذي يطابق الـ ID المرسل وفي نفس الوقت يتبع هذا المستخدم
+        // البحث عن الطفل بناءً على معرف الولي الصحيح
         $child = Child::where('id', $id)
-            ->where('parent_id', $userId) 
+            ->where('parent_id', $parentId) 
             ->with(['school', 'address', 'logistics'])
             ->first();
     
-        // إذا لم يجد الطفل (بسبب عدم تطابق الـ parent_id أو لأنه غير موجود)
         if (!$child) {
             return response()->json([
                 'success' => false,
@@ -73,31 +99,34 @@ class ChildrenController extends Controller
             'data'    => new ChildResource($child)
         ], 200);
     }
+
     public function getSubscription($id): JsonResponse
     {
-        $userId = auth()->id();
+        $parentId = $this->getActualParentId();
     
-        // نجلب الطفل مع العلاقة الصحيحة (logistics)
         $child = Child::where('id', $id)
-            ->where('parent_id', $userId)
-            ->with(['logistics']) // تأكد أن الاسم هنا يطابق اسم الدالة في الموديل
-            ->firstOrFail();
+            ->where('parent_id', $parentId)
+            ->with(['logistics']) 
+            ->first();
+
+        if (!$child) {
+            return response()->json([
+                'success' => false,
+                'message' => 'السجل غير موجود أو لا تملك صلاحية الوصول إليه.'
+            ], 404);
+        }
     
-        // إرسال البيانات للـ Resource (مع التأكد من تمرير العلاقة logistics)
         return response()->json([
             'success' => true,
             'data'    => new SubscriptionResource($child->logistics) 
         ], 200);
     }
-    /**
-     * تعديل بيانات الطفل والاشتراك اللوجستي
-     */
+
     public function update(UpdateChildRequest $request, $id): JsonResponse
     {
-        $userId = auth()->id();
+        $parentId = $this->getActualParentId();
 
-        // جلب الطفل والتحقق من صلاحية ولي الأمر الحالي
-        $child = Child::where('id', $id)->where('parent_id', $userId)->first();
+        $child = Child::where('id', $id)->where('parent_id', $parentId)->first();
 
         if (!$child) {
             return response()->json([
@@ -106,7 +135,6 @@ class ChildrenController extends Controller
             ], 404);
         }
 
-        // استدعاء السيرفس لتنفيذ التحديث الفعلي مع رفع الصورة
         $updatedChild = $this->childService->updateChild($child, $request->validated());
 
         return response()->json([
@@ -116,15 +144,11 @@ class ChildrenController extends Controller
         ], 200);
     }
 
-    /**
-     * حذف الطفل نهائياً أو (Soft Delete) من حساب ولي الأمر
-     */
     public function destroy($id): JsonResponse
     {
-        $userId = auth()->id();
+        $parentId = $this->getActualParentId();
 
-        // جلب الطفل والتحقق من الصلاحية قبل الحذف
-        $child = Child::where('id', $id)->where('parent_id', $userId)->first();
+        $child = Child::where('id', $id)->where('parent_id', $parentId)->first();
 
         if (!$child) {
             return response()->json([
@@ -133,7 +157,6 @@ class ChildrenController extends Controller
             ], 404);
         }
 
-        // استدعاء السيرفس لحذف السجل وملف الصورة المادي
         $this->childService->deleteChild($child);
 
         return response()->json([

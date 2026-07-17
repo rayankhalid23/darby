@@ -5,8 +5,12 @@ namespace App\Services\Shared;
 use App\Models\Shared\Contract;
 use App\Models\Shared\SubscriptionRequest;
 use App\Models\Shared\Clause;
+use App\Models\Shared\ActiveSubscription;
+use App\Models\Parent\ParentModel;
+use App\Notifications\CustomDatabaseNotification;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 use niklasravnsborg\LaravelPdf\Facades\Pdf as PDF;
 use Exception;
 
@@ -14,6 +18,13 @@ class ContractService
 {
     private string $primaryColor = '#007A99';
     private string $accentColor  = '#F59E0B';
+
+    protected FinancialService $financialService;
+
+    public function __construct(FinancialService $financialService)
+    {
+        $this->financialService = $financialService;
+    }
 
     // ============================================================
     // توليد العقد تلقائياً عند القبول
@@ -64,10 +75,96 @@ class ContractService
             $contract->update(['pdf_path' => $pdfPath]);
         } catch (Exception $e) {
             Log::error("فشل توليد PDF للعقد {$contractNumber}: " . $e->getMessage());
-            // لا نوقف العملية بسبب فشل PDF فقط
+        }
+
+        // 6. إنشاء الفاتورة المبدئية (بروفورما)
+        try {
+            $this->financialService->generateProformaInvoice($contract);
+        } catch (Exception $e) {
+            Log::error("فشل توليد الفاتورة المبدئية للعقد {$contractNumber}: " . $e->getMessage());
         }
 
         return $contract->load(['subscriptionRequest', 'parent.user', 'driver.user', 'activeSubscriptions']);
+    }
+
+    /**
+     * قبول وتوقيع العقد من قبل ولي الأمر
+     */
+    public function acceptContract(int $contractId): Contract
+    {
+        return DB::transaction(function () use ($contractId) {
+            $contract = Contract::with(['parent.user', 'driver.user'])->findOrFail($contractId);
+
+            if ($contract->status === 'active') {
+                $contract->update(['signed_at' => now()]);
+                return $contract;
+            }
+
+            if (!in_array($contract->status, ['pending_parent_approval', 'draft'])) {
+                throw new Exception('لا يمكن قبول عقد بحالته الحالية.', 400);
+            }
+
+            $contract->update([
+                'status'    => 'active',
+                'signed_at' => now(),
+            ]);
+
+            ActiveSubscription::where('contract_id', $contract->id)
+                ->update(['status' => 'active']);
+
+            try {
+                $this->financialService->generateProformaInvoice($contract);
+            } catch (Exception $e) {
+                Log::error("فشل توليد الفاتورة للعقد {$contract->contract_number}: " . $e->getMessage());
+            }
+
+            if ($contract->parent && $contract->parent->user) {
+                $contract->parent->user->notify(new CustomDatabaseNotification([
+                    'title'   => 'تم توقيع العقد',
+                    'message' => "تم توقيع العقد رقم {$contract->contract_number} بنجاح وبدء الاشتراك.",
+                    'type'    => 'contract_signed',
+                ]));
+            }
+
+            if ($contract->driver && $contract->driver->user) {
+                $contract->driver->user->notify(new CustomDatabaseNotification([
+                    'title'   => 'تم توقيع العقد',
+                    'message' => "قام ولي الأمر بتوقيع العقد رقم {$contract->contract_number}.",
+                    'type'    => 'contract_signed',
+                ]));
+            }
+
+            return $contract->fresh()->load(['parent.user', 'driver.user', 'activeSubscriptions']);
+        });
+    }
+
+    /**
+     * رفض العقد من قبل ولي الأمر
+     */
+    public function rejectContract(int $contractId): Contract
+    {
+        return DB::transaction(function () use ($contractId) {
+            $contract = Contract::findOrFail($contractId);
+
+            if ($contract->status === 'active') {
+                throw new Exception('لا يمكن رفض عقد مُفعّل بالفعل.', 400);
+            }
+
+            $contract->update(['status' => 'rejected']);
+
+            ActiveSubscription::where('contract_id', $contract->id)
+                ->update(['status' => 'cancelled']);
+
+            if ($contract->parent && $contract->parent->user) {
+                $contract->parent->user->notify(new CustomDatabaseNotification([
+                    'title'   => 'تم رفض العقد',
+                    'message' => "تم رفض العقد رقم {$contract->contract_number}.",
+                    'type'    => 'contract_rejected',
+                ]));
+            }
+
+            return $contract->fresh();
+        });
     }
 
     // ============================================================

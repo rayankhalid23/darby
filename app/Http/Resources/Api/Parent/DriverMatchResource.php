@@ -27,8 +27,12 @@ class DriverMatchResource extends JsonResource
         $children = $this->children_context ?? collect();
 
         return [
+            // ── المعرفات الصريحة (لمنع الاختلاط في الفرونت إند) ──
+            'id'               => (int) $this->id, // المعرف الأساسي في هذا الريكويست
+            'driver_id'        => (int) $this->id, // المعرف الصريح لجدول السائقين
+            'user_id'          => $user?->id ? (int) $user->id : null, // المعرف التابع لجدول المستخدمين
+
             // ── بيانات السائق الأساسية ──
-            'id'               => $this->id,
             'full_name'        => $user?->full_name ?? 'غير متوفر',
             'phone_number'     => $user?->phone_number ?? 'غير متوفر',
             'alternative_phone'=> $user?->alternative_phone,

@@ -120,4 +120,22 @@ Route::get('profile/vehicle', [ProfileController::class, 'showVehicle'])
     // مسار لعرض جميع المناطق المتاحة في النظام للسائق ليتمكن من اختيارها
 Route::get('zones', [ZoneController::class, 'index'])
 ->name('api.driver.zones.index');    
+
+    // مسارات المحفظة المالية والسحب
+    Route::prefix('wallet')->group(function () {
+        Route::get('/balance', [App\Http\Controllers\Api\Driver\WithdrawalController::class, 'balance']);
+    });
+
+    // مسارات السحب
+    Route::prefix('withdrawals')->group(function () {
+        Route::get('/', [App\Http\Controllers\Api\Driver\WithdrawalController::class, 'index']);
+        Route::post('/', [App\Http\Controllers\Api\Driver\WithdrawalController::class, 'store']);
+    });
+
+    // مسارات الفواتير
+    Route::prefix('invoices')->group(function () {
+        Route::get('/', [App\Http\Controllers\Api\Shared\InvoiceController::class, 'index']);
+        Route::get('/{id}', [App\Http\Controllers\Api\Shared\InvoiceController::class, 'show']);
+    });
+
 });

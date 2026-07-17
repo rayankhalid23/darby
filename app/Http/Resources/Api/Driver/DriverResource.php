@@ -19,63 +19,47 @@ class DriverResource extends JsonResource
                 return [];
             }
 
+            // 🧠 هندسة ذكية: فصل الهويات وتحديد الموديل الممرر تلقائياً
+            $user = null;
+            $driver = null;
+
+            if ($this->resource instanceof \App\Models\User) {
+                // إذا تم تمرير موديل المستخدم (مثلما يحدث في الـ LoginController)
+                $user = $this->resource;
+                $driver = $user->driver ?? $user->driverProfile ?? null; // جلب علاقة السائق
+            } else {
+                // إذا تم تمرير موديل السائق مباشرة (مثل عمليات الـ CRUD العادية)
+                $driver = $this->resource;
+                $user = $driver->user ?? null;
+            }
+
             return [
                 // 1. البيانات الشخصية والحساب
-                'id'            => (int) $this->id,
-                'account_id'    => (int) $this->user_id,
-                'full_name'     => $this->user?->full_name ?? '',
-                'gender'        => $this->gender ?? '',
-                'phone_number'  => $this->user?->phone_number ?? '',
-                'alternative_phone' => $this->user?->alternative_phone ?? null,
-                'email'         => $this->user?->email ?? '', 
-                'new_email_temporary'  => $this->user?->new_email_temporary ?? null,
-                'email_change_pending' => (bool) ($this->user?->email_change_pending ?? false),
-                'avatar_url'    => $this->user?->avatar_url ? asset($this->user->avatar_url) : null,
-                'is_active'     => (bool) ($this->user?->is_active ?? false),
+                'driver_id'                   => $driver ? (int) $driver->id : null, // معرف السائق (Driver ID)
+                'user_id'           => (int) ($user?->id ?? $driver?->user_id ?? 0), // معرف المستخدم (User ID)
+                'full_name'            => $user?->full_name ?? '',
+                'gender'               => $driver?->gender ?? '',
+                'phone_number'         => $user?->phone_number ?? '',
+                'alternative_phone'    => $user?->alternative_phone ?? null,
+                'email'                => $user?->email ?? '', 
+                'new_email_temporary'  => $user?->new_email_temporary ?? null,
+                'email_change_pending' => (bool) ($user?->email_change_pending ?? false),
+                'avatar_url'           => $user?->avatar_url ? asset($user->avatar_url) : null,
+                'is_active'            => (bool) ($user?->is_active ?? false),
 
-                'access_token'      => $this->when(isset($this->access_token) || isset($this->user->access_token), $this->access_token ?? $this->user?->access_token),
+                // التوكن يظهر ديناميكياً فقط عند تسجيل الدخول أو التسجيل
+                'access_token'         => $this->when(
+                    isset($this->access_token) || isset($user->access_token), 
+                    $this->access_token ?? $user?->access_token
+                ),
 
-                // 2. البيانات المهنية
-                'national_id'    => $this->national_id,
-                'license_number' => $this->license_number,
-                'license_expiry' => $this->license_expiry,
-                'driver_status'  => $this->status ?? 'Pending',
+                // 2. البيانات المهنية (تُجلب بأمان من كائن السائق المحلول)
+                'national_id'          => $driver?->national_id,
+                'license_number'       => $driver?->license_number,
+                'license_expiry'       => $driver?->license_expiry,
+                'driver_status'        => $driver?->status ?? 'Pending',
                 
-                'location' => [
-                    'lat'       => $this->current_lat ? (float) $this->current_lat : null,
-                    'lng'       => $this->current_lng ? (float) $this->current_lng : null,
-                    'last_ping' => $this->last_ping_at,
-                ],
-
-                // 3. المركبات
-                'vehicles' => $this->relationLoaded('vehicles') ? $this->vehicles->map(function ($vehicle) {
-                    return [
-                        'id'                => (int) $vehicle->id,
-                        'plate_number'      => $vehicle->plate_number,
-                        'brand'             => $vehicle->brand,
-                        'model'             => $vehicle->model,
-                        'year'              => (int) $vehicle->year,
-                        'color'             => $vehicle->color,
-                        'type'              => $vehicle->type,
-                        'capacity'          => (int) $vehicle->capacity_manual,
-                        'has_ac'            => (bool) $vehicle->has_ac,
-                        'is_verified'       => (bool) $vehicle->is_verified,
-                        'vehicle_image_url' => $vehicle->vehicle_image_url ? asset($vehicle->vehicle_image_url) : null,
-                        'status'            => $vehicle->status,
-                    ];
-                }) : [],
-
-                // 4. الوثائق
-                'documents' => $this->relationLoaded('documents') ? $this->documents->map(function ($doc) {
-                    return [
-                        'id'          => (int) $doc->id,
-                        'doc_type'    => $doc->doc_type,
-                        'file_url'    => $doc->file_url ? asset($doc->file_url) : null,
-                        'status'      => $doc->status,
-                        'feedback'    => $doc->feedback,
-                        'uploaded_at' => $doc->uploaded_at,
-                    ];
-                }) : [],
+            
             ];
 
         } catch (Exception $e) {

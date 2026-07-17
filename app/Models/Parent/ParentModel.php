@@ -2,17 +2,18 @@
 
 namespace App\Models\Parent;
 
+use Bavix\Wallet\Interfaces\Wallet;
+use Bavix\Wallet\Traits\HasWallet;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\User;
 
-class ParentModel extends Model
+class ParentModel extends Model implements Wallet
 {
-    use HasFactory;
+    use HasFactory, HasWallet;
 
-    protected $table = 'parents'; // تحديد اسم الجدول يدوياً
-    
-    public $timestamps = false; // الجدول لا يحتوي على created_at/updated_at
+    protected $table = 'parents';
+    public $timestamps = false;
 
     protected $fillable = [
         'user_id',

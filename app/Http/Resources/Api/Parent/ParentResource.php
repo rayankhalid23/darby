@@ -33,13 +33,18 @@ class ParentResource extends JsonResource
             $user = $this->user ?? null;
         }
 
+        // --- استخلاص رابط الصورة وحل مشكلة النصوص الفارغة بشكل هندسي ---
+        $rawAvatar = null;
+        if ($user && !empty(trim($user->avatar_url))) {
+            $rawAvatar = $user->avatar_url;
+        } elseif ($parentProfile && !empty(trim($parentProfile->avatar_url))) {
+            $rawAvatar = $parentProfile->avatar_url;
+        }
+
         // 3. بناء المصفوفة مع وضع قيم بديلة (Fallbacks) ذكية لكل حقل لتفادي أي خطأ
         return [
-            // المعرفات المضافة حديثاً بناءً على طلبك لتحديد الهوية بدقة للـ API
             'id_user'              => (int) ($user?->id ?? $parentProfile?->user_id ?? 0),
-            'id_parent'            => $parentProfile?->id ? (int) $parentProfile->id : null,
-
-           
+            'parent_id'            => $parentProfile?->id ? (int) $parentProfile->id : null,
             'full_name'            => $user?->full_name ?? $parentProfile?->full_name ?? $this->full_name ?? '',
             'email'                => $user?->email ?? $parentProfile?->email ?? $this->email ?? '',
             'phone_number'         => $user?->phone_number ?? $parentProfile?->phone_number ?? $this->phone_number ?? '',
@@ -50,10 +55,8 @@ class ParentResource extends JsonResource
             // جلب حالة الحساب الموثوق
             'is_trusted'           => (bool) ($parentProfile?->is_trusted ?? false),
             
-            // جلب رابط الصورة بشكل مرن وسلس سواء كانت مخزنة في جدول المستخدم أو الملف الشخصي لولي الأمر
-            'avatar_url'           => ($user?->avatar_url ?? $parentProfile?->avatar_url) 
-                                        ? asset($user?->avatar_url ?? $parentProfile?->avatar_url) 
-                                        : null,
+            // الحل الجذري لعرض رابط الصورة الصحيح أو null للفرونت إند لمنع التشوه
+            'avatar_url'           => $rawAvatar ? asset($rawAvatar) : null,
 
             // التنبيه الخاص بتعديل البريد الإلكتروني المعلق
             'email_change_pending' => (bool) ($user?->email_change_pending ?? $parentProfile?->email_change_pending ?? $this->email_change_pending ?? false),
