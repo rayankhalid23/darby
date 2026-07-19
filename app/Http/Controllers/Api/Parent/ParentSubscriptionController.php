@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Api\Parent;
+namespace App\Http\Controllers\API\Parent;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Shared\StoreSubscriptionRequest;
@@ -105,6 +105,35 @@ class ParentSubscriptionController extends Controller
                 'success' => false,
                 'message' => $e->getMessage() // رسالة الخطأ تأتي من السيرفس (مثلاً: غير موجود أو لا تملك الصلاحية)
             ], 404);
+        }
+    }
+
+   
+
+    /**
+     * إلغاء الاشتراك
+     */
+    public function cancel(int $id): JsonResponse
+    {
+        try {
+            $subscription = $this->subscriptionService->cancelSubscriptionByParent($id, auth()->id());
+
+            return response()->json([
+                'success' => true,
+                'message' => 'تم إلغاء طلب الاشتراك بنجاح.',
+                'data'    => new SubscriptionRequestResource($subscription)
+            ], 200);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'طلب الاشتراك غير موجود أو لا تملك صلاحية إلغائه.'
+            ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 422);
         }
     }
 }

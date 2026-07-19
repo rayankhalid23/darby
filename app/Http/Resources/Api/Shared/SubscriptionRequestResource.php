@@ -54,7 +54,7 @@ class SubscriptionRequestResource extends JsonResource
                 return [
                     'id'              => $this->contract->id,
                     'contract_number' => $this->contract->contract_number,
-                    'pdf_url'         => $this->contract->pdf_path ? asset('storage/' . $this->contract->pdf_path) : null,
+       
                 ];
             }),
         ];

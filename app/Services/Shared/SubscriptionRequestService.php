@@ -158,7 +158,7 @@ private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent
        $osrm = new \App\Services\Shared\OsrmRoutingService();
         
        $driverPos = ['lat' => (float)($req->driver->current_lat ?? 0), 'lng' => (float)($req->driver->current_lng ?? 0)];
-       $childPos  = ['lat' => (float)($req->children->first()->latitude ?? 0), 'lng' => (float)($req->children->first()->longitude ?? 0)];
+       $childPos  = ['lat' => (float)($req->children->first()->pivot->home_lat ?? 0), 'lng' => (float)($req->children->first()->pivot->home_lng ?? 0)];
        $schoolPos = ['lat' => (float)($req->school->latitude ?? 0), 'lng' => (float)($req->school->longitude ?? 0)];
 
        $routeData = $osrm->calculateRoute([$driverPos, $childPos, $schoolPos]);
@@ -337,5 +337,36 @@ private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent
         }
 
         return $request;
+    }/**
+     * إلغاء طلب الاشتراك بواسطة ولي الأمر قبل قبول السائق له
+     */
+    public function cancelSubscriptionByParent(int $id, int $userId): SubscriptionRequest
+    {
+        // 1. جلب بيانات ولي الأمر بناءً على الـ userId الممرر من الكنترولر بنفس أسلوب الدوال السابقة بالملف
+        $parent = ParentModel::where('user_id', $userId)->first();
+        if (!$parent) {
+            throw new Exception('هذا الحساب غير مسجل كولي أمر في النظام.');
+        }
+
+        // 2. جلب الطلب والتأكد من ملكيته لولي الأمر الحالي
+        $subscription = SubscriptionRequest::where('id', $id)
+            ->where('parent_id', $parent->id)
+            ->first();
+
+        if (!$subscription) {
+            throw new Exception('طلب الاشتراك غير موجود، أو لا تملك صلاحية الوصول إليه.');
+        }
+
+        // 3. التحقق من حالة الطلب (الإلغاء متاح فقط للحالات المعلقة)
+        if ($subscription->status !== SubscriptionRequest::STATUS_PENDING) {
+            throw new Exception('لا يمكن إلغاء هذا الطلب لأن حالته الحالية هي: ' . $subscription->status);
+        }
+
+        // 4. تحديث الحالة إلى ملغي
+        $subscription->update([
+            'status' => SubscriptionRequest::STATUS_CANCELLED
+        ]);
+
+        return $subscription;
     }
 }
