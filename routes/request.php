@@ -35,40 +35,36 @@ Route::middleware('auth:sanctum')->group(function () {
     // مسارات أولياء الأمور لإرسال واستعراض طلبات الاشتراك
     // ============================================================
     Route::prefix('parent')->group(function () {
-        // عرض جميع طلبات ولي الأمر (أو الصفحة الرئيسية للملف الشخصي)
-        Route::get('/', [ParentSubscriptionController::class, 'index']); 
+        // المسار الموحد لجلب طلبات الاشتراك (الطلبات الأولية المعلقة والمرفوضة)
+        Route::get('/requests', [ParentSubscriptionController::class, 'index']); 
         
-        // إرسال طلب اشتراك جديد
+        // المسار الموحد والوحيد الجديد لجلب الاشتراكات المفعّلة والموافَق عليها بالفلاتر
+        Route::get('/active-subscriptions', [ParentSubscriptionController::class, 'activeSubscriptions']); 
+        
         Route::post('/', [ParentSubscriptionController::class, 'store']); 
-        
-        // عرض الطلبات المعلقة فقط (لتسهيل متابعة الحالة على ولي الأمر)
-        Route::get('/requests/pending', [ParentSubscriptionController::class, 'index']);
-        
-        // عرض تفاصيل طلب اشتراك محدد
         Route::get('/requests/{id}', [ParentSubscriptionController::class, 'show']); 
-        
-        // راوت جلب جميع الاشتراكات
-        Route::get('/subscriptions', [ParentSubscriptionController::class, 'index']);
-        
-        // راوت جلب تفاصيل اشتراك محدد
-        Route::get('/subscriptions/{id}', [ParentSubscriptionController::class, 'show']);
-
-        // ✅ تم الإصلاح هنا: توجيه مسار الإلغاء إلى الكنترولر الصحيح والشغال
         Route::post('subscriptions/{id}/cancel', [ParentSubscriptionController::class, 'cancel']);
     });
 
     // ============================================================
-    // مسارات السائقين
+    // مسارات السائقين المحدثة
     // ============================================================
     Route::prefix('driver')->group(function () {
-        // 1. مسارات ثابتة أولاً
-        Route::get('/', [DriverSubscriptionController::class, 'index']);
+        // 1. مسارات ثابتة (Static Routes) - توضع أولاً
+        
+        // المسار الموحد الجديد لجلب طلبات الاشتراك المبدئية بالفلاتر
+        Route::get('/requests', [DriverSubscriptionController::class, 'index']); 
+        
+        // المسار الموحد الجديد لجلب الاشتراكات الفعلية والمثبتة بالفلاتر
+        Route::get('/active-subscriptions', [DriverSubscriptionController::class, 'activeSubscriptions']); 
+        
         Route::get('/routes', [DriverRouteController::class, 'index']); 
         Route::post('/trips/start', [TripController::class, 'startTrip']);
         
-        // 2. مسارات تحتوي على متغيرات (Parameters) أخيراً
+        // 2. مسارات تحتوي على متغيرات (Dynamic Parameters) - توضع أخيراً
         Route::put('/routes/{route}', [DriverRouteController::class, 'update']);
         Route::get('/{id}', [DriverSubscriptionController::class, 'show']); 
         Route::put('{id}/status', [DriverSubscriptionController::class, 'updateStatus']); 
     });
+    
 });

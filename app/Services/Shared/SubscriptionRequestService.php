@@ -285,24 +285,6 @@ private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent
             }
         }
     }
-    public function getParentSubscriptions(int $userId, ?string $status = null)
-    {
-        $parent = ParentModel::where('user_id', $userId)->first();
-        if (!$parent) {
-            throw new Exception('هذا الحساب غير مسجل كولي أمر في النظام.');
-        }
-
-        $query = SubscriptionRequest::with(['children.school', 'driver.user', 'school', 'contract'])
-            ->where('parent_id', $parent->id);
-
-        if (!empty($status)) {
-            $query->where('status', $status);
-        }
-
-        // ترتيب الطلبات من الأحدث للأقدم
-        return $query->latest()->get();
-    }
-
     // ============================================================
     // جلب تفاصيل اشتراك معين لولي الأمر (الدالة الجديدة)
     // ============================================================
@@ -369,4 +351,149 @@ private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent
 
         return $subscription;
     }
+
+    /**
+     * جلب الاشتراكات المفعّلة لولي الأمر والموافَق عليها مقسمة بالفلاتر الذكية
+     */
+    public function getParentActiveSubscriptions(int $userId, ?string $filter = null)
+    {
+        // 1. جلب سجل ولي الأمر بالكامل للحصول على معرف جدول أولياء الأمور (id)
+        $parent = ParentModel::where('user_id', $userId)->first();
+        if (!$parent) {
+            throw new Exception('هذا الحساب غير مسجل كولي أمر في النظام.');
+        }
+
+        // 2. بناء الاستعلام مع جلب العلاقات
+        $query = ActiveSubscription::with([
+            'contract', 
+            'child.school', 
+            'driver.user', 
+            'driver.vehicles'
+        ])
+        // هنا الحل: البحث بكلا المعرفين لضمان جلب البيانات مهما كانت طريقة الحفظ السابقة
+        ->where(function ($q) use ($userId, $parent) {
+            $q->where('parent_id', $parent->id)
+              ->orWhere('parent_id', $userId);
+        });
+
+        $today = now()->toDateString();
+
+        // 3. تطبيق الفلترة الذكية
+        switch ($filter) {
+            case 'current_active': // نشطة حالياً
+                $query->where('status', 'active')
+                      ->whereHas('contract', function ($q) use ($today) {
+                          $q->where('start_date', '<=', $today)
+                            ->where('end_date', '>=', $today);
+                      });
+                break;
+
+            case 'pending_start': // معلقة (لم تبدأ بعد)
+                $query->where('status', 'active')
+                      ->whereHas('contract', function ($q) use ($today) {
+                          $q->where('start_date', '>', $today);
+                      });
+                break;
+
+            case 'completed': // مكتملة
+                $query->where(function($q) use ($today) {
+                    $q->whereHas('contract', function ($c) use ($today) {
+                        $c->where('end_date', '<', $today);
+                    })->orWhere('status', 'completed');
+                });
+                break;
+
+            case 'cancelled': // ملغاة
+                $query->where('status', 'cancelled');
+                break;
+        }
+
+        return $query->latest()->get();
+    }
+
+    /**
+     * جلب طلبات الاشتراك المبدئية الواردة للسائق مع الفلترة الذكية
+     */
+    public function getDriverSubscriptionRequests(int $userId, ?string $filter = null)
+    {
+        $driver = Driver::where('user_id', $userId)->first();
+        if (!$driver) {
+            throw new Exception('لم يتم العثور على ملف السائق الخاص بك.');
+        }
+
+        $query = SubscriptionRequest::where('driver_id', $driver->id)
+            ->with([
+                'parent.user', // هنا نستدعي user لأن parent تشير إلى ParentModel
+                'school:id,name',
+                'children'
+            ]);
+
+        // تطبيق الفلترة بناءً على الـ status
+        switch ($filter) {
+            case 'pending':
+                $query->where('status', SubscriptionRequest::STATUS_PENDING);
+                break;
+            case 'cancelled':
+                $query->where('status', SubscriptionRequest::STATUS_CANCELLED);
+                break;
+            case 'rejected':
+                $query->where('status', SubscriptionRequest::STATUS_REJECTED);
+                break;
+        }
+
+        return $query->orderBy('id', 'desc')->get();
+    }
+
+    /**
+     * جلب الاشتراكات المفعّلة والمثبتة للسائق مع الفلترة الذكية والزمنية
+     */
+    public function getDriverActiveSubscriptions(int $userId, ?string $filter = null)
+    {
+        $driver = Driver::where('user_id', $userId)->first();
+        if (!$driver) {
+            throw new Exception('لم يتم العثور على ملف السائق الخاص بك.');
+        }
+
+        $query = ActiveSubscription::where('driver_id', $driver->id)
+            ->with([
+                'contract',
+                'child.school',
+                'parent' // تم التعديل هنا: جلب parent مباشرة لأنها مرتبطة بمودل User فوراً
+            ]);
+
+        $today = now()->toDateString();
+
+        // تطبيق فلاتر الحالات والتواريخ
+        switch ($filter) {
+            case 'current_active':
+                $query->where('status', 'active')
+                      ->whereHas('contract', function ($q) use ($today) {
+                          $q->where('start_date', '<=', $today)
+                            ->where('end_date', '>=', $today);
+                      });
+                break;
+
+            case 'pending_start':
+                $query->where('status', 'active')
+                      ->whereHas('contract', function ($q) use ($today) {
+                          $q->where('start_date', '>', $today);
+                      });
+                break;
+
+            case 'completed':
+                $query->where(function($q) use ($today) {
+                    $q->whereHas('contract', function ($c) use ($today) {
+                        $c->where('end_date', '<', $today);
+                    })->orWhere('status', 'completed');
+                });
+                break;
+
+            case 'cancelled':
+                $query->where('status', 'cancelled');
+                break;
+        }
+
+        return $query->orderBy('id', 'desc')->get();
+    }
+    
 }

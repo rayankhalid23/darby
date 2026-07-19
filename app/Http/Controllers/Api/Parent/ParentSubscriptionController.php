@@ -52,26 +52,25 @@ class ParentSubscriptionController extends Controller
     }
 
     /**
-     * جلب كافة طلبات الاشتراكات (مع دعم الفلترة الذكية)
-     * دمجنا index و indexPending في دالة واحدة احترافية
+     * جلب كافة طلبات الاشتراكات (المعلقة / الملغاة من ولي الأمر / المرفوضة من السائق)
      */
     public function index(Request $request): JsonResponse
     {
         try {
-            // فلترة اختيارية للحالة (مثال: ?status=pending)
+            // التحقق من أن الفلتر المرسل يقتصر على الحالات الثلاث المطلوبة فقط
             $request->validate([
-                'status' => 'nullable|string|in:pending,accepted,rejected,cancelled,completed'
+                'status' => 'nullable|string|in:pending,cancelled,rejected'
             ]);
 
             $userId = $request->user()->id;
-            $status = $request->query('status');
+            $status = $request->query('status'); // استقبال الفلتر من الـ URL
 
-            // الاعتماد على الـ Service لجلب البيانات
+            // استدعاء السيرفس المطورة
             $subscriptions = $this->subscriptionService->getParentSubscriptions($userId, $status);
 
             return response()->json([
                 'success' => true,
-                'message' => 'تم جلب الاشتراكات بنجاح.',
+                'message' => 'تم جلب طلبات الاشتراكات بنجاح.',
                 'data'    => SubscriptionRequestResource::collection($subscriptions)
             ], 200);
 
@@ -79,7 +78,7 @@ class ParentSubscriptionController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage()
-            ], 400); // 400 Bad Request عادة إذا لم يكن المستخدم ولي أمر
+            ], 400);
         }
     }
 
@@ -134,6 +133,36 @@ class ParentSubscriptionController extends Controller
                 'success' => false,
                 'message' => $e->getMessage()
             ], 422);
+        }
+    }
+    /**
+     * جلب كافة الاشتراكات الموافَق عليها (نشطة حالياً / معلقة / مكتملة / ملغاة) مع الفلترة
+     */
+    public function activeSubscriptions(Request $request): JsonResponse
+    {
+        try {
+            // التحقق من صحة الفلتر المرسل في الـ URL Query Parameter
+            $request->validate([
+                'filter' => 'nullable|string|in:current_active,pending_start,completed,cancelled'
+            ]);
+
+            $userId = $request->user()->id;
+            $filter = $request->query('filter');
+
+            // استدعاء السيرفس لجلب البيانات
+            $activeSubscriptions = $this->subscriptionService->getParentActiveSubscriptions($userId, $filter);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'تم جلب البيانات بنجاح.',
+                'data'    => \App\Http\Resources\Api\Parent\SubscriptionResource::collection($activeSubscriptions)
+            ], 200);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
         }
     }
 }

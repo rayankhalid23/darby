@@ -23,55 +23,56 @@ class DriverSubscriptionController extends Controller
     }
 
     /**
-     * عرض جميع الطلبات الواردة للسائق الحالي
+     * عرض قائمة طلبات الاشتراك الأولية الخاصة بالسائق مع فلتر اختياري
+     * GET /api/driver/requests?filter=pending|cancelled|rejected
      */
+    public function index(Request $request): JsonResponse
+    {
+        try {
+            $requests = $this->subscriptionService->getDriverSubscriptionRequests(
+                auth()->id(),
+                $request->query('filter')
+            );
+
+            return response()->json([
+                'success' => true,
+                'count'   => $requests->count(),
+                'data'    => $requests
+            ], 200);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], $e->getCode() == 403 ? 403 : 500);
+        }
+    }
+
     /**
-     * عرض قائمة طلبات الاشتراك الخاصة بالسائق
+     * عرض قائمة الاشتراكات الفعلية والمثبتة المعتمدة للسائق مع فلتر اختياري
+     * GET /api/driver/active-subscriptions?filter=current_active|pending_start|completed|cancelled
      */
-   /**
- * عرض قائمة طلبات الاشتراك الخاصة بالسائق
- */
-public function index(): JsonResponse
-{
-    // 1. جلب بيانات السائق بناءً على الـ user_id للمستخدم المسجل حالياً
-    $driver = Driver::where('user_id', auth()->id())->first();
+    public function activeSubscriptions(Request $request): JsonResponse
+    {
+        try {
+            $subscriptions = $this->subscriptionService->getDriverActiveSubscriptions(
+                auth()->id(),
+                $request->query('filter')
+            );
 
-    // 2. التحقق من وجود السائق
-    if (!$driver) {
-        \Log::warning('Driver profile not found for user ID: ' . auth()->id());
-        return response()->json([
-            'success' => false,
-            'message' => 'لم يتم العثور على ملف السائق الخاص بك.'
-        ], 403);
+            return response()->json([
+                'success' => true,
+                'count'   => $subscriptions->count(),
+                'data'    => $subscriptions
+            ], 200);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], $e->getCode() == 403 ? 403 : 500);
+        }
     }
-
-    try {
-        // 3. جلب الطلبات المرتبطة بهذا السائق مع علاقاتها
-        // قمت بتقليل استهلاك الذاكرة بجلب الحقول الضرورية فقط إذا كانت القائمة طويلة جداً
-        $requests = SubscriptionRequest::where('driver_id', $driver->id)
-            ->with([
-                'parent.user:id,full_name,phone', // جلب حقول محددة فقط لزيادة الأداء
-                'school:id,name',
-                'children'
-            ])
-            ->orderBy('id', 'desc')
-            ->get();
-
-        // 4. إرجاع النتيجة
-        return response()->json([
-            'success' => true,
-            'count'   => $requests->count(), // مفيد جداً للموبايل
-            'data'    => $requests
-        ], 200);
-
-    } catch (\Exception $e) {
-        \Log::error('Error fetching driver requests: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'حدث خطأ أثناء جلب البيانات، يرجى المحاولة لاحقاً.'
-        ], 500);
-    }
-}
   
 
     /**
