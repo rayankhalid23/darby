@@ -104,8 +104,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [ComplaintController::class, 'store']);
         Route::post('/{id}', [ComplaintController::class, 'update']);
         Route::delete('/{id}', [ComplaintController::class, 'destroy']);
-        Route::get('/driver/{driverId}/trips', [ComplaintController::class, 'driverTrips']);
+        
     });
+    Route::get('/driver/{driverId}/trips', [ComplaintController::class, 'driverTrips']);
 
     // مسارات المحفظة المالية والشحن
     Route::prefix('wallet')->group(function () {
