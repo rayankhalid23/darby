@@ -28,44 +28,46 @@ class ParentSubscriptionController extends Controller
         try {
             $result = $this->subscriptionService->createRequest(
                 $request->validated(), 
-                $request->user()->id // استخدام $request->user()->id أكثر استقراراً في الـ APIs
+                $request->user()->id 
             );
 
             return response()->json([
                 'success' => true,
                 'message' => 'تم إرسال طلب الاشتراك بنجاح.',
-                'data'    => new SubscriptionRequestResource($result) // تغليف المخرج بالريسورس
+                'data'    => new SubscriptionRequestResource($result)
             ], 201);
 
         } catch (Exception $e) {
-            Log::error('Subscription Request Error: ' . $e->getMessage(), [
+            // تسجيل الخطأ بالتفصيل
+            Log::error('Error in ParentSubscriptionController@store', [
+                'message' => $e->getMessage(),
+                'file'    => $e->getFile(),
+                'line'    => $e->getLine(),
                 'user_id' => $request->user()->id ?? null,
+                'request' => $request->all(),
                 'trace'   => $e->getTraceAsString()
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'عذراً، حدث خطأ أثناء معالجة الطلب، يرجى المحاولة لاحقاً.',
-                // 'error' => $e->getMessage() // يمكن تفعيله أثناء التطوير فقط
             ], 500);
         }
     }
 
     /**
-     * جلب كافة طلبات الاشتراكات (المعلقة / الملغاة من ولي الأمر / المرفوضة من السائق)
+     * جلب كافة طلبات الاشتراكات 
      */
     public function index(Request $request): JsonResponse
     {
         try {
-            // التحقق من أن الفلتر المرسل يقتصر على الحالات الثلاث المطلوبة فقط
             $request->validate([
                 'status' => 'nullable|string|in:pending,cancelled,rejected'
             ]);
 
             $userId = $request->user()->id;
-            $status = $request->query('status'); // استقبال الفلتر من الـ URL
+            $status = $request->query('status'); 
 
-            // استدعاء السيرفس المطورة
             $subscriptions = $this->subscriptionService->getParentSubscriptions($userId, $status);
 
             return response()->json([
@@ -75,9 +77,18 @@ class ParentSubscriptionController extends Controller
             ], 200);
 
         } catch (Exception $e) {
+            // تسجيل الخطأ بالتفصيل
+            Log::error('Error in ParentSubscriptionController@index', [
+                'message' => $e->getMessage(),
+                'file'    => $e->getFile(),
+                'line'    => $e->getLine(),
+                'user_id' => $request->user()->id ?? null,
+                'query'   => $request->query()
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage()
+                'message' => 'حدث خطأ أثناء جلب البيانات.'
             ], 400);
         }
     }
@@ -89,8 +100,6 @@ class ParentSubscriptionController extends Controller
     {
         try {
             $userId = $request->user()->id;
-
-            // السيرفس تتكفل بالبحث والتأكد من الملكية وجلب العلاقات
             $subscription = $this->subscriptionService->getSubscriptionDetails($id, $userId);
 
             return response()->json([
@@ -100,14 +109,20 @@ class ParentSubscriptionController extends Controller
             ], 200);
 
         } catch (Exception $e) {
+            Log::error('Error in ParentSubscriptionController@show', [
+                'message' => $e->getMessage(),
+                'file'    => $e->getFile(),
+                'line'    => $e->getLine(),
+                'user_id' => $request->user()->id ?? null,
+                'sub_id'  => $id
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage() // رسالة الخطأ تأتي من السيرفس (مثلاً: غير موجود أو لا تملك الصلاحية)
+                'message' => $e->getMessage() 
             ], 404);
         }
     }
-
-   
 
     /**
      * إلغاء الاشتراك
@@ -124,24 +139,39 @@ class ParentSubscriptionController extends Controller
             ], 200);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            // لا نحتاج لتسجيل ModelNotFound كخطأ حرج (Error) بل كتحذير (Warning) أو تجاهله
+            Log::warning('Parent tried to cancel non-existing subscription', [
+                'user_id' => auth()->id(),
+                'sub_id'  => $id
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'طلب الاشتراك غير موجود أو لا تملك صلاحية إلغائه.'
             ], 404);
+
         } catch (\Exception $e) {
+            Log::error('Error in ParentSubscriptionController@cancel', [
+                'message' => $e->getMessage(),
+                'file'    => $e->getFile(),
+                'line'    => $e->getLine(),
+                'user_id' => auth()->id(),
+                'sub_id'  => $id
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage()
+                'message' => 'حدث خطأ أثناء الإلغاء.'
             ], 422);
         }
     }
+
     /**
-     * جلب كافة الاشتراكات الموافَق عليها (نشطة حالياً / معلقة / مكتملة / ملغاة) مع الفلترة
+     * جلب كافة الاشتراكات الموافَق عليها 
      */
     public function activeSubscriptions(Request $request): JsonResponse
     {
         try {
-            // التحقق من صحة الفلتر المرسل في الـ URL Query Parameter
             $request->validate([
                 'filter' => 'nullable|string|in:current_active,pending_start,completed,cancelled'
             ]);
@@ -149,7 +179,6 @@ class ParentSubscriptionController extends Controller
             $userId = $request->user()->id;
             $filter = $request->query('filter');
 
-            // استدعاء السيرفس لجلب البيانات
             $activeSubscriptions = $this->subscriptionService->getParentActiveSubscriptions($userId, $filter);
 
             return response()->json([
@@ -159,9 +188,17 @@ class ParentSubscriptionController extends Controller
             ], 200);
 
         } catch (Exception $e) {
+            Log::error('Error in ParentSubscriptionController@activeSubscriptions', [
+                'message' => $e->getMessage(),
+                'file'    => $e->getFile(),
+                'line'    => $e->getLine(),
+                'user_id' => $request->user()->id ?? null,
+                'filter'  => $filter ?? null
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage()
+                'message' => 'حدث خطأ أثناء جلب الاشتراكات النشطة.'
             ], 400);
         }
     }
@@ -187,9 +224,17 @@ class ParentSubscriptionController extends Controller
             ], 200);
 
         } catch (Exception $e) {
+            Log::error('Error in ParentSubscriptionController@checkSubscription', [
+                'message' => $e->getMessage(),
+                'file'    => $e->getFile(),
+                'line'    => $e->getLine(),
+                'user_id' => $request->user()->id ?? null,
+                'request' => $request->all()
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage()
+                'message' => 'حدث خطأ أثناء التحقق من الاشتراك.'
             ], 400);
         }
     }

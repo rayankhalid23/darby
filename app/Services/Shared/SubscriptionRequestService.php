@@ -512,5 +512,44 @@ private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent
 
         return $query->orderBy('id', 'desc')->get();
     }
+
+    /**
+     * جلب طلبات الاشتراك المبدئية لولي الأمر مع الفلترة الذكية
+     */
+    public function getParentSubscriptions(int $userId, ?string $filter = null)
+    {
+        // 1. جلب سجل ولي الأمر
+        $parent = ParentModel::where('user_id', $userId)->first();
+        if (!$parent) {
+            throw new Exception('هذا الحساب غير مسجل كولي أمر في النظام.');
+        }
+
+        // 2. بناء الاستعلام
+        $query = SubscriptionRequest::where('parent_id', $parent->id)
+            ->with([
+                'driver.user',
+                'school:id,name',
+                'children',
+                'contract'
+            ]);
+
+        // 3. تطبيق الفلترة حسب حالة الطلب
+        switch ($filter) {
+            case 'pending':
+                $query->where('status', SubscriptionRequest::STATUS_PENDING);
+                break;
+            case 'accepted':
+                $query->where('status', SubscriptionRequest::STATUS_ACCEPTED);
+                break;
+            case 'rejected':
+                $query->where('status', SubscriptionRequest::STATUS_REJECTED);
+                break;
+            case 'cancelled':
+                $query->where('status', SubscriptionRequest::STATUS_CANCELLED);
+                break;
+        }
+
+        return $query->orderBy('id', 'desc')->get();
+    }
     
 }

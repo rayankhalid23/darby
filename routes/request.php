@@ -41,7 +41,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // المسار الموحد والوحيد الجديد لجلب الاشتراكات المفعّلة والموافَق عليها بالفلاتر
         Route::get('/active-subscriptions', [ParentSubscriptionController::class, 'activeSubscriptions']); 
         
-        Route::post('/', [ParentSubscriptionController::class, 'store']); 
+        Route::post('/requests', [ParentSubscriptionController::class, 'store']); 
         Route::get('/requests/{id}', [ParentSubscriptionController::class, 'show']); 
         Route::post('subscriptions/{id}/cancel', [ParentSubscriptionController::class, 'cancel']);
     });
