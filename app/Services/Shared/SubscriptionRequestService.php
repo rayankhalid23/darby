@@ -447,6 +447,23 @@ private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent
     /**
      * جلب الاشتراكات المفعّلة والمثبتة للسائق مع الفلترة الذكية والزمنية
      */
+    /**
+     * التحقق مما إذا كان ولي الأمر لديه اشتراك مع سائق معين
+     */
+    public function parentHasSubscriptionWithDriver(int $userId, int $driverId): bool
+    {
+        $parent = ParentModel::where('user_id', $userId)->first();
+        if (!$parent) {
+            return false;
+        }
+
+        return ActiveSubscription::where(function ($q) use ($userId, $parent) {
+            $q->where('parent_id', $parent->id)
+              ->orWhere('parent_id', $userId);
+        })->where('driver_id', $driverId)
+          ->exists();
+    }
+
     public function getDriverActiveSubscriptions(int $userId, ?string $filter = null)
     {
         $driver = Driver::where('user_id', $userId)->first();

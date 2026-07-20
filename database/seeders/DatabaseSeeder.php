@@ -29,6 +29,9 @@ class DatabaseSeeder extends Seeder
 
             // 6. بيانات اختبار E2E للمسارات والرحلات
             E2eTestSeeder::class,
+
+            // 7. بيانات اختبار النظام المالي (فواتير, محافظ, شحن, سحب)
+            FinancialTestSeeder::class,
         ]);
     }
 }

@@ -1,0 +1,2030 @@
+{
+  "info": {
+    "name": "School Financial System - اختبار مالي",
+    "description": "مجموعة اختبارات شاملة للنظام المالي: المحافظ، الفواتير، السحب، الشحن\n\n## بيانات الاختبار\n- **Parent 1**: 0921000001 / 12345678 (رصيد: 500 د.ل)\n- **Parent 2**: 0921000002 / 12345678 (رصيد: 10 د.ل)\n- **Driver**: 0921000003 / 12345678 (رصيد: 200 د.ل)\n\n## سيناريوهات:\n- **A**: Parent 1 لديه رصيد كافٍ → تشغيل `subscriptions:settle` ← تحويل للسائق\n- **B**: Parent 2 لديه رصيد غير كافٍ → تشغيل `subscriptions:settle` ← فاتورة overdue\n- **C**: Driver يسحب رصيده → Admin يوافق/يرفض\n- **D**: Parent يشحن محفظته → Admin يكمل الشحن",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{auth_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000/api"
+    },
+    {
+      "key": "auth_token",
+      "value": ""
+    },
+    {
+      "key": "parent1_token",
+      "value": ""
+    },
+    {
+      "key": "parent2_token",
+      "value": ""
+    },
+    {
+      "key": "driver_token",
+      "value": ""
+    },
+    {
+      "key": "admin_token",
+      "value": ""
+    },
+    {
+      "key": "parent1_user_id",
+      "value": "61"
+    },
+    {
+      "key": "parent1_profile_id",
+      "value": "30"
+    },
+    {
+      "key": "parent2_user_id",
+      "value": "62"
+    },
+    {
+      "key": "parent2_profile_id",
+      "value": "31"
+    },
+    {
+      "key": "driver_user_id",
+      "value": "63"
+    },
+    {
+      "key": "driver_profile_id",
+      "value": "20"
+    },
+    {
+      "key": "contract1_id",
+      "value": "26"
+    },
+    {
+      "key": "contract2_id",
+      "value": "27"
+    },
+    {
+      "key": "invoice1_id",
+      "value": "8"
+    },
+    {
+      "key": "invoice2_id",
+      "value": "9"
+    },
+    {
+      "key": "withdrawal_pending_id",
+      "value": "7"
+    },
+    {
+      "key": "withdrawal_approved_id",
+      "value": "8"
+    },
+    {
+      "key": "recharge_pending_id",
+      "value": "5"
+    },
+    {
+      "key": "recharge_completed_id",
+      "value": "6"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. 🔐 تسجيل الدخول",
+      "description": "تسجيل الدخول لكل角色 للحصول على Bearer Token",
+      "item": [
+        {
+          "name": "تسجيل دخول - Parent 1 (رصيد كافٍ)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    pm.environment.set('parent1_token', json.access_token);",
+                  "    pm.collectionVariables.set('parent1_token', json.access_token);",
+                  "    pm.collectionVariables.set('auth_token', json.access_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"phone_number\": \"0921000001\",\n    \"password\": \"12345678\",\n    \"platform\": \"web\",\n    \"device_name\": \"postman_test\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "تسجيل دخول - Parent 2 (رصيد منخفض)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('parent2_token', json.access_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"phone_number\": \"0921000002\",\n    \"password\": \"12345678\",\n    \"platform\": \"web\",\n    \"device_name\": \"postman_test\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "تسجيل دخول - Driver",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('driver_token', json.access_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"phone_number\": \"0921000003\",\n    \"password\": \"12345678\",\n    \"platform\": \"web\",\n    \"device_name\": \"postman_test\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "تسجيل دخول - Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('admin_token', json.access_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"phone_number\": \"0921000004\",\n    \"password\": \"12345678\",\n    \"platform\": \"web\",\n    \"device_name\": \"postman_test\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. 👨‍👩‍👧‍👦 ولي الأمر - المحفظة",
+      "description": "مسارات المحفظة المالية لولي الأمر. استخدم المتغير `auth_token` بعد تسجيل الدخول كـ Parent 1.",
+      "item": [
+        {
+          "name": "عرض الرصيد",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/parent/wallet/balance",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "parent",
+                "wallet",
+                "balance"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{parent1_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "طرق الدفع المتاحة",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/parent/wallet/payment-methods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "parent",
+                "wallet",
+                "payment-methods"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{parent1_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "طلب شحن (NCB بنك)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"amount\": 250.00,\n    \"payment_method\": \"ncb\",\n    \"reference_number\": \"NCB-TEST-99999\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/parent/wallet/recharge",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "parent",
+                "wallet",
+                "recharge"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{parent1_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "طلب شحن (ليبيانا)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"amount\": 100.00,\n    \"payment_method\": \"libyana\",\n    \"reference_number\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/parent/wallet/recharge",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "parent",
+                "wallet",
+                "recharge"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{parent1_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "طلب شحن (المدار - المقدار)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"amount\": 50.00,\n    \"payment_method\": \"almadar\",\n    \"reference_number\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/parent/wallet/recharge",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "parent",
+                "wallet",
+                "recharge"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{parent1_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "عرض الرصيد بعد الشحن (تحقق)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/parent/wallet/balance",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "parent",
+                "wallet",
+                "balance"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{parent1_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. 👨‍👩‍👧‍👦 ولي الأمر - الفواتير",
+      "item": [
+        {
+          "name": "قائمة الفواتير (Parent 1)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/parent/invoices",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "parent",
+                "invoices"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{parent1_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "تفاصيل فاتورة (Parent 1)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/parent/invoices/{{invoice1_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "parent",
+                "invoices",
+                "{{invoice1_id}}"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{parent1_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "قائمة الفواتير (Parent 2 - رصيد منخفض)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{parent2_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/parent/invoices",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "parent",
+                "invoices"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{parent2_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "فلترة الفواتير حسب الحالة (paid)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/parent/invoices?status=paid",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "parent",
+                "invoices"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "paid"
+                }
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{parent1_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. 🚗 السائق - المحفظة",
+      "item": [
+        {
+          "name": "عرض الرصيد",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/driver/wallet/balance",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "driver",
+                "wallet",
+                "balance"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{driver_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. 🚗 السائق - طلبات السحب",
+      "item": [
+        {
+          "name": "قائمة طلبات السحب",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/driver/withdrawals",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "driver",
+                "withdrawals"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{driver_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "إنشاء طلب سحب جديد (75 د.ل)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"amount\": 75.00,\n    \"payment_method_details\": {\n        \"bank_name\": \"المصرف التجاري الوطني\",\n        \"account_number\": \"123-456-789\",\n        \"account_name\": \"محمود المالية\"\n    }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/driver/withdrawals",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "driver",
+                "withdrawals"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{driver_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "إنشاء طلب سحب (محفظة جوال - 30 د.ل)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"amount\": 30.00,\n    \"payment_method_details\": {\n        \"mobile_number\": \"0921000003\",\n        \"bank_name\": \"ليبيانا\"\n    }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/driver/withdrawals",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "driver",
+                "withdrawals"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{driver_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "فلترة طلبات السحب (pending)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/driver/withdrawals?status=pending",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "driver",
+                "withdrawals"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "pending"
+                }
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{driver_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "عرض الرصيد بعد السحب (تحقق)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/driver/wallet/balance",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "driver",
+                "wallet",
+                "balance"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{driver_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. 🚗 السائق - الفواتير",
+      "item": [
+        {
+          "name": "قائمة الفواتير (Driver)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/driver/invoices",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "driver",
+                "invoices"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{driver_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "تفاصيل فاتورة (Driver)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/driver/invoices/{{invoice1_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "driver",
+                "invoices",
+                "{{invoice1_id}}"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{driver_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. 🛡️ الأدمن - النظام المالي",
+      "item": [
+        {
+          "name": "كل الفواتير",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/financial/invoices",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "financial",
+                "invoices"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{admin_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "تفاصيل فاتورة (Admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/financial/invoices/{{invoice1_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "financial",
+                "invoices",
+                "{{invoice1_id}}"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{admin_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "طلبات السحب (كلها)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/financial/withdrawals",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "financial",
+                "withdrawals"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{admin_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "الموافقة على طلب سحب",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"action\": \"approve\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/financial/withdrawals/{{withdrawal_pending_id}}/process",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "financial",
+                "withdrawals",
+                "{{withdrawal_pending_id}}",
+                "process"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{admin_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "رفض طلب سحب",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"action\": \"reject\",\n    \"rejection_reason\": \"المبلغ المطلوب يتجاوز الحد المسموح للسحب الأسبوعي\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/financial/withdrawals/{{withdrawal_pending_id}}/process",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "financial",
+                "withdrawals",
+                "{{withdrawal_pending_id}}",
+                "process"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{admin_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "طلبات الشحن (كلها)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/financial/recharges",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "financial",
+                "recharges"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{admin_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "إكمال طلب شحن (موافقة)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"action\": \"complete\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/financial/recharges/{{recharge_pending_id}}/process",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "financial",
+                "recharges",
+                "{{recharge_pending_id}}",
+                "process"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{admin_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "رفض طلب شحن",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"action\": \"reject\",\n    \"reason\": \"رقم الإحالة البنكي غير صحيح\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/financial/recharges/{{recharge_pending_id}}/process",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "financial",
+                "recharges",
+                "{{recharge_pending_id}}",
+                "process"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{admin_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "فلترة الفواتير (معلقة)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/financial/invoices?status=pending&type=proforma",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "financial",
+                "invoices"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "pending"
+                },
+                {
+                  "key": "type",
+                  "value": "proforma"
+                }
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{admin_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. ⚙️ سيناريو A - تسوية العقد (رصيد كافٍ)",
+      "description": "تشغيل أمر `subscriptions:settle` لتسوية العقد رقم 1 (Parent 1 - رصيد 500 د.ل). بعد التشغيل، تحقق من:\n- تم تحويل 300 د.ل (مخصوم منها 2 غياب سائق + 1 غياب طالب + 1 تأخر)\n- الفاتورة أصبحت 'final/paid'\n- رصيد Parent 1 انخفض\n- رصيد Driver ارتفع\n\nيعتمد على الأمر الحرفي: `php artisan subscriptions:settle`",
+      "item": [
+        {
+          "name": "عرض رصيد Parent 1 قبل التسوية",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/parent/wallet/balance",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "parent",
+                "wallet",
+                "balance"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{parent1_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "عرض رصيد Driver قبل التسوية",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/driver/wallet/balance",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "driver",
+                "wallet",
+                "balance"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{driver_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "عرض الفاتورة قبل التسوية",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/parent/invoices/{{invoice1_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "parent",
+                "invoices",
+                "{{invoice1_id}}"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{parent1_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "▶️ تشغيل التسوية (طرفية)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "يرجى تشغيل الأمر يدوياً في الطرفية:\nphp artisan subscriptions:settle",
+              "host": []
+            },
+            "description": "😊 هذا المسار ليس API إنما إجراء طرفية.\nيرجى فتح terminal وتشغيل:\nphp artisan subscriptions:settle\n\nثم العودة لبقية الخطوات للتحقق من النتيجة."
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{parent1_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "عرض رصيد Parent 1 بعد التسوية",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/parent/wallet/balance",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "parent",
+                "wallet",
+                "balance"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{parent1_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "عرض رصيد Driver بعد التسوية",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/driver/wallet/balance",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "driver",
+                "wallet",
+                "balance"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{driver_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "عرض الفاتورة بعد التسوية (يجب أن تكون final/paid)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/parent/invoices/{{invoice1_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "parent",
+                "invoices",
+                "{{invoice1_id}}"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{parent1_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "عرض حركة المحفظة (Transaction) لـ Driver",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "يرجى فحص جدول transactions في قاعدة البيانات: SELECT * FROM transactions WHERE payable_id = {{driver_profile_id}} ORDER BY id DESC;",
+              "host": []
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{driver_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "9. ⚙️ سيناريو B - تسوية العقد (رصيد غير كافٍ)",
+      "description": "تشغيل `subscriptions:settle` مرة أخرى بعد سيناريو A. العقد رقم 2 (Parent 2 - رصيد 10 د.ل فقط) سيفشل ← الفاتورة تصبح 'overdue'",
+      "item": [
+        {
+          "name": "عرض رصيد Parent 2 قبل التسوية",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{parent2_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/parent/wallet/balance",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "parent",
+                "wallet",
+                "balance"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{parent2_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "▶️ تشغيل التسوية مرة أخرى (طرفية)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "يرجى تشغيل الأمر:\nphp artisan subscriptions:settle",
+              "host": []
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{parent2_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "عرض الفاتورة (يجب أن تكون overdue/final)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{parent2_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/parent/invoices/{{invoice2_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "parent",
+                "invoices",
+                "{{invoice2_id}}"
+              ]
+            }
+          },
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{parent2_token}}",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

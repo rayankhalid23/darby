@@ -94,11 +94,12 @@ class FinancialService
             $parentWallet = $parent;
             $driverWallet = $driver;
 
+            $netAmountCents = (int) round($netAmount * 100);
             $parentBalance = $parentWallet->balance;
-            $sufficient = $parentBalance >= $netAmount;
+            $sufficient = $parentBalance >= $netAmountCents;
 
             if ($sufficient) {
-                $parentWallet->transfer($driverWallet, $netAmount);
+                $parentWallet->transfer($driverWallet, $netAmountCents);
 
                 $proforma->update([
                     'status'            => 'paid',

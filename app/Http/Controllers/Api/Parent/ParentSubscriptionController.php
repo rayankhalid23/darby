@@ -165,4 +165,32 @@ class ParentSubscriptionController extends Controller
             ], 400);
         }
     }
+
+    /**
+     * التحقق من وجود اشتراك لولي الأمر مع سائق معين
+     */
+    public function checkSubscription(Request $request): JsonResponse
+    {
+        try {
+            $request->validate([
+                'driver_id' => 'required|integer|exists:drivers,id',
+            ]);
+
+            $hasSubscription = $this->subscriptionService->parentHasSubscriptionWithDriver(
+                $request->user()->id,
+                $request->integer('driver_id')
+            );
+
+            return response()->json([
+                'success'          => true,
+                'has_subscription' => $hasSubscription,
+            ], 200);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
+        }
+    }
 }

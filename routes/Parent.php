@@ -13,6 +13,10 @@ use App\Http\Controllers\Api\Parent\DriverReviewController;
 use App\Http\Controllers\Api\Parent\ComplaintController;
 use App\Http\Controllers\Api\Parent\WalletController;
 use App\Http\Controllers\Api\Shared\InvoiceController;
+use App\Http\Controllers\API\Parent\ParentSubscriptionController;
+
+use App\Http\Controllers\Api\Trip\ParentTripController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -120,5 +124,19 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [InvoiceController::class, 'index']);
         Route::get('/{id}', [InvoiceController::class, 'show']);
     });
+
+    // التحقق من وجود اشتراك لولي الأمر مع سائق معين ?driver_id=
+    Route::get('/subscriptions/check', [ParentSubscriptionController::class, 'checkSubscription']);
+
+    // 1. شاشات العرض والتتبع (الجديدة)
+    Route::get('/trips/active', [ParentTripController::class, 'getActiveTrips']);
+    Route::get('/trips/{tripId}/track', [ParentTripController::class, 'getLiveTracking']);
+    Route::get('/trips/upcoming', [ParentTripController::class, 'getUpcomingTrips']);
+    Route::get('/trips/history', [ParentTripController::class, 'getTripHistory']);
+
+    // 2. العمليات والإجراءات (الموجودة سابقاً)
+    Route::post('/children/{childId}/absence', [ParentChildController::class, 'setAbsence']);
+    Route::delete('/children/{childId}/absence', [ParentChildController::class, 'cancelAbsence']);
+    Route::post('/trips/{tripId}/children/{childId}/manual-pickup', [ParentChildController::class, 'confirmManualPickup']);
 
 });
