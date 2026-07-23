@@ -7,10 +7,21 @@ use App\Http\Controllers\Api\Admin\AdminDriverController;
 use App\Http\Controllers\Api\Admin\ZoneController;
 use App\Http\Controllers\Api\Admin\DriverReviewController as AdminDriverReviewController;
 use App\Http\Controllers\Api\Admin\ComplaintController as AdminComplaintController;
+use App\Http\Controllers\Api\Admin\DashboardController;
 // =========================================================================
 // 🔒 المسارات المحمية (تتطلب تسجيل الدخول وحمل توكن Sanctum)
 // =========================================================================
 Route::middleware(['auth:sanctum'])->group(function () {
+
+    // =========================================================================
+    // 📊 مسارات لوحة التحكم الرئيسية (الداشبورد)
+    // =========================================================================
+    Route::prefix('dashboard')->group(function () {
+        // إحصائيات الداشبورد (المستخدمين، السائقين، الاشتراكات، الرحلات)
+        Route::get('/stats', [DashboardController::class, 'stats'])->name('api.admin.dashboard.stats');
+        // الرحلات النشطة الآن للرادار الحي
+        Route::get('/active-trips', [DashboardController::class, 'activeTrips'])->name('api.admin.dashboard.active-trips');
+    });
     
     // --- مجموعة روابط إدارة المشرفين ---
     Route::prefix('admins')->group(function () {

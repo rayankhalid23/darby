@@ -7,12 +7,17 @@ export default {
         './vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php',
         './storage/framework/views/*.php',
         './resources/views/**/*.blade.php',
+        
+        // 🔴 إضافات حاسمة لـ Filament لتصميم الواجهات بشكل صحيح:
+        './app/Filament/**/*.php',
+        './vendor/filament/**/*.blade.php',
     ],
 
     theme: {
         extend: {
             fontFamily: {
-                sans: ['Figtree', ...defaultTheme.fontFamily.sans],
+                // إضافة خط Cairo كخط افتراضي
+                sans: ['Cairo', ...defaultTheme.fontFamily.sans],
             },
         },
     },

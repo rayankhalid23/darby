@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Api\Admin;
+namespace App\Http\Controllers\Api\Parent;
 
 use App\Models\Shared\DriverReview;
 use Illuminate\Http\JsonResponse;
@@ -24,16 +24,16 @@ class DriverReviewController extends Controller
                 ->paginate(15);
 
             // تحويل البيانات بالطريقة المطلوبة بدقة دون الحاجة لملف Resource خارجي معقد
-            $formattedReviews = collect($reviews->items())->map(function ($review) {
+$formattedReviews = collect($reviews->items())->map(function ($review) {
                 return [
                     'review_id'   => $review->id,
                     'comment'     => $review->comment ?? 'بدون تعليق ناصي',
                     'rating'      => $review->rating,
                     'parent_name' => $review->parent && $review->parent->user ? $review->parent->user->full_name : 'مستخدم محذوف',
                     'driver_name' => $review->driver && $review->driver->user ? $review->driver->user->full_name : 'سائق محذوف',
-                    'is_deleted'  => $review->trashed(), // يوضح للأدمن إن كان التقييم قد حذفه الأب سابقاً
+                    'is_deleted'  => $review->trashed(),
                 ];
-            ]);
+            });
 
             return response()->json([
                 'status'  => true,

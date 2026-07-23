@@ -5,6 +5,7 @@ use App\Http\Controllers\API\Parent\ParentSubscriptionController;
 use App\Http\Controllers\API\Driver\DriverSubscriptionController;
 use App\Http\Controllers\API\Shared\ContractController;
 use App\Http\Controllers\API\Driver\DriverRouteController;
+use App\Http\Controllers\Api\Trip\DriverTripController;
 
 Route::middleware('auth:sanctum')->group(function () {
 
@@ -59,11 +60,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/active-subscriptions', [DriverSubscriptionController::class, 'activeSubscriptions']); 
         
         Route::get('/routes', [DriverRouteController::class, 'index']); 
-        Route::post('/trips/start', [TripController::class, 'startTrip']);
+        Route::post('/trips/start', [DriverTripController::class, 'startTrip']);
         
         // 2. مسارات تحتوي على متغيرات (Dynamic Parameters) - توضع أخيراً
         Route::put('/routes/{route}', [DriverRouteController::class, 'update']);
-        Route::get('/{id}', [DriverSubscriptionController::class, 'show']); 
+        Route::get('/requests/{id}', [DriverSubscriptionController::class, 'show']); 
         Route::put('{id}/status', [DriverSubscriptionController::class, 'updateStatus']); 
     });
     

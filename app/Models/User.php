@@ -12,7 +12,11 @@ use App\Models\Driver\Driver;
 use App\Models\Admin\Admin;
 use App\Models\Parent\ParentModel;
 
-class User extends Authenticatable
+// *** إضـافـة 1: استدعاء واجهة Filament ***
+use Filament\Models\Contracts\HasName;
+
+// *** إضـافـة 2: تطبيق الواجهة على الكلاس (implements HasName) ***
+class User extends Authenticatable implements HasName
 {
     use HasApiTokens, HasFactory, Notifiable, SoftDeletes; 
 
@@ -83,14 +87,19 @@ class User extends Authenticatable
         return $this->hasOne(Driver::class, 'user_id');
     }
     
-
     public function admin()
     {
         return $this->hasOne(Admin::class, 'user_id');
     }
-    // في ملف User.php
-public function parent()
-{
-    return $this->hasOne(ParentModel::class); // تأكد من اسم الكلاس الصحيح
-}
+
+    public function parent()
+    {
+        return $this->hasOne(ParentModel::class); // تأكد من اسم الكلاس الصحيح
+    }
+
+    // *** إضـافـة 3: الدالة التي تخبر النظام بقراءة حقل full_name بدلاً من name ***
+    public function getFilamentName(): string
+    {
+        return $this->full_name ?? 'مدير النظام';
+    }
 }

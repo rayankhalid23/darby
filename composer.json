@@ -9,7 +9,9 @@
         "php": "^8.3",
         "ar-php/ar-php": "*",
         "bavix/laravel-wallet": "^12.0",
+        "bezhansalleh/filament-shield": "^4.3",
         "darkaonline/l5-swagger": "^11.0",
+        "filament/filament": "^5.7",
         "laravel/framework": "^13.8",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^3.0",
@@ -60,7 +62,8 @@
         ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
-            "@php artisan package:discover --ansi"
+            "@php artisan package:discover --ansi",
+            "@php artisan filament:upgrade"
         ],
         "post-update-cmd": [
             "@php artisan vendor:publish --tag=laravel-assets --ansi --force"

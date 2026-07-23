@@ -33,5 +33,14 @@ class DatabaseSeeder extends Seeder
             // 7. بيانات اختبار النظام المالي (فواتير, محافظ, شحن, سحب)
             FinancialTestSeeder::class,
         ]);
+
+        public function run(): void
+{
+    // استدعاء ملف السيدر الجديد
+    $this->call([
+        ComplaintAndReviewSeeder::class,
+    ]);
+}
     }
+
 }

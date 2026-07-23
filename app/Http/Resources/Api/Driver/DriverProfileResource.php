@@ -25,6 +25,7 @@ class DriverProfileResource extends JsonResource
         return [
             'driver_id'         => $this->id,
             'user_id'           => $this->user_id,
+            'role_id'           => $user->role_id ?? null,
             'full_name'         => $user->full_name ?? '',
             'email'             => $user->email ?? '',
             'phone_number'      => $user->phone_number ?? '',

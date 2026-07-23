@@ -37,6 +37,7 @@ class DriverResource extends JsonResource
                 // 1. البيانات الشخصية والحساب
                 'driver_id'                   => $driver ? (int) $driver->id : null, // معرف السائق (Driver ID)
                 'user_id'           => (int) ($user?->id ?? $driver?->user_id ?? 0), // معرف المستخدم (User ID)
+                'role_id'           => $user->role_id ?? null,
                 'full_name'            => $user?->full_name ?? '',
                 'gender'               => $driver?->gender ?? '',
                 'phone_number'         => $user?->phone_number ?? '',
