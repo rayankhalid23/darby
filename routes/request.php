@@ -41,8 +41,10 @@ Route::middleware('auth:sanctum')->group(function () {
         
         // المسار الموحد والوحيد الجديد لجلب الاشتراكات المفعّلة والموافَق عليها بالفلاتر
         Route::get('/active-subscriptions', [ParentSubscriptionController::class, 'activeSubscriptions']); 
+              // المسار الخاص بجلب تفاصيل اشتراك نشط معين
+              Route::get('/active-subscriptions/{id}', [ParentSubscriptionController::class, 'showActive']);
         
-        Route::post('/requests', [ParentSubscriptionController::class, 'store']); 
+        Route::post('/', [ParentSubscriptionController::class, 'store']); 
         Route::get('/requests/{id}', [ParentSubscriptionController::class, 'show']); 
         Route::post('subscriptions/{id}/cancel', [ParentSubscriptionController::class, 'cancel']);
     });
@@ -55,9 +57,11 @@ Route::middleware('auth:sanctum')->group(function () {
         
         // المسار الموحد الجديد لجلب طلبات الاشتراك المبدئية بالفلاتر
         Route::get('/requests', [DriverSubscriptionController::class, 'index']); 
+        Route::get('/requests/{id}', [DriverSubscriptionController::class, 'show']);
         
         // المسار الموحد الجديد لجلب الاشتراكات الفعلية والمثبتة بالفلاتر
         Route::get('/active-subscriptions', [DriverSubscriptionController::class, 'activeSubscriptions']); 
+  
         
         Route::get('/routes', [DriverRouteController::class, 'index']); 
         Route::post('/trips/start', [DriverTripController::class, 'startTrip']);

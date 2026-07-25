@@ -52,7 +52,7 @@ class ContractService
         $contract = Contract::create([
             'subscription_request_id' => $req->id,
             'parent_id'               => $req->parent_id,
-            'driver_id'               => $req->driver_id,
+            'driver_id'               => $req->driver?->user_id ?? $req->driver_id,
             'contract_number'         => $contractNumber,
             'subscription_type'       => $req->subscription_type,
             'direction'               => $req->direction,

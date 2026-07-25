@@ -7,6 +7,9 @@ use App\Http\Controllers\Api\Driver\DriverPreferenceController;
 use App\Http\Controllers\Api\Driver\AddressController;
 use App\Http\Controllers\Api\Driver\ZoneController; 
 use App\Http\Controllers\API\Trip\DriverTripController;
+
+// أو إذا كان داخل مجلد فرعي:
+ use App\Http\Controllers\API\Driver\DriverProfileController;
 /*
 |--------------------------------------------------------------------------
 | Driver Routes (تم إزالة الـ prefix التكراري ليطابق v1/driver مباشرة)
@@ -137,5 +140,17 @@ Route::get('zones', [ZoneController::class, 'index'])
         Route::get('/', [App\Http\Controllers\Api\Shared\InvoiceController::class, 'index']);
         Route::get('/{id}', [App\Http\Controllers\Api\Shared\InvoiceController::class, 'show']);
     });
+    // --- مسارات إدارة مركبات السائق ---
+Route::prefix('vehicles')->group(function () {
+    
+// 1. عرض قائمة كل السيارات الخاصة بالسائق (بيانات مختصرة: id, brand/name, model, image)
+Route::get('/', [DriverProfileController::class, 'indexVehicles'])
+    ->name('api.driver.vehicles.index');
+
+// 2. عرض البيانات الكاملة لسيارة معينة بالـ ID
+Route::get('/{vehicle}', [DriverProfileController::class, 'showVehicle'])
+    ->name('api.driver.vehicles.show');
+
+});
 
 });

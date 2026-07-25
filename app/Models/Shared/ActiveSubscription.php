@@ -5,6 +5,7 @@ namespace App\Models\Shared;
 use App\Models\Parent\Child;
 use App\Models\Driver\Driver;
 use App\Models\User;
+use App\Models\Parent\School;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -17,6 +18,7 @@ class ActiveSubscription extends Model
         'child_id',
         'driver_id',
         'parent_id',
+        'school_id',
         'pickup_lat',
         'pickup_lng',
         'pickup_label',
@@ -58,8 +60,9 @@ class ActiveSubscription extends Model
     {
         return $this->belongsTo(User::class, 'parent_id');
     }
-    public function school()
+
+    public function school(): BelongsTo
     {
-        return $this->belongsTo(\App\Models\Parent\School::class, 'school_id');
+        return $this->belongsTo(School::class, 'school_id');
     }
 }

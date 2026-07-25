@@ -259,4 +259,58 @@ class DriverProfileService
         // بما أنه لا توجد أعمدة، الدالة تعود بـ true فقط لإظهار صفحة نجاح الإلغاء للسائق
         return true;
     }
+
+   /**
+     * إرجاع قائمة مختصرة لجميع سيارات السائق
+     */
+   public function getDriverVehiclesSummary(int $userId)
+   {
+       // 1. جلب سجل السائق المرتبط بهذا المستخدم
+       $driver = Driver::where('user_id', $userId)->first();
+
+       // في حال لم يتم العثور على ملف سائق لهذا المستخدم
+       if (!$driver) {
+           return [];
+       }
+
+       // 2. البحث برقم السائق ($driver->id) الصحيح بدلاً من ($userId)
+       return Vehicle::where('driver_id', $driver->id)
+           ->select(['id', 'brand', 'model', 'vehicle_image_url'])
+           ->get()
+           ->map(function ($vehicle) {
+               return [
+                   'id'        => $vehicle->id,
+                   'name'      => $vehicle->brand,
+                   'model'     => $vehicle->model,
+                   'image_url' => $vehicle->vehicle_image_url ? asset($vehicle->vehicle_image_url) : null,
+               ];
+           });
+   }
+
+   /**
+     * جلب تفاصيل سيارة محددة مع التأكد من ملكيتها للسائق الحالي
+     */
+   public function getVehicleDetails(int $userId, int $vehicleId)
+   {
+       // 1. جلب ملف السائق أولاً للحصول على driver_id الصحيح
+       $driver = Driver::where('user_id', $userId)->first();
+
+       if (!$driver) {
+           return null;
+       }
+
+       // 2. البحث برقم السائق ($driver->id) بدلاً من رقم المستخدم ($userId)
+       $vehicle = Vehicle::where('driver_id', $driver->id)
+           ->where('id', $vehicleId)
+           ->first();
+
+       if (!$vehicle) {
+           return null;
+       }
+
+       // 3. تحويل مسار الصورة إلى URL كامل
+       $vehicle->vehicle_image_url = $vehicle->vehicle_image_url ? asset($vehicle->vehicle_image_url) : null;
+
+       return $vehicle;
+   }
 }

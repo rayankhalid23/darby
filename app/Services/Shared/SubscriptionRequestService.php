@@ -121,97 +121,83 @@ class SubscriptionRequestService
     // منطق القبول
     // ============================================================
 
-     /**
- * تنفيذ عملية قبول طلب الاشتراك وتوليد كافة الموارد المرتبطة مع حساب المسار الذكي.
- * * @param SubscriptionRequest $req
- * @param ParentModel|null $parent
- * @return SubscriptionRequest
- * @throws \Exception
- */
-private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent): SubscriptionRequest
-{
-    return \DB::transaction(function () use ($req, $parent) {
-        
-        // 1. تحديث حالة الطلب الحالي
-        $req->update(['status' => SubscriptionRequest::STATUS_ACCEPTED]);
+    private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent): SubscriptionRequest
+    {
+        return DB::transaction(function () use ($req, $parent) {
+            
+            // 1. تحديث حالة الطلب الحالي
+            $req->update(['status' => SubscriptionRequest::STATUS_ACCEPTED]);
 
-        // 2. إلغاء الطلبات الأخرى المعلقة لنفس العميل ونفس التوقيت
-        SubscriptionRequest::where('parent_id', $req->parent_id)
-            ->where('timing', $req->timing)
-            ->where('status', SubscriptionRequest::STATUS_PENDING)
-            ->where('id', '!=', $req->id)
-            ->update(['status' => SubscriptionRequest::STATUS_CANCELLED]);
+            // 2. إلغاء الطلبات الأخرى المعلقة لنفس العميل ونفس التوقيت
+            SubscriptionRequest::where('parent_id', $req->parent_id)
+                ->where('timing', $req->timing)
+                ->where('status', SubscriptionRequest::STATUS_PENDING)
+                ->where('id', '!=', $req->id)
+                ->update(['status' => SubscriptionRequest::STATUS_CANCELLED]);
 
-        // 3. توليد العقد
-        $contract = $this->contractService->generateContract($req);
+            // 3. توليد العقد
+            $contract = $this->contractService->generateContract($req);
 
-        // 4. التحقق من حالة مركبة السائق
-        $vehicle = \App\Models\Driver\Vehicle::where('driver_id', $req->driver_id)
-            ->where('status', 'Active')
-            ->first();
+            // 4. التحقق من حالة مركبة السائق
+            $vehicle = \App\Models\Driver\Vehicle::where('driver_id', $req->driver_id)
+                ->where('status', 'Active')
+                ->first();
 
-        if (!$vehicle) {
-            throw new \Exception("تعذر إتمام العملية: لا توجد مركبة نشطة مرتبطة بالسائق.");
-        }
+            if (!$vehicle) {
+                throw new Exception("تعذر إتمام العملية: لا توجد مركبة نشطة مرتبطة بالسائق.");
+            }
 
-       // 5. منطق حساب المسار الذكي عبر OSRM
-       $osrm = new \App\Services\Shared\OsrmRoutingService();
-        
-       $driverPos = ['lat' => (float)($req->driver->current_lat ?? 0), 'lng' => (float)($req->driver->current_lng ?? 0)];
-       $childPos  = ['lat' => (float)($req->children->first()->pivot->home_lat ?? 0), 'lng' => (float)($req->children->first()->pivot->home_lng ?? 0)];
-       $schoolPos = ['lat' => (float)($req->school->latitude ?? 0), 'lng' => (float)($req->school->longitude ?? 0)];
-
-       $routeData = $osrm->calculateRoute([$driverPos, $childPos, $schoolPos]);
-       
-       if (!$routeData) {
-           \Log::warning("فشل حساب المسار عبر OSRM للطلب ID: {$req->id}");
-       }
-
-       // --- التعديل الجوهري هنا ---
-       $distanceInMeters = $routeData['routes'][0]['distance'] ?? 0;
-       $durationInSeconds = $routeData['routes'][0]['duration'] ?? 0;
-
-       // تحويل المسافة إلى كيلومتر (التقريب لرقمن عشريين) والوقت إلى دقائق
-       $distanceKm = round($distanceInMeters / 1000, 2); 
-       $durationMinutes = (int) ceil($durationInSeconds / 60);
-       // ---------------------------
-
-       // 6. إنشاء سجل المسار
-       \App\Models\Shared\Route::create([
-           'contract_id'        => $contract->id,
-           'driver_id'          => $req->driver_id,
-           'vehicle_id'         => $vehicle->id, 
-           'route_name'         => 'مسار ' . ($req->parent->user->full_name ?? 'العميل') . ' - ' . $req->timing,
-           'route_type'         => $req->timing === 'MORNING' ? 'Morning' : 'Evening',
-           'start_time'         => $req->pickup_time ?? '07:00:00',
-           'optimized_points'   => $routeData ?? null, 
+           // 5. منطق حساب المسار الذكي عبر OSRM
+           $osrm = new \App\Services\Shared\OsrmRoutingService();
            
-           // تمرير القيم المحولة
-           'total_distance'     => $distanceKm,
-           'estimated_duration' => $durationMinutes,
+           $driverPos = ['lat' => (float)($req->driver->current_lat ?? 0), 'lng' => (float)($req->driver->current_lng ?? 0)];
+           $childPos  = ['lat' => (float)($req->children->first()->pivot->home_lat ?? 0), 'lng' => (float)($req->children->first()->pivot->home_lng ?? 0)];
+           $schoolPos = ['lat' => (float)($req->school->latitude ?? 0), 'lng' => (float)($req->school->longitude ?? 0)];
+
+           $routeData = $osrm->calculateRoute([$driverPos, $childPos, $schoolPos]);
            
-           'status'             => 'Active'
-       ]);
+           if (!$routeData) {
+               Log::warning("فشل حساب المسار عبر OSRM للطلب ID: {$req->id}");
+           }
 
-        // 7. تفعيل اشتراكات الطفل
-        $parentUserId = $parent?->user_id ?? $req->parent->user_id;
-        $this->createActiveSubscriptions($req, $contract, $parentUserId);
+           $distanceInMeters = $routeData['routes'][0]['distance'] ?? 0;
+           $durationInSeconds = $routeData['routes'][0]['duration'] ?? 0;
 
-        // 8. إرسال إشعار القبول وتفاصيل العقد لولي الأمر
-        if ($parent && $parent->user) {
-            $this->notifyUser(
-                $parent->user,
-                'تم قبول طلب الاشتراك',
-                "تم قبول طلبك مع السائق " . ($req->driver->user->full_name ?? 'السائق') . ". رقم العقد: {$contract->contract_number}",
-                'request_accepted',
-                ['contract_id' => $contract->id]
-            );
-        }
+           $distanceKm = round($distanceInMeters / 1000, 2); 
+           $durationMinutes = (int) ceil($durationInSeconds / 60);
 
-        // إعادة تحميل الطلب مع العلاقات المحدثة لإرساله في الـ Response
-        return $req->refresh()->load(['children', 'driver.user', 'parent.user', 'contract']);
-    });
-}
+           // 6. إنشاء سجل المسار
+           \App\Models\Shared\Route::create([
+               'contract_id'        => $contract->id,
+               'driver_id'          => $req->driver_id,
+               'vehicle_id'         => $vehicle->id, 
+               'route_name'         => 'مسار ' . ($req->parent->user->full_name ?? 'العميل') . ' - ' . $req->timing,
+               'route_type'         => $req->timing === 'MORNING' ? 'Morning' : 'Evening',
+               'start_time'         => $req->pickup_time ?? '07:00:00',
+               'optimized_points'   => $routeData ?? null, 
+               'total_distance'     => $distanceKm,
+               'estimated_duration' => $durationMinutes,
+               'status'             => 'Active'
+           ]);
+
+            // 7. تفعيل اشتراكات الطفل
+            $parentUserId = $parent?->user_id ?? $req->parent->user_id;
+            $this->createActiveSubscriptions($req, $contract, $parentUserId);
+
+            // 8. إرسال إشعار القبول وتفاصيل العقد لولي الأمر
+            if ($parent && $parent->user) {
+                $this->notifyUser(
+                    $parent->user,
+                    'تم قبول طلب الاشتراك',
+                    "تم قبول طلبك مع السائق " . ($req->driver->user->full_name ?? 'السائق') . ". رقم العقد: {$contract->contract_number}",
+                    'request_accepted',
+                    ['contract_id' => $contract->id]
+                );
+            }
+
+            return $req->refresh()->load(['children', 'driver.user', 'parent.user', 'contract']);
+        });
+    }
 
     // ============================================================
     // منطق الرفض
@@ -224,7 +210,6 @@ private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent
             'rejection_reason' => $reason,
         ]);
 
-        // إرسال إشعار لولي الأمر بالرفض
         if ($parent && $parent->user) {
             $this->notifyUser(
                 $parent->user,
@@ -261,9 +246,32 @@ private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent
                 'dropoff_lng'   => $child->pivot->school_lng,
                 'dropoff_label' => $child->pivot->school_label,
                 'dropoff_time'  => $dropoffTime,
-                'status'        => 'active',
+                'status'        => 'active', // القيمة الافتراضية عند التفعيل
             ]);
         }
+    }
+
+    // ============================================================
+    // دالة جديدة: تغيير حالة الاشتراك النشط (مفعل، معلق، مكتمل، ملغي)
+    // ============================================================
+    public function updateActiveSubscriptionStatus(int $activeSubscriptionId, string $status): ActiveSubscription
+    {
+        $allowedStatuses = ['active', 'pending', 'completed', 'cancelled'];
+        
+        if (!in_array($status, $allowedStatuses)) {
+            throw new Exception("حالة الاشتراك غير صالحة. يجب أن تكون إحدى الحالات التالية: " . implode(', ', $allowedStatuses));
+        }
+
+        $activeSub = ActiveSubscription::find($activeSubscriptionId);
+        if (!$activeSub) {
+            throw new Exception('الاشتراك النشط غير موجود.');
+        }
+
+        $activeSub->update([
+            'status' => $status
+        ]);
+
+        return $activeSub->load(['contract', 'child', 'driver.user']);
     }
 
     // ============================================================
@@ -285,52 +293,53 @@ private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent
             }
         }
     }
-    // ============================================================
-    // جلب تفاصيل اشتراك معين لولي الأمر (الدالة الجديدة)
-    // ============================================================
 
-    /**
-     * جلب كافة تفاصيل طلب اشتراك معين مع التأكد من ملكيته لولي الأمر.
-     * * @param int $requestId رقم الطلب
-     * @param int $userId معرف المستخدم لولي الأمر
-     * @return SubscriptionRequest
-     * @throws Exception
-     */
-    public function getSubscriptionDetails(int $requestId, int $userId): SubscriptionRequest
+    // ============================================================
+    // جلب طلبات الاشتراك الخاصة بولي الأمر
+    // ============================================================
+    public function getParentSubscriptions(int $userId, ?string $filter = null)
     {
         $parent = ParentModel::where('user_id', $userId)->first();
         if (!$parent) {
             throw new Exception('هذا الحساب غير مسجل كولي أمر في النظام.');
         }
 
-        $request = SubscriptionRequest::with([
-            'children.school', 
-            'driver.user', 
-            'driver.vehicles', 
-            'school', 
-            'contract'
-        ])
-        ->where('id', $requestId)
-        ->where('parent_id', $parent->id) // حماية أمنية: التأكد من أن الطلب يخص هذا العميل
-        ->first();
+        $query = SubscriptionRequest::where('parent_id', $parent->id)
+            ->with([
+                'driver.user',
+                'school:id,name',
+                'children.school',
+                'contract'
+            ]);
 
-        if (!$request) {
-            throw new Exception('طلب الاشتراك غير موجود، أو لا تملك صلاحية الوصول إليه.');
+        switch ($filter) {
+            case 'pending':
+                $query->where('status', SubscriptionRequest::STATUS_PENDING);
+                break;
+            case 'accepted':
+                $query->where('status', SubscriptionRequest::STATUS_ACCEPTED);
+                break;
+            case 'rejected':
+                $query->where('status', SubscriptionRequest::STATUS_REJECTED);
+                break;
+            case 'cancelled':
+                $query->where('status', SubscriptionRequest::STATUS_CANCELLED);
+                break;
         }
 
-        return $request;
-    }/**
+        return $query->orderBy('id', 'desc')->get();
+    }
+    
+    /**
      * إلغاء طلب الاشتراك بواسطة ولي الأمر قبل قبول السائق له
      */
     public function cancelSubscriptionByParent(int $id, int $userId): SubscriptionRequest
     {
-        // 1. جلب بيانات ولي الأمر بناءً على الـ userId الممرر من الكنترولر بنفس أسلوب الدوال السابقة بالملف
         $parent = ParentModel::where('user_id', $userId)->first();
         if (!$parent) {
             throw new Exception('هذا الحساب غير مسجل كولي أمر في النظام.');
         }
 
-        // 2. جلب الطلب والتأكد من ملكيته لولي الأمر الحالي
         $subscription = SubscriptionRequest::where('id', $id)
             ->where('parent_id', $parent->id)
             ->first();
@@ -339,12 +348,10 @@ private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent
             throw new Exception('طلب الاشتراك غير موجود، أو لا تملك صلاحية الوصول إليه.');
         }
 
-        // 3. التحقق من حالة الطلب (الإلغاء متاح فقط للحالات المعلقة)
         if ($subscription->status !== SubscriptionRequest::STATUS_PENDING) {
             throw new Exception('لا يمكن إلغاء هذا الطلب لأن حالته الحالية هي: ' . $subscription->status);
         }
 
-        // 4. تحديث الحالة إلى ملغي
         $subscription->update([
             'status' => SubscriptionRequest::STATUS_CANCELLED
         ]);
@@ -357,58 +364,34 @@ private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent
      */
     public function getParentActiveSubscriptions(int $userId, ?string $filter = null)
     {
-        // 1. جلب سجل ولي الأمر بالكامل للحصول على معرف جدول أولياء الأمور (id)
+        // 1. جلب سجل ولي الأمر والتأكد من وجوده
         $parent = ParentModel::where('user_id', $userId)->first();
         if (!$parent) {
             throw new Exception('هذا الحساب غير مسجل كولي أمر في النظام.');
         }
 
-        // 2. بناء الاستعلام مع جلب العلاقات
+        // 2. بناء الاستعلام مع العلاقات الأساسية
         $query = ActiveSubscription::with([
             'contract', 
-            'child.school', 
+            'child', 
             'driver.user', 
-            'driver.vehicles'
+            'driver.vehicles',
+            'school'
         ])
-        // هنا الحل: البحث بكلا المعرفين لضمان جلب البيانات مهما كانت طريقة الحفظ السابقة
         ->where(function ($q) use ($userId, $parent) {
             $q->where('parent_id', $parent->id)
               ->orWhere('parent_id', $userId);
         });
 
-        $today = now()->toDateString();
-
-        // 3. تطبيق الفلترة الذكية
-        switch ($filter) {
-            case 'current_active': // نشطة حالياً
-                $query->where('status', 'active')
-                      ->whereHas('contract', function ($q) use ($today) {
-                          $q->where('start_date', '<=', $today)
-                            ->where('end_date', '>=', $today);
-                      });
-                break;
-
-            case 'pending_start': // معلقة (لم تبدأ بعد)
-                $query->where('status', 'active')
-                      ->whereHas('contract', function ($q) use ($today) {
-                          $q->where('start_date', '>', $today);
-                      });
-                break;
-
-            case 'completed': // مكتملة
-                $query->where(function($q) use ($today) {
-                    $q->whereHas('contract', function ($c) use ($today) {
-                        $c->where('end_date', '<', $today);
-                    })->orWhere('status', 'completed');
-                });
-                break;
-
-            case 'cancelled': // ملغاة
-                $query->where('status', 'cancelled');
-                break;
+        // 3. تطبيق الفلتر بشكل صحيح وآمن فقط إذا تم إرساله وكان ضمن القيم المسموحة
+        if (!empty($filter)) {
+            $allowedFilters = ['active', 'pending', 'completed', 'cancelled'];
+            if (in_array($filter, $allowedFilters)) {
+                $query->where('status', $filter);
+            }
         }
 
-        return $query->latest()->get();
+        return $query->orderBy('id', 'desc')->get();
     }
 
     /**
@@ -423,12 +406,11 @@ private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent
 
         $query = SubscriptionRequest::where('driver_id', $driver->id)
             ->with([
-                'parent.user', // هنا نستدعي user لأن parent تشير إلى ParentModel
+                'parent.user',
                 'school:id,name',
                 'children'
             ]);
 
-        // تطبيق الفلترة بناءً على الـ status
         switch ($filter) {
             case 'pending':
                 $query->where('status', SubscriptionRequest::STATUS_PENDING);
@@ -444,12 +426,6 @@ private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent
         return $query->orderBy('id', 'desc')->get();
     }
 
-    /**
-     * جلب الاشتراكات المفعّلة والمثبتة للسائق مع الفلترة الذكية والزمنية
-     */
-    /**
-     * التحقق مما إذا كان ولي الأمر لديه اشتراك مع سائق معين
-     */
     public function parentHasSubscriptionWithDriver(int $userId, int $driverId): bool
     {
         $parent = ParentModel::where('user_id', $userId)->first();
@@ -475,34 +451,23 @@ private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent
             ->with([
                 'contract',
                 'child.school',
-                'parent' // تم التعديل هنا: جلب parent مباشرة لأنها مرتبطة بمودل User فوراً
+                'parent'
             ]);
 
         $today = now()->toDateString();
 
-        // تطبيق فلاتر الحالات والتواريخ
+        // تطبيق فلاتر الحالات مباشرة
         switch ($filter) {
-            case 'current_active':
-                $query->where('status', 'active')
-                      ->whereHas('contract', function ($q) use ($today) {
-                          $q->where('start_date', '<=', $today)
-                            ->where('end_date', '>=', $today);
-                      });
+            case 'active':
+                $query->where('status', 'active');
                 break;
 
-            case 'pending_start':
-                $query->where('status', 'active')
-                      ->whereHas('contract', function ($q) use ($today) {
-                          $q->where('start_date', '>', $today);
-                      });
+            case 'pending':
+                $query->where('status', 'pending');
                 break;
 
             case 'completed':
-                $query->where(function($q) use ($today) {
-                    $q->whereHas('contract', function ($c) use ($today) {
-                        $c->where('end_date', '<', $today);
-                    })->orWhere('status', 'completed');
-                });
+                $query->where('status', 'completed');
                 break;
 
             case 'cancelled':
@@ -513,43 +478,14 @@ private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent
         return $query->orderBy('id', 'desc')->get();
     }
 
-    /**
-     * جلب طلبات الاشتراك المبدئية لولي الأمر مع الفلترة الذكية
-     */
-    public function getParentSubscriptions(int $userId, ?string $filter = null)
+    public function getSubscriptionDetails($id)
     {
-        // 1. جلب سجل ولي الأمر
-        $parent = ParentModel::where('user_id', $userId)->first();
-        if (!$parent) {
-            throw new Exception('هذا الحساب غير مسجل كولي أمر في النظام.');
-        }
-
-        // 2. بناء الاستعلام
-        $query = SubscriptionRequest::where('parent_id', $parent->id)
-            ->with([
-                'driver.user',
-                'school:id,name',
-                'children',
-                'contract'
-            ]);
-
-        // 3. تطبيق الفلترة حسب حالة الطلب
-        switch ($filter) {
-            case 'pending':
-                $query->where('status', SubscriptionRequest::STATUS_PENDING);
-                break;
-            case 'accepted':
-                $query->where('status', SubscriptionRequest::STATUS_ACCEPTED);
-                break;
-            case 'rejected':
-                $query->where('status', SubscriptionRequest::STATUS_REJECTED);
-                break;
-            case 'cancelled':
-                $query->where('status', SubscriptionRequest::STATUS_CANCELLED);
-                break;
-        }
-
-        return $query->orderBy('id', 'desc')->get();
+        return SubscriptionRequest::with([
+            'parent.user',
+            'driver.user',
+            'children.school',
+            'children.address',
+            'contract',
+        ])->findOrFail($id);
     }
-    
 }

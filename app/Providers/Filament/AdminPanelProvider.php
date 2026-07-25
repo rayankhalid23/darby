@@ -6,6 +6,7 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
+use App\Filament\Auth\CustomLogin;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
 use Filament\View\PanelsRenderHook;
@@ -17,6 +18,12 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use Filament\Navigation\NavigationItem;
+use Filament\Navigation\NavigationBuilder;
+use App\Filament\Pages\Dashboard as AppDashboard;
+use App\Filament\Pages\DriverRegistrationRequests;
+use App\Filament\Pages\DriverDataUpdateRequests;
+use App\Filament\Pages\BlankPage;
 
 class AdminPanelProvider extends PanelProvider
 {
@@ -26,7 +33,7 @@ class AdminPanelProvider extends PanelProvider
             ->default()
             ->id('admin')
             ->path('admin')
-            ->login()
+            ->login(\App\Filament\Auth\CustomLogin::class)
             // الشعار العلوي
             ->brandLogo(new HtmlString('
                 <div class="flex items-center gap-3 p-1">
@@ -43,11 +50,55 @@ class AdminPanelProvider extends PanelProvider
                 'primary' => Color::Hex('#1d4ed8'),
                 'gray' => Color::Slate,
             ])
+            ->navigation(function (NavigationBuilder $builder): NavigationBuilder {
+                return $builder->items([
+                    NavigationItem::make('الرئيسية والمتابعة الحية')
+                        ->icon('heroicon-o-squares-2x2')
+                        ->isActiveWhen(fn () => request()->routeIs('filament.admin.pages.dashboard'))
+                        ->url(fn (): string => AppDashboard::getUrl()),
+
+                    NavigationItem::make('طلبات تسجيل السائقين')
+                        ->icon('heroicon-o-users')
+                        ->badge('2')
+                        ->isActiveWhen(fn () => request()->routeIs('filament.admin.pages.driver-registration-requests'))
+                        ->url(fn (): string => DriverRegistrationRequests::getUrl()),
+
+                    NavigationItem::make('طلبات تعديل البيانات')
+                        ->icon('heroicon-o-arrow-path')
+                        ->badge('1')
+                        ->isActiveWhen(fn () => request()->routeIs('filament.admin.pages.driver-data-update-requests'))
+                        ->url(fn (): string => DriverDataUpdateRequests::getUrl()),
+
+                    NavigationItem::make('مركز الشكاوى والبلاغات')
+                        ->icon('heroicon-o-exclamation-triangle')
+                        ->badge('2')
+                        ->url(fn (): string => BlankPage::getUrl()),
+
+                    NavigationItem::make('الإدارة المالية والسحب')
+                        ->icon('heroicon-o-currency-dollar')
+                        ->badge('2')
+                        ->url(fn (): string => BlankPage::getUrl()),
+                        
+                    NavigationItem::make('إدارة موظفي الإدارة')
+                        ->icon('heroicon-o-shield-check')
+                        ->url(fn (): string => BlankPage::getUrl()),
+
+                    NavigationItem::make('التقارير والإحصائيات العامة')
+                        ->icon('heroicon-o-document-text')
+                        ->url(fn (): string => BlankPage::getUrl()),
+
+                    NavigationItem::make('الملف الشخصي وتعديل البيانات')
+                        ->icon('heroicon-o-user')
+                        ->url(fn (): string => BlankPage::getUrl()),
+                ]);
+            })
             // ربط مجلدات الصفحات والـ Widgets تلقائياً
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([
-                \App\Filament\Pages\Dashboard::class,
+                AppDashboard::class,
+                DriverRegistrationRequests::class,
+                DriverDataUpdateRequests::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([])

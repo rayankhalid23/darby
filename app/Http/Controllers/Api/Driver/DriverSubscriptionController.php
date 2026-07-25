@@ -3,14 +3,11 @@
 namespace App\Http\Controllers\Api\Driver;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Api\Driver\UpdateSubscriptionStatusRequest;
+use App\Http\Resources\Api\Shared\SubscriptionRequestResource;
 use App\Services\Shared\SubscriptionRequestService;
 use App\Models\Shared\SubscriptionRequest;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\DB;
-use App\Models\Driver\Driver;
 use Illuminate\Http\Request;
-use App\Services\Shared\ContractService;
 use Exception;
 
 class DriverSubscriptionController extends Controller
@@ -24,7 +21,6 @@ class DriverSubscriptionController extends Controller
 
     /**
      * عرض قائمة طلبات الاشتراك الأولية الخاصة بالسائق مع فلتر اختياري
-     * GET /api/driver/requests?filter=pending|cancelled|rejected
      */
     public function index(Request $request): JsonResponse
     {
@@ -37,7 +33,7 @@ class DriverSubscriptionController extends Controller
             return response()->json([
                 'success' => true,
                 'count'   => $requests->count(),
-                'data'    => $requests
+                'data'    => SubscriptionRequestResource::collection($requests)
             ], 200);
 
         } catch (Exception $e) {
@@ -47,105 +43,226 @@ class DriverSubscriptionController extends Controller
             ], $e->getCode() == 403 ? 403 : 500);
         }
     }
-
-    /**
-     * عرض قائمة الاشتراكات الفعلية والمثبتة المعتمدة للسائق مع فلتر اختياري
-     * GET /api/driver/active-subscriptions?filter=current_active|pending_start|completed|cancelled
-     */
     public function activeSubscriptions(Request $request): JsonResponse
     {
         try {
-            $subscriptions = $this->subscriptionService->getDriverActiveSubscriptions(
-                auth()->id(),
-                $request->query('filter')
-            );
+            $request->validate([
+                'filter' => 'nullable|string|in:current_active,pending_start,completed,cancelled'
+            ]);
+
+            $driverId = auth()->id(); // أو جلب الـ driver_id الخاص بالسائق حسب الهيكلة لديك
+            $filter = $request->query('filter');
+
+            $activeSubscriptions = $this->subscriptionService->getDriverActiveSubscriptions($driverId, $filter);
+
+            $formattedData = $activeSubscriptions->map(function ($item) {
+                $parentUser = optional($item->parent);
+
+                return [
+                    'id' => $item->id,
+                    'status' => $item->status ?? 'active',
+                    'statusLabel' => $item->status == 'active' ? 'نشط' : 'غير نشط',
+                    'child' => [
+                        'id' => optional($item->child)->id,
+                        'name' => optional($item->child)->full_name ?? optional($item->child)->name,
+                        'avatar' => optional($item->child)->photo_url,
+                        'avatarInitials' => mb_substr(optional($item->child)->full_name ?? optional($item->child)->name ?? '', 0, 2),
+                        'schoolName' => optional($item->school)->name ?? 'مدرسة الفلاح',
+                    ],
+                    'driver' => [
+                        'id' => optional($item->driver)->id,
+                        'name' => optional($parentUser)->name,
+                        'phone' => optional($parentUser)->phone_number ?? optional($parentUser)->phone,
+                        'rating' => 5.0,
+                        'vehicle' => [
+                            'model' => 'تويوتا هايس',
+                            'color' => 'أبيض',
+                            'plateNumber' => '12345 طرابلس',
+                        ]
+                    ],
+                    'schedule' => [
+                        'shift' => optional($item->driver)->shift ? (string) optional($item->driver)->shift->value : '1',
+                        'shiftLabel' => optional($item->driver)->shift ? optional($item->driver)->shift->name : 'MORNING',
+                        'pickupZoneName' => optional($item)->pickup_label ?? 'حي الأندلس',
+                        'schoolName' => optional($item->school)->name ?? 'مدرسة الفلاح',
+                    ],
+                    'billing' => [
+                        'subscriptionType' => optional($item->contract)->subscription_type ?? 'monthly',
+                        'totalPrice' => (float) (optional($item->contract)->total_price ?? $item->total_price ?? 89),
+                        'childPrice' => (float) (optional($item->contract)->child_price ?? 89),
+                        'currency' => 'SAR',
+                        'startsAt' => optional($item->contract)->start_date ? optional($item->contract)->start_date->toDateString() : null,
+                        'endsAt' => optional($item->contract)->end_date ? optional($item->contract)->end_date->toDateString() : null,
+                        'remainingDays' => 14,
+                        'autoRenew' => true,
+                        'paymentMethod' => 'card',
+                    ],
+                    'requestId' => $item->id,
+                    'cancelReason' => optional($item)->rejection_reason,
+                    'cancelledAt' => null,
+                    'createdAt' => $item->created_at ? optional($item->created_at)->toIso8601String() : null,
+                ];
+            });
 
             return response()->json([
                 'success' => true,
-                'count'   => $subscriptions->count(),
-                'data'    => $subscriptions
+                'message' => 'تم جلب البيانات بنجاح.',
+                'data'    => $formattedData
             ], 200);
 
         } catch (Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage()
-            ], $e->getCode() == 403 ? 403 : 500);
+                'message' => 'حدث خطأ أثناء جلب الاشتراكات النشطة.',
+                'error'   => $e->getMessage()
+            ], 500);
         }
     }
-  
-
     /**
      * تحديث حالة الطلب من قبل السائق
      */
     public function updateStatus(Request $request, $id): JsonResponse
-{
-    $request->validate([
-        'status' => 'required|in:accepted,rejected',
-    ]);
-
-    $user = auth()->user();
-    $driver = \App\Models\Driver\Driver::where('user_id', $user->id)->first();
-
-    if (!$driver) {
-        return response()->json(['success' => false, 'message' => 'بيانات السائق غير موجودة.'], 403);
-    }
-
-    $req = \App\Models\Shared\SubscriptionRequest::findOrFail($id);
-
-    if ($req->driver_id !== $driver->id) {
-        return response()->json(['success' => false, 'message' => 'هذا الطلب غير موجه لك.'], 403);
-    }
-
-    try {
-        $this->subscriptionService->updateStatus(
-            $req,
-            $request->status,
-            $request->input('rejection_reason')
-        );
-
-        return response()->json([
-            'success' => true,
-            'message' => 'تمت العملية بنجاح.'
+    {
+        $request->validate([
+            'status' => 'required|in:accepted,rejected',
         ]);
-    } catch (\Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => $e->getMessage()
-        ], 500);
+
+        $user = auth()->user();
+        $driver = \App\Models\Driver\Driver::where('user_id', $user->id)->first();
+
+        if (!$driver) {
+            return response()->json(['success' => false, 'message' => 'بيانات السائق غير موجودة.'], 403);
+        }
+
+        $req = \App\Models\Shared\SubscriptionRequest::findOrFail($id);
+
+        if ($req->driver_id !== $driver->id) {
+            return response()->json(['success' => false, 'message' => 'هذا الطلب غير موجه لك.'], 403);
+        }
+
+        try {
+            $updatedRequest = $this->subscriptionService->updateStatus(
+                $req,
+                $request->status,
+                $request->input('rejection_reason')
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'تمت العملية بنجاح.',
+                'data'    => new SubscriptionRequestResource($updatedRequest)
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
-}
 
     /**
      * عرض تفاصيل طلب اشتراك معين
      */
     public function show($id): JsonResponse
-{
-    $driver = auth()->user()->driver;
+    {
+        $driver = auth()->user()->driver;
 
-    if (!$driver) {
-        return response()->json(['success' => false, 'message' => 'بيانات السائق غير موجودة.'], 403);
-    }
+        if (!$driver) {
+            return response()->json(['success' => false, 'message' => 'بيانات السائق غير موجودة.'], 403);
+        }
 
-    $subscriptionRequest = SubscriptionRequest::where('id', $id)
-        ->where('driver_id', $driver->id)
-        ->with(['parent.user', 'school', 'children'])
-        ->first();
+        $subscriptionRequest = SubscriptionRequest::where('id', $id)
+            ->where('driver_id', $driver->id)
+            ->with([
+                'parent.user',
+                'driver.user',
+                'school',
+                'children.school',
+                'children.address',
+                'contract',
+            ])
+            ->first();
 
-    if (!$subscriptionRequest) {
+        if (!$subscriptionRequest) {
+            return response()->json([
+                'success' => false, 
+                'message' => 'الطلب غير موجود أو أنه غير مخصص لهذا السائق.',
+                'debug_info' => [
+                    'requested_id' => $id,
+                    'driver_id' => $driver->id
+                ]
+            ], 404);
+        }
+
         return response()->json([
-            'success' => false, 
-            'message' => 'الطلب غير موجود أو أنه غير مخصص لهذا السائق.',
-            'debug_info' => [
-                'requested_id' => $id,
-                'driver_id' => $driver->id
-            ]
-        ], 404);
+            'success' => true,
+            'data'    => new SubscriptionRequestResource($subscriptionRequest)
+        ], 200);
     }
 
-    return response()->json([
-        'success' => true,
-        'data'    => $subscriptionRequest
-    ], 200);
-}
+    /**
+     * عرض تفاصيل الرحلة الخاصة بطلب الاشتراك (مواقع الإنزال، الاستلام، وأوقات الرحلة للسائق)
+     * GET /api/driver/requests/{id}/trip-details
+     */
+    public function tripDetails($id): JsonResponse
+    {
+        $driver = auth()->user()->driver;
+
+        if (!$driver) {
+            return response()->json(['success' => false, 'message' => 'بيانات السائق غير موجودة.'], 403);
+        }
+
+        $subscriptionRequest = SubscriptionRequest::where('id', $id)
+            ->where('driver_id', $driver->id)
+            ->with([
+                'parent.user',
+                'school',
+                'children.school',
+                'children.address',
+            ])
+            ->first();
+
+        if (!$subscriptionRequest) {
+            return response()->json([
+                'success' => false, 
+                'message' => 'الطلب غير موجود أو غير مخصص لك.'
+            ], 404);
+        }
+
+        // تجهيز بيانات الرحلة المخصصة لعرضها في شاشة خريطة السائق
+        $tripDetails = [
+            'request_id'   => $subscriptionRequest->id,
+            'status'       => $subscriptionRequest->status,
+            'trip_type'    => $subscriptionRequest->direction ?? 'two_way',
+            'pickup_time'  => $subscriptionRequest->pickup_time ?? null,
+            'dropoff_time' => $subscriptionRequest->dropoff_time ?? null,
+            'parent' => [
+                'name'  => $subscriptionRequest->parent->user->name ?? 'غير محدد',
+                'phone' => $subscriptionRequest->parent->user->phone_number ?? $subscriptionRequest->parent->user->phone ?? null,
+            ],
+            'school' => [
+                'id'        => $subscriptionRequest->school->id ?? null,
+                'name'      => $subscriptionRequest->school->name ?? 'غير محدد',
+                'address'   => $subscriptionRequest->school->address ?? null,
+                'latitude'  => (float) ($subscriptionRequest->school->latitude ?? 0),
+                'longitude' => (float) ($subscriptionRequest->school->longitude ?? 0),
+            ],
+            'children' => $subscriptionRequest->children->map(function ($child) {
+                return [
+                    'id'        => $child->id,
+                    'name'      => $child->name ?? 'طفل',
+                    'gender'    => $child->gender ?? null,
+                    'home_address' => $child->address->label ?? $child->address->address ?? 'العنوان غير محدد',
+                    'latitude'  => (float) ($child->address->latitude ?? $child->latitude ?? 0),
+                    'longitude' => (float) ($child->address->longitude ?? $child->longitude ?? 0),
+                    'notes'     => $child->notes ?? null,
+                ];
+            })
+        ];
+
+        return response()->json([
+            'success' => true,
+            'data'    => $tripDetails
+        ], 200);
+    }
 }

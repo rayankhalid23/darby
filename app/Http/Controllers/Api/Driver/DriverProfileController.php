@@ -135,4 +135,61 @@ class DriverProfileController extends Controller
             ], 500);
         }
     }
+   /**
+     * 4. إرجاع قائمة مختصرة لجميع سيارات السائق (ID, الاسم/الماركة, الموديل, الصورة)
+     */
+   public function indexVehicles(): JsonResponse
+   {
+       try {
+           $userId = auth()->id();
+           $vehicles = $this->profileService->getDriverVehiclesSummary($userId);
+
+           return response()->json([
+               'status'  => true,
+               'message' => 'تم جلب قائمة السيارات بنجاح.',
+               'data'    => $vehicles
+           ], 200);
+
+       } catch (\Exception $e) {
+           Log::error("Controller Error - indexVehicles: " . $e->getMessage());
+           return response()->json([
+               'status'  => false,
+               'message' => 'حدث خطأ أثناء جلب قائمة السيارات: ' . $e->getMessage(),
+               'line'    => $e->getLine(),
+               'file'    => $e->getFile(),
+           ], 500);
+       }
+   }
+
+    /**
+     * 5. عرض التفاصيل الكاملة لسيارة محددة بالـ ID
+     */
+    public function showVehicle(int $vehicleId): JsonResponse
+    {
+        try {
+            $userId = auth()->id();
+            $vehicle = $this->profileService->getVehicleDetails($userId, $vehicleId);
+
+            if (!$vehicle) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'المركبة غير موجودة أو لا تملك صلاحية الوصول إليها.'
+                ], 404);
+            }
+
+            return response()->json([
+                'status'  => true,
+                'message' => 'تم جلب تفاصيل المركبة بنجاح.',
+                'data'    => $vehicle
+            ], 200);
+
+            } catch (\Exception $e) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'حدث خطأ أثناء جلب قائمة السيارات: ' . $e->getMessage(), // أضف هذا للجلب
+                    'line'    => $e->getLine(),
+                    'file'    => $e->getFile(),
+                ], 500);
+            }
+    }
 }

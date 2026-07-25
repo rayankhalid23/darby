@@ -2,109 +2,195 @@
 
 namespace App\Http\Resources\Api\Shared;
 
-use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Carbon\Carbon;
+use Carbon\CarbonPeriod;
 
 class SubscriptionRequestResource extends JsonResource
 {
-    public function toArray(Request $request): array
+    /**
+     * تحويل بيانات طلب الاشتراك بالشكل الشامل والمفصل
+     */
+    public function toArray($request)
     {
+        // جلب بيانات مستخدم ولي الأمر والسائق بشكل آمن
+        $parentUser = $this->parent->user ?? $this->user ?? null;
+        $driverUser = $this->driver->user ?? null;
+
+        // جلب تواريخ الاشتراك العامة للطلب (من الطلب أو العقد)
+        $startDate = $this->start_date ?? $this->contract->start_date ?? null;
+        $endDate   = $this->end_date ?? $this->contract->end_date ?? null;
+
+        // حساب عدد الأيام الفعلية العامة بدون الجمعة والسبت
+        $workingDaysCount = $this->calculateWorkingDays($startDate, $endDate);
+
+        // استخراج وتجهيز بيانات الأطفال (شاملة تفاصيل اشتراك كل طفل)
+        $childrenData  = $this->getFormattedChildrenDetails();
+        $childrenCount = count($childrenData) > 0 ? count($childrenData) : ($this->children_count ?? 1);
+        $totalAmount   = (float) ($this->total_price ?? $this->total_amount ?? $this->contract->total_price ?? 0);
+
         return [
-            'id'               => $this->id,
-            'status'           => $this->status,
-            'status_ar'        => $this->translateStatus($this->status),
+            'id'                 => $this->id,
+            'status'             => $this->status,
 
-            // معلومات ولي الأمر (نأخذها من علاقة المستخدم المرتبط بطلب الاشتراكات أو الأب إن وجد)
-            'parent' => $this->whenLoaded('parent', function () {
-                return [
-                    'id'    => $this->parent->id,
-                    'name'  => $this->parent->full_name ?? 'غير محدد',
-                    'phone' => $this->parent->phone_number ?? '',
-                ];
-            }),
+            // 📅 التواريخ وعدد أيام العمل الفعلية للطلب ككل
+            'start_date'         => $startDate ? Carbon::parse($startDate)->format('Y-m-d') : null,
+            'working_days_count' => $workingDaysCount,
 
-            'children_count'   => $this->whenLoaded('children', function () {
-                return $this->children->count();
-            }, 0),
+            'total_amount'       => $totalAmount,
+            'children_count'     => $childrenCount,
+           
 
-            'total_price'      => (float) $this->total_price,
-            
-            // الاسم الفلاني: هل حقل سبب الرفض موجود في جدول طلبات الاشتراكات؟ 
-            // إذا كان اسمه في قاعدة البيانات 'rejection_reason' تركناه هكذا، وإذا كان اسماً آخر أخبرني به.
-            'rejection_reason' => $this->rejection_reason ?? null,
+            // 👨‍👩‍👦 بيانات ولي الأمر
+            'parent' => [
+                'id'    => $this->parent_id ?? $parentUser?->id,
+                'name'  => $parentUser?->full_name ?? $parentUser?->name ?? 'غير محدد',
+                'phone' => $parentUser?->phone_number ?? $parentUser?->phone ?? 'غير محدد',
+            ],
 
-            'created_at'       => $this->created_at?->format('Y-m-d H:i:s'),
+            // 🚘 بيانات السائق
+            'driver' => [
+                'id'    => $this->driver_id ?? $this->driver?->id,
+                'name'  => $driverUser?->full_name ?? $driverUser?->name ?? 'غير محدد',
+                'phone' => $driverUser?->phone_number ?? $driverUser?->phone ?? null,
+            ],
 
-            // العلاقات الإضافية (مثل السائق والمدرسة والعقود والأطفال بتفاصيلهم إن احتياج الأمر)
-            'driver' => $this->whenLoaded('driver', function () {
-                return [
-                    'id'    => $this->driver->id,
-                    'name'  => $this->driver->user->full_name ?? 'غير محدد',
-                    'phone' => $this->driver->user->phone_number ?? '',
-                ];
-            }),
+            // 👶 تفاصيل الأطفال المشمولين بالطلب مع بيانات اشتراك كل طفل بروحه
+            'children' => $childrenData,
 
-            'school' => $this->whenLoaded('school', function () {
-                return [
-                    'id'   => $this->school->id,
-                    'name' => $this->school->name,
-                ];
-            }),
-
-            'children' => $this->whenLoaded('children', function () {
-                return $this->children->map(function ($child) {
-                    return [
-                        'id'              => $child->id,
-                        'full_name'       => $child->full_name,
-                        'school'          => [
-                            'id'   => $child->school->id ?? null,
-                            'name' => $child->school->name ?? null,
-                        ],
-                        'subscription'    => [
-                            'type'       => $this->subscription_type,
-                            'direction'  => $this->direction,
-                            'timing'     => $this->timing,
-                            'start_date' => $this->start_date,
-                            'end_date'   => $this->end_date,
-                            // الاسم الفلاني: هل حقل عدد الأيام 'days_count' موجود في الجدول؟ إذا لم يكن موجوداً أخبرني باسم العمود أو كيف تحسبه.
-                            'days_count' => $this->days_count ?? null, 
-                        ],
-                        'pickup_address'  => [
-                            // الاسم الفلاني: تأكد من أسماء أعمدة الإحداثيات والعناوين في جدولك (هل هي label, lat, lng أم أسماء أخرى؟)
-                            'label' => $this->pickup_label ?? 'منزل الطفل',
-                            'lat'   => (float) ($this->pickup_lat ?? 0),
-                            'lng'   => (float) ($this->pickup_lng ?? 0),
-                        ],
-                        'dropoff_address' => [
-                            'label' => $this->dropoff_label ?? 'المدرسة',
-                            'lat'   => (float) ($this->dropoff_lat ?? 0),
-                            'lng'   => (float) ($this->dropoff_lng ?? 0),
-                        ],
-                        'price_per_child' => (float) $child->pivot->price_per_child,
-                        // الاسم الفلاني: هل حقل ملاحظات الطفل موجود في الجدول باسم 'notes' أو 'child_notes'؟ أخبرني بالاسم الصحيح إن لم يكن موجوداً.
-                        'child_notes'     => $child->pivot->notes ?? 'لا توجد ملاحظات',
-                    ];
-                });
-            }),
-
-            'contract' => $this->whenLoaded('contract', function () {
-                return [
-                    'id'              => $this->contract->id,
-                    'contract_number' => $this->contract->contract_number,
-                ];
-            }),
+            'created_at' => $this->created_at ? Carbon::parse($this->created_at)->format('Y-m-d H:i:s') : null,
         ];
     }
 
-    private function translateStatus(?string $status): string
+    /**
+     * دالة حساب أيام العمل الفعلية (استثناء الجمعة والسبت)
+     */
+    protected function calculateWorkingDays($startDateStr, $endDateStr): int
     {
-        return match ($status) {
-            'pending'   => 'قيد الانتظار',
-            'accepted'  => 'مقبول',
-            'rejected'  => 'مرفوض',
-            'cancelled' => 'ملغي',
-            'completed' => 'مكتمل',
-            default     => 'غير معروف',
-        };
+        if (!$startDateStr || !$endDateStr) {
+            return 0;
+        }
+
+        $start = Carbon::parse($startDateStr);
+        $end   = Carbon::parse($endDateStr);
+
+        if ($start->gt($end)) {
+            return 0;
+        }
+
+        $workingDays = 0;
+        $period = CarbonPeriod::create($start, $end);
+
+        foreach ($period as $date) {
+            if (!$date->isFriday() && !$date->isSaturday()) {
+                $workingDays++;
+            }
+        }
+
+        return $workingDays;
+    }
+
+    /**
+     * دالة تنسيق تفاصيل كل طفل مع بيانات اشتراكه الخاصة
+     */
+    protected function getFormattedChildrenDetails(): array
+    {
+        $items = $this->requestChildren ?? $this->children ?? collect();
+        $totalAmount = (float) ($this->total_price ?? $this->total_amount ?? $this->contract->total_price ?? 0);
+        $count = $items->count() > 0 ? $items->count() : 1;
+
+        return $items->map(function ($item) use ($totalAmount, $count) {
+            $child = $item->child ?? $item;
+
+            // 1. تواريخ ومدد الاشتراك الخاصة بالطفل (مع Fallback لبيانات الطلب الرئيسية)
+            $childStartDate = $item->start_date ?? $child->start_date ?? $this->start_date ?? $this->contract->start_date ?? null;
+            $childEndDate   = $item->end_date ?? $child->end_date ?? $this->end_date ?? $this->contract->end_date ?? null;
+            $childWorkingDays = $this->calculateWorkingDays($childStartDate, $childEndDate);
+
+            // 2. نوع الاشتراك لكل طفل (شهري، فصلي، سنوي، أسبوعي...)
+            $subscriptionType = $item->subscription_type 
+                ?? $item->plan_type 
+                ?? $item->package_type 
+                ?? $child->subscription_type 
+                ?? $this->subscription_type 
+                ?? $this->plan_type 
+                ?? 'غير محدد';
+
+            // 3. اتجاه الرحلة (ذهاب فقط / إياد فقط / ذهاب وإياب)
+            $tripType = $item->trip_type 
+                ?? $item->direction 
+                ?? $item->service_type 
+                ?? $child->trip_type 
+                ?? $this->trip_type 
+                ?? 'two_way'; // الافتراضي ذهاب وإياب
+
+            // 4. جلب سعر الطفل المباشر أو حسابه تقسيماً
+            $childPrice = (float) (
+                $item->price 
+                ?? $item->child_price 
+                ?? $item->cost 
+                ?? $item->pivot?->price 
+                ?? $child->subscription_price 
+                ?? ($totalAmount / $count)
+            );
+
+            // 5. جلب عنوان منزل الطفل
+            $pickupAddress = $item->pickup_label 
+                ?? $child->address?->label 
+                ?? $child->address 
+                ?? $child->home_address 
+                ?? $this->parent?->address?->label 
+                ?? 'غير محدد';
+
+            $pickupLat = $item->pickup_lat 
+                ?? $child->latitude 
+                ?? $child->address?->lat 
+                ?? $this->parent?->address?->lat 
+                ?? 0;
+
+            $pickupLng = $item->pickup_lng 
+                ?? $child->longitude 
+                ?? $child->address?->lng 
+                ?? $this->parent?->address?->lng 
+                ?? 0;
+
+            return [
+                'id'          => $child->id ?? null,
+                'name'        => $child->name ?? $child->full_name ?? 'غير محدد',
+                'price'       => round($childPrice, 2),
+                'gender'      => $child->gender ?? null,
+                'age'         => $child->age ?? null,
+                'photo_url'   => !empty($child->photo_url) ? asset($child->photo_url) : null,
+
+                // 📌 بيانات الاشتراك الخاصة بهذا الطفل فقط
+                'subscription' => [
+                    'type'               => $subscriptionType, // مثل: monthly, term, yearly
+                    'trip_type'          => $tripType,         // مثل: one_way_go (ذهاب), one_way_return (إياد), two_way (ذهاب وإياب)
+                    'start_date'         => $childStartDate ? Carbon::parse($childStartDate)->format('Y-m-d') : null,
+                    'end_date'           => $childEndDate ? Carbon::parse($childEndDate)->format('Y-m-d') : null,
+                    'working_days_count' => $childWorkingDays, // عدد الأيام الفعلية الخاصة بالطفل
+                ],
+
+                // 🏫 تفاصيل المدرسة
+                'school' => [
+                    'id'        => $child->school->id ?? $item->school_id ?? null,
+                    'name'      => $child->school->name ?? $item->school_name ?? 'غير محدد',
+                    'address'   => $child->school->address ?? null,
+                    'latitude'  => (float) ($child->school->latitude ?? $child->school->lat ?? $item->dropoff_lat ?? 0),
+                    'longitude' => (float) ($child->school->longitude ?? $child->school->lng ?? $item->dropoff_lng ?? 0),
+                ],
+
+                // 🏠 تفاصيل البيت (مكان الركوب)
+                'home' => [
+                    'address'   => $pickupAddress,
+                    'latitude'  => (float) $pickupLat,
+                    'longitude' => (float) $pickupLng,
+                    'notes'     => $item->pickup_notes ?? $child->notes ?? null,
+                ],
+
+                'pickup_time'  => isset($item->pickup_time) ? Carbon::parse($item->pickup_time)->format('H:i') : null,
+                'dropoff_time' => isset($item->dropoff_time) ? Carbon::parse($item->dropoff_time)->format('H:i') : null,
+            ];
+        })->toArray();
     }
 }
