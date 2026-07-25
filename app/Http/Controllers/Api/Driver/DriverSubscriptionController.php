@@ -159,6 +159,71 @@ class DriverSubscriptionController extends Controller
             ], 500);
         }
     }
+    /**
+     * عرض تفاصيل اشتراك نشط وفعلّي معين خاص بالسائق
+     * GET /api/driver/active-subscriptions/{id}
+     */
+    public function activeSubscriptionDetails($id): JsonResponse
+    {
+        $driver = auth()->user()->driver;
+
+        if (!$driver) {
+            return response()->json(['success' => false, 'message' => 'بيانات السائق غير موجودة.'], 403);
+        }
+
+        try {
+            $activeSub = $this->subscriptionService->getDriverActiveSubscriptionDetails($id, $driver->id);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'تم جلب تفاصيل الاشتراك النشط بنجاح.',
+                'data'    => [
+                    'id' => $activeSub->id,
+                    'status' => $activeSub->status ?? 'active',
+                    'statusLabel' => $activeSub->status == 'active' ? 'نشط' : 'غير نشط',
+                    'child' => [
+                        'id' => optional($activeSub->child)->id,
+                        'name' => optional($activeSub->child)->full_name ?? optional($activeSub->child)->name,
+                        'gender' => optional($activeSub->child)->gender,
+                        'avatar' => optional($activeSub->child)->photo_url,
+                        'avatarInitials' => mb_substr(optional($activeSub->child)->full_name ?? optional($activeSub->child)->name ?? '', 0, 2),
+                        'schoolName' => optional($activeSub->child->school)->name ?? optional($activeSub->school)->name ?? 'مدرسة الفلاح',
+                        'homeAddress' => optional($activeSub->child->address)->label ?? optional($activeSub->child->address)->address ?? 'العنوان غير محدد',
+                        'latitude' => (float) ($activeSub->pickup_lat ?? optional($activeSub->child->address)->latitude ?? 0),
+                        'longitude' => (float) ($activeSub->pickup_lng ?? optional($activeSub->child->address)->longitude ?? 0),
+                        'notes' => optional($activeSub->child)->notes,
+                    ],
+                    'parent' => [
+                        'id' => optional($activeSub->parent)->id,
+                        'name' => optional($activeSub->parent)->name,
+                        'phone' => optional($activeSub->parent)->phone_number ?? optional($activeSub->parent)->phone,
+                    ],
+                    'schedule' => [
+                        'pickupZoneName' => $activeSub->pickup_label ?? 'حي الأندلس',
+                        'pickupTime' => $activeSub->pickup_time,
+                        'dropoffTime' => $activeSub->dropoff_time,
+                        'schoolName' => optional($activeSub->school)->name ?? 'مدرسة الفلاح',
+                        'schoolAddress' => optional($activeSub->school)->address ?? null,
+                    ],
+                    'billing' => [
+                        'contractNumber' => optional($activeSub->contract)->contract_number,
+                        'subscriptionType' => optional($activeSub->contract)->subscription_type ?? 'monthly',
+                        'totalPrice' => (float) (optional($activeSub->contract)->total_price ?? 89),
+                        'currency' => 'SAR',
+                        'startsAt' => optional($activeSub->contract)->start_date ? optional($activeSub->contract)->start_date->toDateString() : null,
+                        'endsAt' => optional($activeSub->contract)->end_date ? optional($activeSub->contract)->end_date->toDateString() : null,
+                    ],
+                    'createdAt' => $activeSub->created_at ? $activeSub->created_at->toIso8601String() : null,
+                ]
+            ], 200);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 404);
+        }
+    }
 
     /**
      * عرض تفاصيل طلب اشتراك معين

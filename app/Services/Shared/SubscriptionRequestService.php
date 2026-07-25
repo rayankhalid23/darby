@@ -293,6 +293,28 @@ class SubscriptionRequestService
             }
         }
     }
+    /**
+     * جلب تفاصيل اشتراك نشط واحد خاص بالسائق مع العلاقات الكاملة
+     */
+    public function getDriverActiveSubscriptionDetails(int $activeSubscriptionId, int $driverId)
+    {
+        $activeSub = ActiveSubscription::where('id', $activeSubscriptionId)
+            ->where('driver_id', $driverId)
+            ->with([
+                'contract',
+                'child.school',
+                'child.address',
+                'parent', // تم تعديلها لتتوافق مع نموذج الأب مباشرة
+                'school'
+            ])
+            ->first();
+
+        if (!$activeSub) {
+            throw new Exception('الاشتراك النشط غير موجود أو ليس لديك صلاحية للوصول إليه.');
+        }
+
+        return $activeSub;
+    }
 
     // ============================================================
     // جلب طلبات الاشتراك الخاصة بولي الأمر

@@ -61,6 +61,7 @@ Route::middleware('auth:sanctum')->group(function () {
         
         // المسار الموحد الجديد لجلب الاشتراكات الفعلية والمثبتة بالفلاتر
         Route::get('/active-subscriptions', [DriverSubscriptionController::class, 'activeSubscriptions']); 
+        Route::get('/active-subscriptions/{id}', [DriverSubscriptionController::class, 'activeSubscriptionDetails']);
   
         
         Route::get('/routes', [DriverRouteController::class, 'index']); 
