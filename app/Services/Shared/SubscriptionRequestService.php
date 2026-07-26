@@ -22,6 +22,39 @@ class SubscriptionRequestService
         $this->contractService = $contractService;
     }
 
+    /**
+     * حساب عدد أيام العمل بين تاريخ البدء والانتهاء باستثناء الجمعة والسبت
+     */
+    private function calculateWorkingDays(?string $startDate, ?string $endDate): int
+    {
+        if (empty($startDate) || empty($endDate)) {
+            return 0;
+        }
+
+        try {
+            $start = \Carbon\Carbon::parse($startDate);
+            $end = \Carbon\Carbon::parse($endDate);
+
+            if ($start->greaterThan($end)) {
+                return 0;
+            }
+
+            $period = \Carbon\CarbonPeriod::create($start, $end);
+            $workingDaysCount = 0;
+
+            foreach ($period as $date) {
+                // استثناء يوم الجمعة (5) والسبت (6)
+                if (!in_array($date->dayOfWeek, [\Carbon\Carbon::FRIDAY, \Carbon\Carbon::SATURDAY])) {
+                    $workingDaysCount++;
+                }
+            }
+
+            return $workingDaysCount;
+        } catch (\Exception $e) {
+            return 0;
+        }
+    }
+
     // ============================================================
     // إنشاء طلب اشتراك
     // ============================================================
@@ -41,6 +74,12 @@ class SubscriptionRequestService
         }
 
         return DB::transaction(function () use ($data, $parent, $driver) {
+            $startDate = $data['start_date'] ?? null;
+            $endDate = $data['end_date'] ?? null;
+
+            // 1. حساب عدد أيام العمل وتعريف المتغير هنا لتجنب الخطأ
+            $daysCount = $this->calculateWorkingDays($startDate, $endDate);
+
             $totalPrice = collect($data['children'])->sum(fn($c) => $c['price_per_child'] ?? 0);
 
             $subscriptionRequest = SubscriptionRequest::create([
@@ -50,9 +89,9 @@ class SubscriptionRequestService
                 'subscription_type' => $data['subscription_type'] ?? 'monthly',
                 'direction'         => $data['direction'],
                 'timing'            => $data['timing'],
-                'start_date'        => $data['start_date'],
-                'end_date'          => $data['end_date'] ?? null,
-                'days_count'        => $data['days_count'] ?? null,
+                'start_date'        => $startDate,
+                'end_date'          => $endDate,
+                'days_count'        => $daysCount, // 2. استخدامه هنا بشكل صحيح
                 'total_price'       => $totalPrice,
                 'pickup_time'       => $data['pickup_time'] ?? null,
                 'dropoff_time'      => $data['dropoff_time'] ?? null,
@@ -510,4 +549,6 @@ class SubscriptionRequestService
             'contract',
         ])->findOrFail($id);
     }
+
+    
 }

@@ -56,6 +56,8 @@ class StoreSubscriptionRequest extends FormRequest
             'children.required'             => 'يجب تحديد طفل واحد على الأقل لإتمام طلب الاشتراك.',
             'children.*.child_id.exists'    => 'أحد الأطفال المحددين غير موجود في النظام.',
             'children.*.pickup_location_id.exists' => 'عنوان الركوب المحدد للطفل غير صحيح.',
+            'children.*.price_per_child.required' => 'سعر الاشتراك مطلوب لكل طفل.',
+            'children.*.price_per_child.numeric'  => 'سعر الطفل يجب أن يكون رقماً.',
         ];
     }
 }

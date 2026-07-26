@@ -36,17 +36,21 @@ Route::middleware('auth:sanctum')->group(function () {
     // مسارات أولياء الأمور لإرسال واستعراض طلبات الاشتراك
     // ============================================================
     Route::prefix('parent')->group(function () {
+
+    Route::post('/', [ParentSubscriptionController::class, 'store']); 
         // المسار الموحد لجلب طلبات الاشتراك (الطلبات الأولية المعلقة والمرفوضة)
         Route::get('/requests', [ParentSubscriptionController::class, 'index']); 
+        // مسار إلغاء طلب الاشتراك (المعلق)
+        Route::post('requests/{id}/cancel', [ParentSubscriptionController::class, 'cancel']);
         
         // المسار الموحد والوحيد الجديد لجلب الاشتراكات المفعّلة والموافَق عليها بالفلاتر
         Route::get('/active-subscriptions', [ParentSubscriptionController::class, 'activeSubscriptions']); 
               // المسار الخاص بجلب تفاصيل اشتراك نشط معين
               Route::get('/active-subscriptions/{id}', [ParentSubscriptionController::class, 'showActive']);
         
-        Route::post('/', [ParentSubscriptionController::class, 'store']); 
-        Route::get('/requests/{id}', [ParentSubscriptionController::class, 'show']); 
-        Route::post('subscriptions/{id}/cancel', [ParentSubscriptionController::class, 'cancel']);
+        
+        Route::get('/requests/{id}', [ParentSubscriptionController::class, 'showRequest']); 
+        
     });
 
     // ============================================================

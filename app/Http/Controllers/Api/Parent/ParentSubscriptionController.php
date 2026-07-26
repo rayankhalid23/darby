@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API\Parent;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\Api\Parent\SubscriptionRequestDetailsResource;
 use App\Http\Requests\Api\Shared\StoreSubscriptionRequest;
 use App\Services\Shared\SubscriptionRequestService;
 use App\Http\Resources\Api\Shared\SubscriptionRequestResource;
@@ -398,4 +399,54 @@ class ParentSubscriptionController extends Controller
             ], 500);
         }
     }
+    public function showRequest(Request $request, $id): JsonResponse
+    {
+        try {
+            $userId = $request->user()->id;
+
+            // جلب الطلب مباشرة عبر الـ user_id أو الـ parent_id المتوفر للمستخدم الحالي
+            $subscriptionRequest = \App\Models\Shared\SubscriptionRequest::with([
+                'driver.user',
+                'children.school',
+                'children.address'
+            ])
+            ->where(function($query) use ($userId) {
+                $query->where('parent_id', $userId)
+                      ->orWhereHas('parent', function($q) use ($userId) {
+                          $q->where('user_id', $userId);
+                      });
+            })
+            ->where('id', $id)
+            ->first();
+
+            if (!$subscriptionRequest) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'طلب الاشتراك غير موجود أو لا تملك صلاحية الوصول إليه.'
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'تم جلب تفاصيل الطلب بنجاح.',
+                'data'    => new SubscriptionRequestDetailsResource($subscriptionRequest)
+            ], 200);
+
+        } catch (Exception $e) {
+            Log::error('Error in ParentSubscriptionController@showRequest', [
+                'message' => $e->getMessage(),
+                'file'    => $e->getFile(),
+                'line'    => $e->getLine(),
+                'user_id' => $request->user()->id ?? null,
+                'request_id' => $id,
+                'trace'   => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'حدث خطأ أثناء جلب تفاصيل الطلب: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
 }
