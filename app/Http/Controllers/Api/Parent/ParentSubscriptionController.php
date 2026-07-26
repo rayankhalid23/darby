@@ -448,5 +448,21 @@ class ParentSubscriptionController extends Controller
             ], 500);
         }
     }
+    public function getSubscribedDrivers(Request $request): JsonResponse
+    {
+        try {
+            $driverIds = $this->subscriptionService->getParentSubscribedDriverIds($request->user()->id);
+
+            return response()->json([
+                'success'    => true,
+                'driver_ids' => $driverIds
+            ], 200);
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'حدث خطأ: ' . $e->getMessage()
+            ], 400);
+        }
+    }
     
 }

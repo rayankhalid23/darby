@@ -498,6 +498,7 @@ class SubscriptionRequestService
             $q->where('parent_id', $parent->id)
               ->orWhere('parent_id', $userId);
         })->where('driver_id', $driverId)
+          ->whereIn('status', ['active', 'completed', 'cancelled']) // الحالات المطلوبة
           ->exists();
     }
 
@@ -548,6 +549,61 @@ class SubscriptionRequestService
             'children.address',
             'contract',
         ])->findOrFail($id);
+    }
+    /**
+     * جلب أIDs جميع السائقين المشترك معهم ولي الأمر
+     */
+    public function getParentSubscribedDriverIds(int $userId): array
+    {
+        $parent = ParentModel::where('user_id', $userId)->first();
+        if (!$parent) {
+            return [];
+        }
+
+        return ActiveSubscription::where(function ($q) use ($userId, $parent) {
+                $q->where('parent_id', $parent->id)
+                  ->orWhere('parent_id', $userId);
+            })
+            ->whereIn('status', ['active', 'completed', 'cancelled'])
+            ->pluck('driver_id')
+            ->unique()
+            ->values()
+            ->toArray();
+    }
+
+    /**
+     * جلب أIDs جميع أولياء الأمور المشترك معهم السائق
+     */
+    public function getDriverSubscribedParentIds(int $userId): array
+    {
+        $driver = Driver::where('user_id', $userId)->first();
+        if (!$driver) {
+            return [];
+        }
+
+        // جلب الـ parent_id مباشرة من جدول الاشتراكات النشطة/المكتملة/الملغاة
+        return ActiveSubscription::where('driver_id', $driver->id)
+            ->whereIn('status', ['active', 'completed', 'cancelled'])
+            ->pluck('parent_id')
+            ->unique()
+            ->values()
+            ->toArray();
+    }
+    public function getSubscribedDrivers(Request $request): JsonResponse
+    {
+        try {
+            $driverIds = $this->subscriptionService->getParentSubscribedDriverIds($request->user()->id);
+
+            return response()->json([
+                'success'    => true,
+                'driver_ids' => $driverIds
+            ], 200);
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'حدث خطأ: ' . $e->getMessage()
+            ], 400);
+        }
     }
 
     

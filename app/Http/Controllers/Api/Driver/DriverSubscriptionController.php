@@ -330,4 +330,21 @@ class DriverSubscriptionController extends Controller
             'data'    => $tripDetails
         ], 200);
     }
+
+    public function getSubscribedParents(Request $request): JsonResponse
+    {
+        try {
+            $parentIds = $this->subscriptionService->getDriverSubscribedParentIds($request->user()->id);
+
+            return response()->json([
+                'success'    => true,
+                'parent_ids' => $parentIds
+            ], 200);
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'حدث خطأ: ' . $e->getMessage()
+            ], 400);
+        }
+    }
 }
