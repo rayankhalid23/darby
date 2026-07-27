@@ -6,6 +6,7 @@ use App\Models\Shared\Complaint;
 use App\Models\Shared\Contract;
 use App\Models\Shared\Trip;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Validator;
@@ -17,34 +18,36 @@ class ComplaintService
         $parentId = $this->getParentRecordId($parentUserId);
 
         $query = Complaint::with(['driver.user', 'trip', 'resolvedBy'])
-            ->where('submitted_by', $parentId);
+            ->where(function ($q) use ($parentId, $parentUserId) {
+                $q->where('submitted_by', $parentId)
+                  ->orWhere('submitted_by', $parentUserId);
+            });
 
-        // 🎯 الفلترة الذكية المعتمدة على الـ Status وقيمة الـ action_taken
-        if (!empty($filters['type'])) {
-            if ($filters['type'] === 'pending') {
-                // الشكاوى المعلقة: حالتها pending وحقل الإجراء هو 'none' أو فارغ
-                $query->where('status', 'pending')
-                      ->where(function ($q) {
-                          $q->whereNull('action_taken')
-                            ->orWhere('action_taken', 'none')
-                            ->orWhere('action_taken', '');
-                      });
-            } elseif ($filters['type'] === 'resolved' || $filters['type'] === 'action_taken') {
-                // الشكاوى المتخذ فيها قرار: حالتها ليست pending أو حقل الإجراء يحتوي على قرار حقيقي (ليس none وليس فارغاً)
+        $statusFilter = strtolower($filters['status'] ?? $filters['type'] ?? $filters['filter'] ?? 'all');
+
+        if ($statusFilter !== 'all' && $statusFilter !== '' && $statusFilter !== 'all_complaints') {
+            if ($statusFilter === 'pending') {
                 $query->where(function ($q) {
-                    $q->where('status', '!=', 'pending')
+                    $q->where('status', 'pending')
                       ->orWhere(function ($sub) {
-                          $sub->whereNotNull('action_taken')
+                          $sub->whereNull('action_taken')
+                              ->orWhere('action_taken', 'none')
+                              ->orWhere('action_taken', '');
+                      });
+                });
+            } elseif ($statusFilter === 'completed' || $statusFilter === 'resolved' || $statusFilter === 'action_taken') {
+                $query->where(function ($q) {
+                    $q->whereIn('status', ['completed', 'resolved', 'closed'])
+                      ->orWhere(function ($sub) {
+                          $sub->where('status', '!=', 'pending')
+                              ->whereNotNull('action_taken')
                               ->where('action_taken', '!=', 'none')
                               ->where('action_taken', '!=', '');
                       });
                 });
+            } else {
+                $query->where('status', $statusFilter);
             }
-        }
-
-        // الحفاظ على فلترة الـ status المباشرة كدعم إضافي
-        if (!empty($filters['status']) && empty($filters['type'])) {
-            $query->where('status', $filters['status']);
         }
 
         return $query->latest()->paginate(15);
@@ -55,7 +58,10 @@ class ComplaintService
 
         return Complaint::with(['driver.user', 'trip', 'resolvedBy'])
             ->where('id', $complaintId)
-            ->where('submitted_by', $parentId)
+            ->where(function ($q) use ($parentId, $parentUserId) {
+                $q->where('submitted_by', $parentId)
+                  ->orWhere('submitted_by', $parentUserId);
+            })
             ->firstOrFail();
     }
 
@@ -63,20 +69,55 @@ class ComplaintService
     {
         $parentId = $this->getParentRecordId($parentUserId);
 
-        $contract = Contract::where('parent_id', $parentId)
-            ->where('driver_id', $data['driver_id'])
-            ->whereIn('status', ['active', 'cancelled', 'terminated'])
+        // البحث عن السائق سواء تم إمراره كـ driver_id أو كـ user_id
+        $driver = \App\Models\Driver\Driver::where('id', $data['driver_id'])
+            ->orWhere('user_id', $data['driver_id'])
             ->first();
 
-        if (!$contract) {
+        if (!$driver) {
             throw ValidationException::withMessages([
-                'driver_id' => ['يجب أن يكون لديك اشتراك سابق مع هذا السائق لتتمكن من تقديم شكوى ضده.'],
+                'driver_id' => ['السائق المحدد غير موجود في النظام.'],
+            ]);
+        }
+
+        $realDriverId = $driver->id;
+        $driverUserId = $driver->user_id;
+
+        // فحص وجود اشتراك سابق أو حالي في أي من الجداول (ActiveSubscription, Contract, SubscriptionRequest)
+        $hasSubscription = \App\Models\Shared\ActiveSubscription::where(function ($q) use ($parentId, $parentUserId) {
+                $q->where('parent_id', $parentId)->orWhere('parent_id', $parentUserId);
+            })
+            ->where(function ($q) use ($realDriverId, $driverUserId) {
+                $q->where('driver_id', $realDriverId)->orWhere('driver_id', $driverUserId);
+            })
+            ->exists()
+            || Contract::where(function ($q) use ($parentId, $parentUserId) {
+                $q->where('parent_id', $parentId)->orWhere('parent_id', $parentUserId);
+            })
+            ->where(function ($q) use ($realDriverId, $driverUserId) {
+                $q->where('driver_id', $realDriverId)->orWhere('driver_id', $driverUserId);
+            })
+            ->exists()
+            || \App\Models\Shared\SubscriptionRequest::where(function ($q) use ($parentId, $parentUserId) {
+                $q->where('parent_id', $parentId)->orWhere('parent_id', $parentUserId);
+            })
+            ->where(function ($q) use ($realDriverId, $driverUserId) {
+                $q->where('driver_id', $realDriverId)->orWhere('driver_id', $driverUserId);
+            })
+            ->whereIn('status', ['accepted', 'contract_offered', 'pending', 'active'])
+            ->exists();
+
+        if (!$hasSubscription) {
+            throw ValidationException::withMessages([
+                'driver_id' => ['يجب أن يكون لديك اشتراك سابق أو حالي مع هذا السائق لتتمكن من تقديم شكوى ضده.'],
             ]);
         }
 
         if (!empty($data['trip_id'])) {
             $trip = Trip::where('id', $data['trip_id'])
-                ->where('driver_id', $data['driver_id'])
+                ->where(function ($q) use ($realDriverId, $driverUserId) {
+                    $q->where('driver_id', $realDriverId)->orWhere('driver_id', $driverUserId);
+                })
                 ->first();
 
             if (!$trip) {
@@ -89,75 +130,95 @@ class ComplaintService
         return Complaint::create([
             'submitted_by'  => $parentId,
             'against_type'  => 'DRIVER',
-            'against_id'    => $data['driver_id'],
-            'driver_id'     => $data['driver_id'],
+            'against_id'    => $realDriverId,
+            'driver_id'     => $realDriverId,
             'trip_id'       => $data['trip_id'] ?? null,
             'description'   => $data['description'],
             'status'        => 'pending',
         ]);
     }
 
-    public function updateComplaint(int $parentUserId, int $complaintId, array $data): Complaint
-    {
-        $parentId = $this->getParentRecordId($parentUserId);
-
-        $complaint = Complaint::where('id', $complaintId)
-            ->where('submitted_by', $parentId)
-            ->where('status', 'pending')
-            ->firstOrFail();
-
-        $complaint->update([
-            'description' => $data['description'],
-        ]);
-
-        return $complaint->fresh();
-    }
 
     public function deleteComplaint(int $parentUserId, int $complaintId): void
     {
         $parentId = $this->getParentRecordId($parentUserId);
 
         $complaint = Complaint::where('id', $complaintId)
-            ->where('submitted_by', $parentId)
+            ->where(function ($q) use ($parentId, $parentUserId) {
+                $q->where('submitted_by', $parentId)
+                  ->orWhere('submitted_by', $parentUserId);
+            })
             ->where('status', 'pending')
             ->firstOrFail();
 
         $complaint->delete();
+    }public function updateComplaint(int $parentUserId, int $complaintId, array $data): Complaint
+    {
+        $parentId = $this->getParentRecordId($parentUserId);
+
+        $complaint = Complaint::where('id', $complaintId)
+            ->where(function ($q) use ($parentId, $parentUserId) {
+                $q->where('submitted_by', $parentId)
+                  ->orWhere('submitted_by', $parentUserId);
+            })
+            ->where('status', 'pending')
+            ->firstOrFail();
+
+        return \DB::transaction(function () use ($complaint, $data) {
+            
+            // استخراج الحقول المرسلة فقط دون مسح القيمة القديمة إذا لم تُرسل
+            $updateData = array_filter([
+                'description' => $data['description'] ?? null,
+                'trip_id'     => $data['trip_id'] ?? null,       // <--- تحديث الرحلة
+                'driver_id'   => $data['driver_id'] ?? null,     // <--- تحديث السائق
+                'type'        => $data['type'] ?? null,
+            ], fn($value) => !is_null($value));
+
+            if (!empty($updateData)) {
+                $complaint->update($updateData);
+            }
+
+            return $complaint->fresh();
+        });
     }
 
+    
+
     /**
-     * جلب رحلات السائق المرتبطة بولي الأمر بناءً على العقود النشطة بينهما.
+     * جلب رحلات السائق المرتبطة بولي الأمر بناءً على العقود والاشتراكات النشطة بينهما.
      *
      * @param int $parentUserId  (المعرف الرئيسي للمستخدم - الولي)
-     * @param int $driverId      (المعرف المباشر للسائق في جدول السائقين)
+     * @param int $driverId      (المعرف المباشر للسائق في جدول السائقين أو المستخدمين)
      * @return \Illuminate\Support\Collection|array
      */
     public function getDriverTripsForParent(int $parentUserId, int $driverId)
     {
         try {
-            // 1. جلب سجل الولي مباشرة من الجدول لضمان عدم حدوث خطأ Class Not Found
             $parent = \Illuminate\Support\Facades\DB::table('parents')
                 ->where('user_id', $parentUserId)
                 ->first();
 
-            if (!$parent) {
-                \Illuminate\Support\Facades\Log::warning("ComplaintService: لم يتم العثور على سجل ولي أمر للمستخدم ID: {$parentUserId}");
-                return [];
-            }
+            $parentId = $parent ? $parent->id : null;
 
-            // 2. جلب الرحلات باستخدام Query Builder لضمان السرعة والعمل الفوري
-            // نقوم بجلب الرحلات التابعة للسائق والتي يربطها عقد نشط مع ولي الأمر هذا
+            // تحديد معرّفات السائق (سواء مرر كـ driver_id أو كـ user_id)
+            $driver = \Illuminate\Support\Facades\DB::table('drivers')
+                ->where('id', $driverId)
+                ->orWhere('user_id', $driverId)
+                ->first();
+
+            $realDriverId = $driver ? $driver->id : $driverId;
+            $driverUserId = $driver ? $driver->user_id : null;
+
             $trips = \Illuminate\Support\Facades\DB::table('trips')
-                ->join('contracts', 'contracts.driver_id', '=', 'trips.driver_id')
-                ->where('trips.driver_id', $driverId)
-                ->where('contracts.parent_id', $parent->id)
-                ->where('contracts.status', 'active')
-                ->select('trips.*') // جلب بيانات جدول الرحلات فقط
-                ->distinct()        // منع تكرار الرحلات
-                ->orderBy('trips.id', 'desc') // أحدث الرحلات أولاً
+                ->where(function ($q) use ($realDriverId, $driverUserId) {
+                    $q->where('driver_id', $realDriverId);
+                    if ($driverUserId) {
+                        $q->orWhere('driver_id', $driverUserId);
+                    }
+                })
+                ->orderBy('id', 'desc')
                 ->get();
 
-            // تحويل النتيجة إلى مصفوفة أو تجميعة كائنات قياسية لتتوافق مع الـ Controller
             return $trips;
 
         } catch (\Exception $e) {
@@ -169,7 +230,10 @@ class ComplaintService
 
     private function getParentRecordId(int $userId): int
     {
-        $parent = \App\Models\Parent\ParentModel::where('user_id', $userId)->firstOrFail();
-        return $parent->id;
+        $parent = \App\Models\Parent\ParentModel::where('user_id', $userId)->first();
+        if ($parent) {
+            return $parent->id;
+        }
+        return $userId;
     }
 }

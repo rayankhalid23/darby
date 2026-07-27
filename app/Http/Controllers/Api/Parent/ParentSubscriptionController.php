@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API\Parent;
 
 use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\DB;
 use App\Http\Resources\Api\Parent\SubscriptionRequestDetailsResource;
 use App\Http\Requests\Api\Shared\StoreSubscriptionRequest;
 use App\Services\Shared\SubscriptionRequestService;
@@ -151,9 +152,7 @@ class ParentSubscriptionController extends Controller
                 'message' => $e->getMessage() ?? 'حدث خطأ أثناء الإلغاء.'
             ], 422);
         }
-    }
-
-    public function activeSubscriptions(Request $request): JsonResponse
+    }public function activeSubscriptions(Request $request): JsonResponse
     {
         try {
             $request->validate([
@@ -168,36 +167,48 @@ class ParentSubscriptionController extends Controller
             $formattedData = $activeSubscriptions->map(function ($item) {
                 $driverUser = optional($item->driver)->user;
                 
-                // جلب عنوان البيت بشكل آمن إن وجد
+                // جلب عنوان المنزل بشكل مباشر ودقيق من علاقة الطفل أو ولي الأمر
+                $childModel = optional($item->child);
                 $parentModel = optional($item)->parent;
+
                 $address = null;
-                if ($parentModel && method_exists($parentModel, 'addresses')) {
+                if ($childModel->address) {
+                    $address = $childModel->address;
+                } elseif ($parentModel && method_exists($parentModel, 'addresses')) {
                     $address = $parentModel->addresses()->where('is_default', true)->first() 
-                               ?? $parentModel->addresses()->first();
+                                ?? $parentModel->addresses()->first();
                 }
 
-                $school = optional($item->school);
+                $homeLat = $address->lat ?? $item->pickup_lat ?? null;
+                $homeLng = $address->lng ?? $item->pickup_lng ?? null;
+                $homeLabel = $address->label ?? $item->pickup_label ?? 'المنزل';
+
+                // جلب المدرسة
+                $school = optional($item->school ?? $childModel->school);
+                $schoolLat = $school->lat ?? $item->school_lat ?? $item->dropoff_lat ?? null;
+                $schoolLng = $school->lng ?? $item->school_lng ?? $item->dropoff_lng ?? null;
+                $schoolAddress = $school->address ?? $item->school_address ?? 'غير محدد';
 
                 return [
                     'id' => $item->id,
                     'status' => $item->status ?? 'active',
                     'statusLabel' => $item->status == 'active' ? 'نشط' : 'غير نشط',
                     'child' => [
-                        'id' => optional($item->child)->id,
-                        'name' => optional($item->child)->full_name,
-                        'avatar' => optional($item->child)->photo_url,
-                        'avatarInitials' => mb_substr(optional($item->child)->full_name ?? '', 0, 2),
-                        'schoolName' => $school->name ?? 'مدرسة الفلاح',
+                        'id' => $childModel->id,
+                        'name' => $childModel->full_name ?? $childModel->name,
+                        'avatar' => $childModel->photo_url,
+                        'avatarInitials' => mb_substr($childModel->full_name ?? '', 0, 2),
+                        'schoolName' => $school->name ?? $item->school_name ?? 'مدرسة الفلاح',
                         'schoolLocation' => [
-                            'lat' => isset($school->lat) ? (float) $school->lat : null,
-                            'lng' => isset($school->lng) ? (float) $school->lng : null,
-                            'address' => $school->address ?? null,
+                            'name' => $schoolAddress,
+                            'lat' => $schoolLat !== null ? (float) $schoolLat : null,
+                            'lng' => $schoolLng !== null ? (float) $schoolLng : null,
                         ]
                     ],
                     'driver' => [
                         'id' => optional($item->driver)->id,
-                        'name' => optional($driverUser)->full_name,
-                        'phone' => optional($driverUser)->phone_number,
+                        'name' => optional($driverUser)->full_name ?? optional($driverUser)->name,
+                        'phone' => optional($driverUser)->phone_number ?? optional($driverUser)->phone,
                         'rating' => (float) (optional($item->driver)->rating_avg ?? 5.0),
                         'vehicle' => [
                             'model' => 'تويوتا هايس',
@@ -208,12 +219,13 @@ class ParentSubscriptionController extends Controller
                     'schedule' => [
                         'shift' => optional($item->driver)->shift ? (string) optional($item->driver)->shift->value : '1',
                         'shiftLabel' => optional($item->driver)->shift ? optional($item->driver)->shift->name : 'صباحي',
-                        'pickupZoneName' => optional($item)->pickup_label ?? 'حي الأندلس',
-                        'schoolName' => $school->name ?? 'مدرسة الفلاح',
+                        'pickupZoneName' => $homeLabel,
+                        'schoolName' => $school->name ?? $item->school_name ?? 'مدرسة الفلاح',
                         'homeLocation' => [
-                            'lat' => isset($address->lat) ? (float) $address->lat : null,
-                            'lng' => isset($address->lng) ? (float) $address->lng : null,
-                            'label' => $address->label ?? 'المنزل',
+                            'label' => $homeLabel,
+                            'address' => $homeLabel,
+                            'lat' => $homeLat !== null ? (float) $homeLat : null,
+                            'lng' => $homeLng !== null ? (float) $homeLng : null,
                         ],
                         'pickupTime' => $item->pickup_time ?? '07:00 AM',
                         'dropoffTime' => $item->dropoff_time ?? '02:00 PM',
@@ -257,47 +269,13 @@ class ParentSubscriptionController extends Controller
             ], 400);
         }
     }
-
-    public function checkSubscription(Request $request): JsonResponse
-    {
-        try {
-            $request->validate([
-                'driver_id' => 'required|integer|exists:drivers,id',
-            ]);
-
-            $hasSubscription = $this->subscriptionService->parentHasSubscriptionWithDriver(
-                $request->user()->id,
-                $request->integer('driver_id')
-            );
-
-            return response()->json([
-                'success'          => true,
-                'has_subscription' => $hasSubscription,
-            ], 200);
-
-        } catch (Exception $e) {
-            Log::error('Error in ParentSubscriptionController@checkSubscription', [
-                'message' => $e->getMessage(),
-                'file'    => $e->getFile(),
-                'line'    => $e->getLine(),
-                'user_id' => $request->user()->id ?? null,
-                'request' => $request->all()
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'حدث خطأ أثناء التحقق من الاشتراك.'
-            ], 400);
-        }
-    }
-
     public function showActive(Request $request, $id): JsonResponse
     {
         try {
             $userId = $request->user()->id;
 
             // جلب الاشتراك النشط مع التحقق الآمن
-            $item = \App\Models\Shared\ActiveSubscription::with(['child', 'driver.user', 'contract', 'school'])
+            $item = \App\Models\Shared\ActiveSubscription::with(['child.address', 'child.school', 'driver.user', 'contract', 'school'])
                 ->where('parent_id', $userId)
                 ->where('id', $id)
                 ->first();
@@ -310,53 +288,71 @@ class ParentSubscriptionController extends Controller
             }
 
             $driverUser = optional($item->driver)->user;
-            
-            // جلب عنوان البيت بطريقة آمنة
+            $childModel = optional($item->child);
             $parentModel = optional($item)->parent;
+            
+            // جلب عنوان البيت بدقة
             $address = null;
-            if ($parentModel && method_exists($parentModel, 'addresses')) {
+            if ($childModel->address) {
+                $address = $childModel->address;
+            } elseif ($parentModel && method_exists($parentModel, 'addresses')) {
                 $address = $parentModel->addresses()->where('is_default', true)->first() 
-                           ?? $parentModel->addresses()->first();
+                            ?? $parentModel->addresses()->first();
             }
 
-            $school = optional($item->school);
+            $homeLat   = $address->lat ?? $item->pickup_ln ?? null;
+            $homeLng   = $address->lng ?? $item->pickup_lng ?? null;
+            $homeLabel = $address->label ?? $item->pickup_label ?? 'المنزل';
+
+            // جلب بيانات المدرسة وعنوانها بدقة
+            $school = optional($item->school ?? $childModel->school);
+            $schoolLat     = $school->lat ?? $item->school_lat ?? $item->dropoff_lat ?? null;
+            $schoolLng     = $school->lng ?? $item->school_lng ?? $item->dropoff_lng ?? null;
+            $schoolAddress = $school->address ?? $item->school_address ?? 'غير محدد';
+
+            // جلب بيانات المركبة مباشرة من جدول vehicles باستخدام driver_id لتجنب مشاكل علاقات المودل
+            $vehicle = null;
+            if ($item->driver_id) {
+                $vehicle = \DB::table('vehicles')->where('driver_id', $item->driver_id)->first();
+            }
 
             $formattedData = [
                 'id' => $item->id,
                 'status' => $item->status ?? 'active',
                 'statusLabel' => $item->status == 'active' ? 'نشط' : 'غير نشط',
                 'child' => [
-                    'id' => optional($item->child)->id,
-                    'name' => optional($item->child)->full_name,
-                    'avatar' => optional($item->child)->photo_url,
-                    'avatarInitials' => mb_substr(optional($item->child)->full_name ?? '', 0, 2),
-                    'schoolName' => $school->name ?? 'مدرسة الفلاح',
+                    'id' => $childModel->id,
+                    'name' => $childModel->full_name ?? $childModel->name,
+                    'avatar' => $childModel->photo_url,
+                    'avatarInitials' => mb_substr($childModel->full_name ?? '', 0, 2),
+                    'schoolName' => $school->name ?? $item->school_name ?? 'مدرسة الفلاح',
                     'schoolLocation' => [
-                        'lat' => isset($school->lat) ? (float) $school->lat : null,
-                        'lng' => isset($school->lng) ? (float) $school->lng : null,
-                        
+                        'name' => $schoolAddress,
+                        'lat' => $schoolLat !== null ? (float) $schoolLat : null,
+                        'lng' => $schoolLng !== null ? (float) $schoolLng : null,
                     ]
                 ],
                 'driver' => [
                     'id' => optional($item->driver)->id,
-                    'name' => optional($driverUser)->full_name,
-                    'phone' => optional($driverUser)->phone_number,
+                    'name' => optional($driverUser)->full_name ?? optional($driverUser)->name,
+                    'phone' => optional($driverUser)->phone_number ?? optional($driverUser)->phone,
                     'rating' => (float) (optional($item->driver)->rating_avg ?? 5.0),
                     'vehicle' => [
-                        'model' => 'تويوتا هايس',
-                        'color' => 'أبيض',
-                        'plateNumber' => '12345 طرابلس',
-                    ]
+                        'model' => $vehicle->model ?? $vehicle->name ?? 'غير محدد',
+                        'color' => $vehicle->color ?? 'غير محدد',
+                        'plateNumber' => $vehicle->plate_number ?? $vehicle->plate ?? 'غير محدد',
+                    ],
                 ],
                 'schedule' => [
                     'shift' => optional($item->driver)->shift ? (string) optional($item->driver)->shift->value : '1',
                     'shiftLabel' => optional($item->driver)->shift ? optional($item->driver)->shift->name : 'صباحي',
-                    'pickupZoneName' => optional($item)->pickup_label ?? 'حي الأندلس',
-                    'schoolName' => $school->name ?? 'مدرسة الفلاح',
+                    'pickupZoneName' => $homeLabel,
+                    'schoolName' => $school->name ?? $item->school_name ?? 'مدرسة الفلاح',
                     'homeLocation' => [
-                        'lat' => isset($address->lat) ? (float) $address->lat : null,
-                        'lng' => isset($address->lng) ? (float) $address->lng : null,
-                        'label' => $address->label ?? 'المنزل',
+                        'label'   => $homeLabel,
+                        'address' => $homeLabel,
+                        'lat'     => $homeLat !== null ? (float) $homeLat : null,
+                        'lng'     => $homeLng !== null ? (float) $homeLng : null,
                     ],
                     'pickupTime' => $item->pickup_time ?? '07:00 AM',
                     'dropoffTime' => $item->dropoff_time ?? '02:00 PM',
@@ -399,6 +395,52 @@ class ParentSubscriptionController extends Controller
             ], 500);
         }
     }
+
+    public function checkSubscription(Request $request): JsonResponse
+    {
+        try {
+            $user = $request->user();
+
+            // 1. جلب id ولي الأمر الفعلي من جدول parents بناءً على user_id
+            $parentRecord = DB::table('parents')->where('user_id', $user->id)->first();
+            $parentId = $parentRecord ? $parentRecord->id : $user->id;
+
+            // 2. بناء الاستعلام مع دعم الفلترة حسب السائق ووالد الطفل
+            $query = DB::table('active_subscriptions')
+                ->where(function ($q) use ($parentId, $user) {
+                    $q->where('parent_id', $parentId)
+                      ->orWhere('parent_id', $user->id); // حماية إضافية لمطابقة أي نوع ID
+                })
+                ->whereIn('status', ['active', 'pending', 'completed']);
+
+            // 3. التكد من السائق المحدد فقط إن تم إرسال driver_id في الـ Request (من Query Params أو Body)
+            if ($request->has('driver_id') && !empty($request->driver_id)) {
+                $query->where('driver_id', $request->driver_id);
+            }
+
+            $hasSubscription = $query->exists();
+
+            return response()->json([
+                'success'          => true,
+                'has_subscription' => $hasSubscription
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error in ParentSubscriptionController@checkSubscription: ' . $e->getMessage());
+
+            return response()->json([
+                'success'          => false,
+                'has_subscription' => false,
+                'message'          => 'حدث خطأ أثناء التحقق من الاشتراك.'
+            ], 500);
+        }
+    }
+
+
+    
+    
+    
+        
     public function showRequest(Request $request, $id): JsonResponse
     {
         try {
@@ -448,14 +490,15 @@ class ParentSubscriptionController extends Controller
             ], 500);
         }
     }
-    public function getSubscribedDrivers(Request $request): JsonResponse
+    public function getParentChatList(Request $request): JsonResponse
     {
         try {
-            $driverIds = $this->subscriptionService->getParentSubscribedDriverIds($request->user()->id);
+            $chats = $this->subscriptionService->getParentChats($request->user()->id);
 
             return response()->json([
-                'success'    => true,
-                'driver_ids' => $driverIds
+                'success' => true,
+                'message' => 'تم جلب قائمة المحادثات بنجاح.',
+                'data'    => $chats
             ], 200);
         } catch (Exception $e) {
             return response()->json([

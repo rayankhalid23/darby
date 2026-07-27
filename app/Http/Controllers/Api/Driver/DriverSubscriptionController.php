@@ -8,6 +8,7 @@ use App\Services\Shared\SubscriptionRequestService;
 use App\Models\Shared\SubscriptionRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Models\Driver\Driver;
 use Exception;
 
 class DriverSubscriptionController extends Controller
@@ -118,47 +119,68 @@ class DriverSubscriptionController extends Controller
             ], 500);
         }
     }
-    /**
-     * تحديث حالة الطلب من قبل السائق
-     */
+
     public function updateStatus(Request $request, $id): JsonResponse
     {
+        // 1. التحقق من صحة البيانات المدخلة
         $request->validate([
-            'status' => 'required|in:accepted,rejected',
+            'status'           => 'required|in:accepted,rejected',
+            'rejection_reason' => 'required_if:status,rejected|nullable|string|max:500',
         ]);
 
+        // 2. جلب ملف السائق المرتبط بالحساب الحالي
         $user = auth()->user();
-        $driver = \App\Models\Driver\Driver::where('user_id', $user->id)->first();
+        $driver = Driver::where('user_id', $user->id)->first();
 
         if (!$driver) {
-            return response()->json(['success' => false, 'message' => 'بيانات السائق غير موجودة.'], 403);
+            return response()->json([
+                'success' => false,
+                'message' => 'بيانات السائق غير موجودة.'
+            ], 403);
         }
 
-        $req = \App\Models\Shared\SubscriptionRequest::findOrFail($id);
+        // 3. البحث عن طلب الاشتراك
+        $subscriptionRequest = SubscriptionRequest::find($id);
 
-        if ($req->driver_id !== $driver->id) {
-            return response()->json(['success' => false, 'message' => 'هذا الطلب غير موجه لك.'], 403);
+        if (!$subscriptionRequest) {
+            return response()->json([
+                'success' => false,
+                'message' => 'طلب الاشتراك غير موجود.'
+            ], 404);
         }
 
+        // 4. التحقق من ملكية الطلب (أنه موجه لهذا السائق تحديداً)
+        $driverIdMatches = ($subscriptionRequest->driver_id == $driver->id) || ($subscriptionRequest->driver_id == $user->id);
+        if (!$driverIdMatches) {
+            return response()->json([
+                'success' => false,
+                'message' => 'هذا الطلب غير موجه لك ولا يمكنك التحكم به.'
+            ], 403);
+        }
+
+        // 5. تنفيذ عملية التحديث ومعالجة النتيجة
         try {
             $updatedRequest = $this->subscriptionService->updateStatus(
-                $req,
+                $subscriptionRequest,
                 $request->status,
                 $request->input('rejection_reason')
             );
 
             return response()->json([
                 'success' => true,
-                'message' => 'تمت العملية بنجاح.',
+                'message' => $request->status === 'accepted' ? 'تم قبول الطلب وتفعيل الاشتراك بنجاح.' : 'تم رفض الطلب بنجاح.',
                 'data'    => new SubscriptionRequestResource($updatedRequest)
-            ]);
-        } catch (\Exception $e) {
+            ], 200);
+
+        } catch (Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage()
+                'message' => 'حدث خطأ في النظام: ' . $e->getMessage()
             ], 500);
         }
     }
+
+    
     /**
      * عرض تفاصيل اشتراك نشط وفعلّي معين خاص بالسائق
      * GET /api/driver/active-subscriptions/{id}
@@ -331,14 +353,15 @@ class DriverSubscriptionController extends Controller
         ], 200);
     }
 
-    public function getSubscribedParents(Request $request): JsonResponse
+    public function getDriverChatList(Request $request): JsonResponse
     {
         try {
-            $parentIds = $this->subscriptionService->getDriverSubscribedParentIds($request->user()->id);
+            $chats = $this->subscriptionService->getDriverChats($request->user()->id);
 
             return response()->json([
-                'success'    => true,
-                'parent_ids' => $parentIds
+                'success' => true,
+                'message' => 'تم جلب قائمة المحادثات بنجاح.',
+                'data'    => $chats
             ], 200);
         } catch (Exception $e) {
             return response()->json([

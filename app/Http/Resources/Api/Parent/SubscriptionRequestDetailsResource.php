@@ -49,12 +49,12 @@ class SubscriptionRequestDetailsResource extends JsonResource
                         'age' => $child->age,
                         'photo_url' => $child->photo_url,
                         'subscription' => [
-                            'type' => $pivot->subscription_type ?? $this->subscription_type ?? 'monthly',
-                            'trip_type' => $pivot->trip_type ?? 'two_way',
-                            'start_date' => $pivot->start_date ?? $this->start_date?->toDateString(),
-                            'end_date' => $pivot->end_date ?? null,
-                            'working_days_count' => (int) ($pivot->working_days_count ?? $this->working_days_count ?? 0),
-                        ],
+    'type'                 => $pivot->subscription_type ?? $this->subscription_type ?? 'غير محدد',
+    'trip_type'            => $pivot->direction ?? $this->direction ?? 'two_way',
+    'start_date'           => optional($pivot->start_date ?? $this->start_date)->format('Y-m-d') ?? $this->start_date,
+    'end_date'             => optional($pivot->end_date ?? $this->end_date)->format('Y-m-d') ?? $this->end_date,
+    'working_days_count'   => (int) ($pivot->days_count ?? $this->days_count ?? 0),
+],
                         'school' => [
                             'id' => $school->id,
                             'name' => $school->name,

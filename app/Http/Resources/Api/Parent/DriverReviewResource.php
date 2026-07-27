@@ -7,6 +7,9 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class DriverReviewResource extends JsonResource
 {
+    /**
+     * Transform the resource into an array.
+     */
     public function toArray(Request $request): array
     {
         return [
@@ -19,10 +22,11 @@ class DriverReviewResource extends JsonResource
             'updated_at'  => $this->updated_at?->format('Y-m-d H:i:s'),
             'parent'      => $this->whenLoaded('parent', function () {
                 return [
-                    'id'        => (int) $this->parent->id,
-                    'full_name' => $this->parent->full_name,
-                    'avatar_url'=> $this->parent->avatar_url
-                        ? asset($this->parent->avatar_url)
+                    'id'          => (int) $this->parent->id,
+                    // الوصول لاسم المستخدم الحقيقي من جدول users عبر علاقة user() داخل ParentModel
+                    'full_name'   => optional($this->parent->user)->full_name,
+                    'avatar_url'  => optional($this->parent->user)->avatar_url
+                        ? asset($this->parent->user->avatar_url)
                         : null,
                 ];
             }),

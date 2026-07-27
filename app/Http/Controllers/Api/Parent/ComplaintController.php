@@ -8,6 +8,7 @@ use App\Http\Requests\Api\Parent\UpdateComplaintRequest;
 use App\Http\Resources\Api\Parent\ComplaintResource;
 use App\Services\Parent\ComplaintService;
 use Illuminate\Http\JsonResponse;
+
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -30,7 +31,7 @@ class ComplaintController extends Controller
         try {
             $complaints = $this->complaintService->getParentComplaints(
                 auth()->id(),
-                request()->only(['status', 'type']) 
+                request()->only(['status', 'type', 'filter']) 
             );
 
             return response()->json([
@@ -118,41 +119,38 @@ class ComplaintController extends Controller
         }
     }
 
-    /**
+   /**
      * تعديل شكوى قائمة مع حماية ضد التعديل بعد المعالجة
      */
-    public function update(UpdateComplaintRequest $request, int $id): JsonResponse
-    {
-        try {
-            $complaint = $this->complaintService->updateComplaint(
-                auth()->id(),
-                $id,
-                $request->validated()
-            );
+   public function update(UpdateComplaintRequest $request, int $id): JsonResponse
+   {
+       try {
+           $complaint = $this->complaintService->updateComplaint(
+               auth()->id(),
+               $id,
+               $request->validated()
+           );
 
-            if (!$complaint) {
-                return response()->json([
-                    'success'    => false,
-                    'error_code' => 'COMPLAINT_NOT_FOUND',
-                    'message'    => 'الشكوى التي تحاول تعديلها غير موجودة أو تم حذفها.'
-                ], 404);
-            }
+           return response()->json([
+               'success' => true,
+               'message' => 'تم تحديث الشكوى بنجاح.',
+               'data'    => new ComplaintResource($complaint),
+           ], 200);
 
-            return response()->json([
-                'success' => true,
-                'message' => 'تم تحديث الشكوى بنجاح.',
-                'data'    => new ComplaintResource($complaint),
-            ], 200);
+       } catch (Exception $e) {
+           Log::error("Complaint Update Error [ID {$id}]: " . $e->getMessage());
 
-        } catch (Exception $e) {
-            Log::error("Complaint Update Error [ID {$id}]: " . $e->getMessage());
-            return response()->json([
-                'success'    => false,
-                'error_code' => 'COMPLAINT_UPDATE_RESTRICTED',
-                'message'    => $e->getMessage() ?: 'لا يمكن تعديل هذه الشكوى (قد تكون قيد المعالجة أو ليست تابعة لحسابك).'
-            ], 400);
-        }
-    }
+           // إرجاع رسالة الخطأ المحددة من السيرفس (مثلاً: "لا يمكن تعديل الشكوى لأنها قيد المعالجة")
+           return [
+            'title'       => 'sometimes|required|string|max:255',
+            'description' => 'sometimes|required|string|min:10|max:5000',
+            'type'        => 'sometimes|required|string|in:driver,trip,app,other',
+            'driver_id'   => 'nullable|integer|exists:drivers,id',
+            'trip_id'     => 'sometimes|nullable|integer|exists:trips,id', // <--- أضف هذه القاعدة
+            'attachments' => 'nullable|array',
+        ];
+       }
+   }
 
     /**
      * حذف شكوى

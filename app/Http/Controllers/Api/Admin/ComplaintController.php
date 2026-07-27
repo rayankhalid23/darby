@@ -20,7 +20,7 @@ class ComplaintController extends Controller
     public function index(): JsonResponse
     {
         $complaints = $this->complaintService->getAllComplaints(
-            request()->only(['status', 'driver_id'])
+            request()->only(['status', 'type', 'filter', 'driver_id'])
         );
 
         return response()->json([

@@ -227,7 +227,16 @@ class TripStopService
     {
         $trip = Trip::findOrFail($tripId);
         
-        DB::transaction(function () use ($trip, $childId) {
+        $subscription = ActiveSubscription::where('driver_id', $trip->driver_id)
+            ->where('child_id', $childId)
+            ->where('status', 'active')
+            ->first();
+
+        $subId = $subscription ? $subscription->id : (ActiveSubscription::where('child_id', $childId)->value('id') ?? 1);
+        $pickupLat = $subscription ? ($subscription->pickup_lat ?? 32.89) : 32.89;
+        $pickupLng = $subscription ? ($subscription->pickup_lng ?? 13.18) : 13.18;
+
+        DB::transaction(function () use ($trip, $childId, $subId, $pickupLat, $pickupLng) {
             $isSkipped = TripEvent::where('trip_id', $trip->id)
                 ->where('child_id', $childId)
                 ->where('action_type', 'skipped')
@@ -240,7 +249,14 @@ class TripStopService
 
             TripEvent::updateOrCreate(
                 ['trip_id' => $trip->id, 'child_id' => $childId, 'action_type' => 'picked_up'],
-                ['recorded_at' => Carbon::now()]
+                [
+                    'subscription_id' => $subId,
+                    'trip_type'       => ($trip->trip_type === 'Morning' || $trip->trip_type === 'ذهاب') ? 'ذهاب' : 'عودة',
+                    'location_lat'    => $pickupLat,
+                    'location_lng'    => $pickupLng,
+                    'scanned_at'      => Carbon::now(),
+                    'trip_cost'       => 0,
+                ]
             );
         });
 

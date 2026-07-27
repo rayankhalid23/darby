@@ -4,8 +4,10 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\API\Parent\ParentSubscriptionController;
 use App\Http\Controllers\API\Driver\DriverSubscriptionController;
 use App\Http\Controllers\API\Shared\ContractController;
+use App\Http\Controllers\Api\Shared\ChatController;
 use App\Http\Controllers\API\Driver\DriverRouteController;
 use App\Http\Controllers\Api\Trip\DriverTripController;
+
 
 Route::middleware('auth:sanctum')->group(function () {
 
@@ -47,7 +49,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/active-subscriptions', [ParentSubscriptionController::class, 'activeSubscriptions']); 
               // المسار الخاص بجلب تفاصيل اشتراك نشط معين
               Route::get('/active-subscriptions/{id}', [ParentSubscriptionController::class, 'showActive']);
-              Route::get('/subscribed-drivers', [ParentSubscriptionController::class, 'getSubscribedDrivers']);
+              Route::get('/chats', [ChatController::class, 'getParentChatList']);
+              //مش خادمه الدوال متعها مسار بس
+              Route::post('/active-subscriptions/{id}/cancel', [ParentSubscriptionController::class, 'cancelActiveSubscription']);
         
         
         Route::get('/requests/{id}', [ParentSubscriptionController::class, 'showRequest']); 
@@ -67,7 +71,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // المسار الموحد الجديد لجلب الاشتراكات الفعلية والمثبتة بالفلاتر
         Route::get('/active-subscriptions', [DriverSubscriptionController::class, 'activeSubscriptions']); 
         Route::get('/active-subscriptions/{id}', [DriverSubscriptionController::class, 'activeSubscriptionDetails']);
-        Route::get('/subscribed-parents', [DriverSubscriptionController::class, 'getSubscribedParents']);
+        Route::get('/chats', [ChatController::class, 'getDriverChatList']);
   
         
         Route::get('/routes', [DriverRouteController::class, 'index']); 

@@ -22,18 +22,45 @@ class ParentChildController extends Controller
         $this->stopService = $stopService;
     }
 
+    private function resolveParentId(): int
+    {
+        $user = Auth::user();
+        $parent = \Illuminate\Support\Facades\DB::table('parents')->where('user_id', $user->id)->first();
+        return $parent ? (int) $parent->id : (int) $user->id;
+    }
+
+    private function checkChildBelongsToParent(int $childId): void
+    {
+        $user = Auth::user();
+        $parent = \Illuminate\Support\Facades\DB::table('parents')->where('user_id', $user->id)->first();
+        $parentId = $parent ? $parent->id : null;
+
+        $child = \App\Models\Parent\Child::where('id', $childId)
+            ->where(function ($q) use ($user, $parentId) {
+                $q->where('parent_id', $user->id);
+                if ($parentId) {
+                    $q->orWhere('parent_id', $parentId);
+                }
+            })->first();
+
+        if (!$child) {
+            throw new Exception("عذراً، هذا الطفل غير موجود أو لا يتبع لحسابك.");
+        }
+    }
+
     public function setAbsence(ChildAbsenceRequest $request, $childId): JsonResponse
     {
         $user = Auth::user();
-        $parentId = $user->parent->id;
+        $parentId = $this->resolveParentId();
 
         try {
-            $this->lifecycleService->setChildAbsence($childId, $request->dates);
+            $this->checkChildBelongsToParent((int) $childId);
+            $this->lifecycleService->setChildAbsence((int) $childId, $request->dates);
 
             // تسجيل عملية غياب الطفل في الـ Log
             Log::info("Parent Registered Child Absence", [
                 'parent_id'   => $parentId,
-                'parent_name' => $user->name,
+                'parent_name' => $user->full_name ?? $user->name,
                 'child_id'    => $childId,
                 'dates'       => $request->dates
             ]);
@@ -53,15 +80,16 @@ class ParentChildController extends Controller
     public function cancelAbsence(ChildAbsenceRequest $request, $childId): JsonResponse
     {
         $user = Auth::user();
-        $parentId = $user->parent->id;
+        $parentId = $this->resolveParentId();
 
         try {
-            $this->lifecycleService->removeChildAbsence($childId, $request->dates);
+            $this->checkChildBelongsToParent((int) $childId);
+            $this->lifecycleService->removeChildAbsence((int) $childId, $request->dates);
 
             // تسجيل إلغاء الغياب في الـ Log
             Log::info("Parent Cancelled Child Absence", [
                 'parent_id'   => $parentId,
-                'parent_name' => $user->name,
+                'parent_name' => $user->full_name ?? $user->name,
                 'child_id'    => $childId,
                 'dates'       => $request->dates
             ]);
@@ -78,19 +106,23 @@ class ParentChildController extends Controller
         }
     }
 
-    public function confirmManualPickup($tripId, $childId): JsonResponse
+    public function confirmManualPickup($param1 = null, $param2 = null): JsonResponse
     {
         $user = Auth::user();
-        $parentId = $user->parent->id;
+        $parentId = $this->resolveParentId();
+
+        $childId = request()->route('childId') ?? $param2 ?? $param1;
+        $tripId = request()->route('tripId') ?? $param1 ?? $param2;
 
         try {
-            $this->stopService->confirmManualPickup($tripId, $childId, $parentId);
+            $this->checkChildBelongsToParent((int) $childId);
+            $this->stopService->confirmManualPickup((int) $tripId, (int) $childId, $parentId);
 
             // تسجيل عملية التأكيد اليدوي كإثبات أمان بديل للـ QR
             Log::notice("Parent Confirmed Manual Pickup", [
                 'trip_id'     => $tripId,
                 'parent_id'   => $parentId,
-                'parent_name' => $user->name,
+                'parent_name' => $user->full_name ?? $user->name,
                 'child_id'    => $childId
             ]);
 

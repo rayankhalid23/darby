@@ -30,62 +30,55 @@ class ContractService
     // توليد العقد تلقائياً عند القبول
     // ============================================================
 
-    /**
-     * ينشئ سجل العقد في قاعدة البيانات + يولّد ملف PDF موقّعاً بهوية Darby
-     *
-     * @param SubscriptionRequest $req الطلب المقبول
-     * @return Contract
-     * @throws Exception
-     */
+
     public function generateContract(SubscriptionRequest $req): Contract
-    {
-        // 1. تحميل جميع العلاقات اللازمة
-        $req->load(['children.school', 'parent.user', 'driver.user', 'driver.vehicles']);
+{
+    // 1. تحميل جميع العلاقات اللازمة
+    $req->loadMissing(['children.school', 'parent.user', 'driver.user', 'driver.vehicles']);
 
-        // 2. جلب الشروط من قاعدة البيانات
-        $clauses = Clause::all()->pluck('clause_text')->toArray();
+    // 2. جلب الشروط من قاعدة البيانات
+    $clauses = Clause::all()->pluck('clause_text')->toArray();
 
-        // 3. إنشاء رقم العقد الفريد
-        $contractNumber = Contract::generateContractNumber();
+    // 3. إنشاء رقم العقد الفريد
+    $contractNumber = Contract::generateContractNumber();
 
-        // 4. إنشاء سجل العقد في قاعدة البيانات
-        $contract = Contract::create([
-            'subscription_request_id' => $req->id,
-            'parent_id'               => $req->parent_id,
-            'driver_id'               => $req->driver?->user_id ?? $req->driver_id,
-            'contract_number'         => $contractNumber,
-            'subscription_type'       => $req->subscription_type,
-            'direction'               => $req->direction,
-            'timing'                  => $req->timing,
-            'pickup_time'             => $req->pickup_time ?? '07:00:00',
-            'dropoff_time'            => $req->dropoff_time ?? '14:00:00',
-            'max_waiting_time' => $req->max_waiting_time ?? 15,
-            'start_date'              => $req->start_date,
-            'end_date'                => $req->end_date,
-            'days_count'              => $req->days_count,
-            'total_price'             => $req->total_price,
-            'clauses'                 => $clauses,
-            'status'                  => 'active',
-            'signed_at'               => now(),
-        ]);
+    // 4. استخراج معرّفات المستخدمين (User IDs)
+    $parentUserId = $req->parent?->user_id ?? $req->parent_id;
+    $driverUserId = $req->driver?->user_id ?? $req->driver_id;
 
-        // 5. توليد PDF
-        try {
-            $pdfPath = $this->generatePdf($contract);
-            $contract->update(['pdf_path' => $pdfPath]);
-        } catch (Exception $e) {
-            Log::error("فشل توليد PDF للعقد {$contractNumber}: " . $e->getMessage());
-        }
+    // 5. إنشاء سجل العقد في قاعدة البيانات
+    $contract = Contract::create([
+        'subscription_request_id' => $req->id,
+        'parent_id'               => $parentUserId,
+        'driver_id'               => $driverUserId,
+        'contract_number'         => $contractNumber,
+        'subscription_type'       => $req->subscription_type ?? $req->type ?? 'monthly',
+        'direction'               => $req->direction ?? $req->trip_type ?? 'both',
+        'timing'                  => $req->timing ?? 'MORNING',
+        'pickup_time'             => $req->pickup_time ?? '07:00:00',
+        'dropoff_time'            => $req->dropoff_time ?? '14:00:00',
+        'max_waiting_time'        => $req->max_waiting_time ?? 15,
+        'start_date'              => $req->start_date ?? now(),
+        'end_date'                => $req->end_date ?? null,
+        'days_count'              => $req->days_count ?? $req->working_days_count ?? 0,
+        'total_price'             => $req->total_price ?? $req->total_amount ?? 0,
+        'clauses'                 => $clauses,
+        'status'                  => 'active',
+        'signed_at'               => now(),
+    ]);
 
-        // 6. إنشاء الفاتورة المبدئية (بروفورما)
-        try {
+    // 6. إنشاء الفاتورة المبدئية (بروفورما)
+    try {
+        if (isset($this->financialService) && method_exists($this->financialService, 'generateProformaInvoice')) {
             $this->financialService->generateProformaInvoice($contract);
-        } catch (Exception $e) {
-            Log::error("فشل توليد الفاتورة المبدئية للعقد {$contractNumber}: " . $e->getMessage());
         }
-
-        return $contract->load(['subscriptionRequest', 'parent.user', 'driver.user', 'activeSubscriptions']);
+    } catch (\Exception $e) {
+        Log::error("فشل توليد الفاتورة المبدئية للعقد {$contractNumber}: " . $e->getMessage());
     }
+
+    return $contract->load(['subscriptionRequest', 'parent.user', 'driver.user', 'activeSubscriptions']);
+}
+    
 
     /**
      * قبول وتوقيع العقد من قبل ولي الأمر

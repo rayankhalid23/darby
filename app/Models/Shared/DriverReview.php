@@ -7,6 +7,7 @@ use App\Models\Driver\Driver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\Parent\ParentModel;
 
 class DriverReview extends Model
 {
@@ -28,9 +29,9 @@ class DriverReview extends Model
     ];
 
     public function parent(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'parent_id');
-    }
+{
+    return $this->belongsTo(ParentModel::class, 'parent_id');
+}
 
     public function driver(): BelongsTo
     {

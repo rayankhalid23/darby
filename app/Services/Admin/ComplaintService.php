@@ -18,20 +18,38 @@ class ComplaintService
     {
         $query = Complaint::with(['submittedBy.user', 'driver.user', 'trip', 'resolvedBy'])
             ->latest();
-    
-        // استخدام دالة array_filter لإزالة أي فلاتر فارغة أو تم إرسالها كـ null بالخطأ من Postman
-        $cleanFilters = array_filter($filters, function($value) {
-            return !is_null($value) && $value !== '';
-        });
-    
-        if (!empty($cleanFilters['status'])) {
-            $query->where('status', $cleanFilters['status']);
+
+        $statusFilter = strtolower($filters['status'] ?? $filters['type'] ?? $filters['filter'] ?? 'all');
+
+        if (!empty($filters['driver_id'])) {
+            $query->where('driver_id', $filters['driver_id']);
         }
-    
-        if (!empty($cleanFilters['driver_id'])) {
-            $query->where('driver_id', $cleanFilters['driver_id']);
+
+        if ($statusFilter !== 'all' && $statusFilter !== '' && $statusFilter !== 'all_complaints') {
+            if ($statusFilter === 'pending') {
+                $query->where(function ($q) {
+                    $q->where('status', 'pending')
+                      ->orWhere(function ($sub) {
+                          $sub->whereNull('action_taken')
+                              ->orWhere('action_taken', 'none')
+                              ->orWhere('action_taken', '');
+                      });
+                });
+            } elseif ($statusFilter === 'completed' || $statusFilter === 'resolved' || $statusFilter === 'action_taken') {
+                $query->where(function ($q) {
+                    $q->whereIn('status', ['completed', 'resolved', 'closed'])
+                      ->orWhere(function ($sub) {
+                          $sub->where('status', '!=', 'pending')
+                              ->whereNotNull('action_taken')
+                              ->where('action_taken', '!=', 'none')
+                              ->where('action_taken', '!=', '');
+                      });
+                });
+            } else {
+                $query->where('status', $statusFilter);
+            }
         }
-    
+
         return $query->paginate(15);
     }
 

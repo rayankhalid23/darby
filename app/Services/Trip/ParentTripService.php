@@ -11,16 +11,22 @@ use Carbon\Carbon;
 
 class ParentTripService
 {
+    private function resolveParentIds(int $userId): array
+    {
+        $parent = ParentModel::where('user_id', $userId)->first();
+        return array_values(array_unique(array_filter([$userId, $parent ? $parent->id : null])));
+    }
+
     /**
      * 1. جلب الرحلات المفعلة حالياً لأطفال ولي الأمر
      */
     public function getActiveTripsForParent(int $userId): array
     {
-        $parent = ParentModel::where('user_id', $userId)->firstOrFail();
-        
+        $parentIds = $this->resolveParentIds($userId);
+
         // جلب معرفات أطفال ولي الأمر
         $childIds = DB::table('children')
-            ->where('parent_id', $parent->id)
+            ->whereIn('parent_id', $parentIds)
             ->pluck('id')
             ->toArray();
 
@@ -66,7 +72,7 @@ class ParentTripService
                 if ($isAbsent) {
                     $childStatus = 'absent';
                 } elseif ($event) {
-                    $childStatus = $event->action_type; // picked_up or skipped
+                    $childStatus = $event->action_type; // picked_up or dropped_off or absent
                 }
 
                 // جلب بيانات عداد الانتظار من الكاش إن كان السائق واقفاً عند بيت الطفل
@@ -76,8 +82,8 @@ class ParentTripService
                     'trip_id'        => $trip->id,
                     'trip_type'      => $trip->trip_type,
                     'status'         => $trip->status,
-                    'driver_name'    => $sub->driver->user->name ?? 'سائق الحافلة',
-                    'driver_phone'   => $sub->driver->user->phone ?? null,
+                    'driver_name'    => $sub->driver->user->full_name ?? $sub->driver->user->name ?? 'سائق الحافلة',
+                    'driver_phone'   => $sub->driver->user->phone_number ?? $sub->driver->user->phone ?? null,
                     'vehicle_info'   => $sub->driver->vehicle_info ?? 'حافلة مدرسية',
                     'child_id'       => $sub->child_id,
                     'child_name'     => $sub->child->full_name,
@@ -97,7 +103,7 @@ class ParentTripService
     public function getLiveTracking(int $userId, int $tripId): array
     {
         $trip = Trip::with('driver')->findOrFail($tripId);
-        
+
         // أخذ موقع السائق اللحظي من الكاش للحفاظ على السرعة، أو قاعدة البيانات كخيار بديل
         $cacheKey = "driver_last_loc_{$trip->driver_id}";
         $cachedLoc = Cache::get($cacheKey);
@@ -119,10 +125,10 @@ class ParentTripService
      */
     public function getUpcomingTrips(int $userId): array
     {
-        $parent = ParentModel::where('user_id', $userId)->firstOrFail();
-        
-        $subscriptions = ActiveSubscription::whereHas('child', function ($q) use ($parent) {
-            $q->where('parent_id', $parent->id);
+        $parentIds = $this->resolveParentIds($userId);
+
+        $subscriptions = ActiveSubscription::whereHas('child', function ($q) use ($parentIds) {
+            $q->whereIn('parent_id', $parentIds);
         })
         ->where('status', 'active')
         ->with(['child', 'driver.user', 'school'])
@@ -146,7 +152,7 @@ class ParentTripService
                     'trip_type'    => 'Morning',
                     'title'        => 'رحلة الذهاب للمدرسة',
                     'scheduled_for'=> 'اليوم صباحاً',
-                    'driver_name'  => $sub->driver->user->name ?? 'السائق',
+                    'driver_name'  => $sub->driver->user->full_name ?? $sub->driver->user->name ?? 'السائق',
                     'school_name'  => $sub->school->name ?? '',
                 ];
             }
@@ -158,7 +164,7 @@ class ParentTripService
                     'trip_type'    => 'Afternoon',
                     'title'        => 'رحلة العودة للمنزل',
                     'scheduled_for'=> 'اليوم ظهراً',
-                    'driver_name'  => $sub->driver->user->name ?? 'السائق',
+                    'driver_name'  => $sub->driver->user->full_name ?? $sub->driver->user->name ?? 'السائق',
                     'school_name'  => $sub->school->name ?? '',
                 ];
             }
@@ -172,20 +178,20 @@ class ParentTripService
      */
     public function getTripHistory(int $userId, int $perPage = 15)
     {
-        $parent = ParentModel::where('user_id', $userId)->firstOrFail();
+        $parentIds = $this->resolveParentIds($userId);
 
         return DB::table('trip_events')
             ->join('trips', 'trip_events.trip_id', '=', 'trips.id')
             ->join('children', 'trip_events.child_id', '=', 'children.id')
             ->join('drivers', 'trips.driver_id', '=', 'drivers.id')
             ->join('users', 'drivers.user_id', '=', 'users.id')
-            ->where('children.parent_id', $parent->id)
+            ->whereIn('children.parent_id', $parentIds)
             ->select(
                 'trips.id as trip_id',
                 'trips.trip_type',
                 'trips.trip_date',
                 'children.full_name as child_name',
-                'users.name as driver_name',
+                'users.full_name as driver_name',
                 'trip_events.action_type',
                 'trip_events.scanned_at',
                 'trip_events.trip_cost'
@@ -193,4 +199,4 @@ class ParentTripService
             ->orderBy('trip_events.scanned_at', 'desc')
             ->paginate($perPage);
     }
-}
+}

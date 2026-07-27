@@ -32,8 +32,8 @@ class SubscriptionRequestService
         }
 
         try {
-            $start = \Carbon\Carbon::parse($startDate);
-            $end = \Carbon\Carbon::parse($endDate);
+            $start = \Carbon\Carbon::parse($startDate)->startOfDay();
+            $end = \Carbon\Carbon::parse($endDate)->startOfDay();
 
             if ($start->greaterThan($end)) {
                 return 0;
@@ -132,7 +132,7 @@ class SubscriptionRequestService
     }
 
     // ============================================================
-    // تحديث حالة الطلب
+    // 1. تحديث حالة الطلب (نقطة الدخول الرئيسية)
     // ============================================================
 
     public function updateStatus(
@@ -142,12 +142,15 @@ class SubscriptionRequestService
     ): SubscriptionRequest {
 
         return DB::transaction(function () use ($subscriptionRequest, $status, $rejectionReason) {
-            $parent = $subscriptionRequest->parent()->with('user')->first();
+            
+            // تحميل العلاقات المطلوبة مسبقاً لتجنب استعلامات N+1
+            $subscriptionRequest->loadMissing(['parent.user', 'children', 'school', 'driver.user']);
+            $parent = $subscriptionRequest->parent;
 
             if ($status === SubscriptionRequest::STATUS_ACCEPTED) {
                 return $this->handleAcceptance($subscriptionRequest, $parent);
             }
-        
+
             if ($status === SubscriptionRequest::STATUS_REJECTED) {
                 return $this->handleRejection($subscriptionRequest, $parent, $rejectionReason);
             }
@@ -157,73 +160,80 @@ class SubscriptionRequestService
     }
 
     // ============================================================
-    // منطق القبول
+    // 2. منطق القبول
     // ============================================================
 
     private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent): SubscriptionRequest
     {
-        return DB::transaction(function () use ($req, $parent) {
-            
-            // 1. تحديث حالة الطلب الحالي
-            $req->update(['status' => SubscriptionRequest::STATUS_ACCEPTED]);
+        // 1. تحديث حالة الطلب الحالي
+        $req->update(['status' => SubscriptionRequest::STATUS_ACCEPTED]);
 
-            // 2. إلغاء الطلبات الأخرى المعلقة لنفس العميل ونفس التوقيت
-            SubscriptionRequest::where('parent_id', $req->parent_id)
-                ->where('timing', $req->timing)
-                ->where('status', SubscriptionRequest::STATUS_PENDING)
-                ->where('id', '!=', $req->id)
-                ->update(['status' => SubscriptionRequest::STATUS_CANCELLED]);
+        // 2. إلغاء الطلبات الأخرى المعلقة لنفس العميل ونفس التوقيت
+        SubscriptionRequest::where('parent_id', $req->parent_id)
+            ->where('timing', $req->timing)
+            ->where('status', SubscriptionRequest::STATUS_PENDING)
+            ->where('id', '!=', $req->id)
+            ->update(['status' => SubscriptionRequest::STATUS_CANCELLED]);
 
-            // 3. توليد العقد
-            $contract = $this->contractService->generateContract($req);
+        // 3. توليد العقد
+        $contract = $this->contractService->generateContract($req);
 
-            // 4. التحقق من حالة مركبة السائق
-            $vehicle = \App\Models\Driver\Vehicle::where('driver_id', $req->driver_id)
-                ->where('status', 'Active')
-                ->first();
+        // 4. التحقق من حالة مركبة السائق
+        $vehicle = \App\Models\Driver\Vehicle::where('driver_id', $req->driver_id)
+            ->where('status', 'Active')
+            ->first();
 
-            if (!$vehicle) {
-                throw new Exception("تعذر إتمام العملية: لا توجد مركبة نشطة مرتبطة بالسائق.");
+        if (!$vehicle) {
+            throw new Exception("تعذر إتمام العملية: لا توجد مركبة نشطة مرتبطة بالسائق.");
+        }
+
+        // 5. منطق حساب المسار الذكي عبر OSRM
+        $distanceKm = 0;
+        $durationMinutes = 0;
+        $routeData = null;
+
+        try {
+            $osrm = new \App\Services\Shared\OsrmRoutingService();
+
+            $driverPos = ['lat' => (float)($req->driver->current_lat ?? 0), 'lng' => (float)($req->driver->current_lng ?? 0)];
+            $childPos  = ['lat' => (float)($req->children->first()->pivot->home_lat ?? $req->pickup_lat ?? 0), 'lng' => (float)($req->children->first()->pivot->home_lng ?? $req->pickup_lng ?? 0)];
+            $schoolPos = ['lat' => (float)($req->school->latitude ?? $req->dropoff_lat ?? 0), 'lng' => (float)($req->school->longitude ?? $req->dropoff_lng ?? 0)];
+
+            $routeData = $osrm->calculateRoute([$driverPos, $childPos, $schoolPos]);
+
+            if ($routeData) {
+                $distanceInMeters = $routeData['routes'][0]['distance'] ?? 0;
+                $durationInSeconds = $routeData['routes'][0]['duration'] ?? 0;
+
+                $distanceKm = round($distanceInMeters / 1000, 2);
+                $durationMinutes = (int) ceil($durationInSeconds / 60);
             }
+        } catch (\Exception $e) {
+            Log::warning("فشل حساب المسار عبر OSRM للطلب ID: {$req->id} - " . $e->getMessage());
+        }
 
-           // 5. منطق حساب المسار الذكي عبر OSRM
-           $osrm = new \App\Services\Shared\OsrmRoutingService();
-           
-           $driverPos = ['lat' => (float)($req->driver->current_lat ?? 0), 'lng' => (float)($req->driver->current_lng ?? 0)];
-           $childPos  = ['lat' => (float)($req->children->first()->pivot->home_lat ?? 0), 'lng' => (float)($req->children->first()->pivot->home_lng ?? 0)];
-           $schoolPos = ['lat' => (float)($req->school->latitude ?? 0), 'lng' => (float)($req->school->longitude ?? 0)];
+        $timingUpper = strtoupper($req->timing ?? 'MORNING');
+        $routeType = ($timingUpper === 'EVENING' || $timingUpper === 'AFTERNOON') ? 'Afternoon' : 'Morning';
 
-           $routeData = $osrm->calculateRoute([$driverPos, $childPos, $schoolPos]);
-           
-           if (!$routeData) {
-               Log::warning("فشل حساب المسار عبر OSRM للطلب ID: {$req->id}");
-           }
+        // 6. إنشاء سجل المسار
+        \App\Models\Shared\Route::create([
+            'contract_id'        => $contract->id,
+            'driver_id'          => $req->driver_id,
+            'vehicle_id'         => $vehicle->id,
+            'route_name'         => 'مسار ' . ($parent?->user?->full_name ?? 'العميل') . ' - ' . $req->timing,
+            'route_type'         => $routeType,
+            'start_time'         => $req->pickup_time ?? '07:00:00',
+            'optimized_points'   => $routeData ? json_encode($routeData) : null,
+            'total_distance'     => $distanceKm,
+            'estimated_duration' => $durationMinutes,
+            'status'             => 'Active'
+        ]);
 
-           $distanceInMeters = $routeData['routes'][0]['distance'] ?? 0;
-           $durationInSeconds = $routeData['routes'][0]['duration'] ?? 0;
+        // 7. تفعيل اشتراكات الأطفال لجدول active_subscriptions
+        $this->createActiveSubscriptions($req, $contract);
 
-           $distanceKm = round($distanceInMeters / 1000, 2); 
-           $durationMinutes = (int) ceil($durationInSeconds / 60);
-
-           // 6. إنشاء سجل المسار
-           \App\Models\Shared\Route::create([
-               'contract_id'        => $contract->id,
-               'driver_id'          => $req->driver_id,
-               'vehicle_id'         => $vehicle->id, 
-               'route_name'         => 'مسار ' . ($req->parent->user->full_name ?? 'العميل') . ' - ' . $req->timing,
-               'route_type'         => $req->timing === 'MORNING' ? 'Morning' : 'Evening',
-               'start_time'         => $req->pickup_time ?? '07:00:00',
-               'optimized_points'   => $routeData ?? null, 
-               'total_distance'     => $distanceKm,
-               'estimated_duration' => $durationMinutes,
-               'status'             => 'Active'
-           ]);
-
-            // 7. تفعيل اشتراكات الطفل
-            $parentUserId = $parent?->user_id ?? $req->parent->user_id;
-            $this->createActiveSubscriptions($req, $contract, $parentUserId);
-
-            // 8. إرسال إشعار القبول وتفاصيل العقد لولي الأمر
+        // 8. إرسال إشعار القبول مع حمايته من إلغاء الـ Transaction
+        try {
             if ($parent && $parent->user) {
                 $this->notifyUser(
                     $parent->user,
@@ -233,13 +243,15 @@ class SubscriptionRequestService
                     ['contract_id' => $contract->id]
                 );
             }
+        } catch (\Throwable $e) {
+            Log::warning("فشل إرسال إشعار FCM عند قبول الطلب ID {$req->id}: " . $e->getMessage());
+        }
 
-            return $req->refresh()->load(['children', 'driver.user', 'parent.user', 'contract']);
-        });
+        return $req->refresh()->load(['children', 'driver.user', 'parent.user', 'contract']);
     }
 
     // ============================================================
-    // منطق الرفض
+    // 3. منطق الرفض
     // ============================================================
 
     private function handleRejection(SubscriptionRequest $req, ?ParentModel $parent, ?string $reason): SubscriptionRequest
@@ -249,54 +261,70 @@ class SubscriptionRequestService
             'rejection_reason' => $reason,
         ]);
 
-        if ($parent && $parent->user) {
-            $this->notifyUser(
-                $parent->user,
-                'تم رفض طلب الاشتراك',
-                "عذراً، تم رفض طلبك. السبب: " . ($reason ?? 'لم يحدد السائق سبباً.'),
-                'request_rejected'
-            );
+        try {
+            if ($parent && $parent->user) {
+                $this->notifyUser(
+                    $parent->user,
+                    'تم رفض طلب الاشتراك',
+                    "عذراً، تم رفض طلبك. السبب: " . ($reason ?? 'لم يحدد السائق سبباً.'),
+                    'request_rejected'
+                );
+            }
+        } catch (\Throwable $e) {
+            Log::warning("فشل إرسال إشعار FCM عند رفض الطلب ID {$req->id}: " . $e->getMessage());
         }
 
         return $req->refresh();
     }
 
     // ============================================================
-    // إنشاء سجلات الاشتراكات النشطة
+    // 4. إنشاء سجلات الاشتراكات النشطة (مطابق لجدول active_subscriptions)
     // ============================================================
 
-    private function createActiveSubscriptions(SubscriptionRequest $req, Contract $contract, ?int $parentUserId = null): void
+    private function createActiveSubscriptions(SubscriptionRequest $req, Contract $contract): void
     {
-        $parentUserId = $parentUserId ?? optional($req->parent)->user_id;
-        $pickupTime = $req->pickup_time ?? '07:00:00';
+        $pickupTime  = $req->pickup_time ?? '07:00:00';
         $dropoffTime = $req->dropoff_time ?? '14:00:00';
 
+        $parentUserId = $req->parent?->user_id ?? $contract->parent_id ?? $req->parent_id;
+
         foreach ($req->children as $child) {
+            
+            // استخراج القيم مع إمكانية التراجع للقيم الافتراضية للطلب
+            $pickupLat  = $child->pivot->home_lat ?? $req->pickup_lat ?? null;
+            $pickupLng  = $child->pivot->home_lng ?? $req->pickup_lng ?? null;
+            $pickupLbl  = $child->pivot->home_label ?? $req->pickup_label ?? 'الموقع السكني';
+
+            $dropoffLat = $child->pivot->school_lat ?? $req->school->latitude ?? $req->dropoff_lat ?? null;
+            $dropoffLng = $child->pivot->school_lng ?? $req->school->longitude ?? $req->dropoff_lng ?? null;
+            $dropoffLbl = $child->pivot->school_label ?? $req->school->name ?? $req->dropoff_label ?? 'المدرسة';
+
             ActiveSubscription::create([
                 'contract_id'   => $contract->id,
+                'status'        => 'active',                 // القيمة المطلوبة في قاعدة البيانات
                 'child_id'      => $child->id,
                 'driver_id'     => $req->driver_id,
-                'parent_id'     => $parentUserId,
-                'pickup_lat'    => $child->pivot->home_lat,
-                'pickup_lng'    => $child->pivot->home_lng,
-                'pickup_label'  => $child->pivot->home_label,
+                'parent_id'     => $parentUserId,            // معرف ولي الأمر في جدول users المطابق لـ foreign key
+                'pickup_lat'    => $pickupLat,
+                'pickup_lng'    => $pickupLng,
+                'pickup_label'  => $pickupLbl,
                 'pickup_time'   => $pickupTime,
-                'dropoff_lat'   => $child->pivot->school_lat,
-                'dropoff_lng'   => $child->pivot->school_lng,
-                'dropoff_label' => $child->pivot->school_label,
+                'dropoff_lat'   => $dropoffLat,
+                'dropoff_lng'   => $dropoffLng,
+                'dropoff_label' => $dropoffLbl,
                 'dropoff_time'  => $dropoffTime,
-                'status'        => 'active', // القيمة الافتراضية عند التفعيل
             ]);
         }
     }
 
     // ============================================================
-    // دالة جديدة: تغيير حالة الاشتراك النشط (مفعل، معلق، مكتمل، ملغي)
+    // 5. تغيير حالة الاشتراك النشط (مفعل، معلق، مكتمل، ملغي)
     // ============================================================
+
     public function updateActiveSubscriptionStatus(int $activeSubscriptionId, string $status): ActiveSubscription
     {
         $allowedStatuses = ['active', 'pending', 'completed', 'cancelled'];
-        
+
         if (!in_array($status, $allowedStatuses)) {
             throw new Exception("حالة الاشتراك غير صالحة. يجب أن تكون إحدى الحالات التالية: " . implode(', ', $allowedStatuses));
         }
@@ -571,40 +599,149 @@ class SubscriptionRequestService
             ->toArray();
     }
 
+    public function getParentChats(int $userId): array
+    {
+        $parent = ParentModel::where('user_id', $userId)->first();
+        $parentId = $parent ? $parent->id : $userId;
+
+        // جلب جميع الاشتراكات النشطة لولي الأمر، بالبحث بـ parent_id و user_id
+        $subscriptions = ActiveSubscription::with(['driver.user'])
+            ->where(function ($q) use ($parentId, $userId) {
+                $q->where('parent_id', $parentId)->orWhere('parent_id', $userId);
+            })
+            ->get();
+
+        // دعم إضافي: جلب طلبات الاشتراكات أيضاً في حال كانت تحت الإجراء أو العقد
+        $requestSubs = SubscriptionRequest::with(['driver.user'])
+            ->where(function ($q) use ($parentId, $userId) {
+                $q->where('parent_id', $parentId)->orWhere('parent_id', $userId);
+            })
+            ->whereIn('status', ['accepted', 'contract_offered', 'pending', 'active'])
+            ->get();
+
+        $processedDrivers = [];
+        $chats = [];
+
+        foreach ($subscriptions as $sub) {
+            $driver = $sub->driver;
+            if (!$driver || !$driver->user) continue;
+
+            if (in_array($driver->id, $processedDrivers)) continue;
+            $processedDrivers[] = $driver->id;
+
+            $driverUser = $driver->user;
+            $canChat = in_array(strtolower($sub->status ?? 'active'), ['active', 'approved']);
+
+            $chats[] = [
+                "chat_room_id"        => "parent_" . $parentId . "_driver_" . $driver->id,
+                "driver_id"           => $driver->id,
+                "driver_user_id"      => $driverUser->id,
+                "driver_name"         => $driverUser->full_name,
+                "driver_phone"        => $driverUser->phone_number,
+                "driver_photo"        => $driverUser->avatar_url,
+                "can_chat"            => $canChat,
+                "subscription_status" => $sub->status ?? 'active'
+            ];
+        }
+
+        foreach ($requestSubs as $req) {
+            $driver = $req->driver;
+            if (!$driver || !$driver->user) continue;
+
+            if (in_array($driver->id, $processedDrivers)) continue;
+            $processedDrivers[] = $driver->id;
+
+            $driverUser = $driver->user;
+
+            $chats[] = [
+                "chat_room_id"        => "parent_" . $parentId . "_driver_" . $driver->id,
+                "driver_id"           => $driver->id,
+                "driver_user_id"      => $driverUser->id,
+                "driver_name"         => $driverUser->full_name,
+                "driver_phone"        => $driverUser->phone_number,
+                "driver_photo"        => $driverUser->avatar_url,
+                "can_chat"            => true,
+                "subscription_status" => $req->status
+            ];
+        }
+
+        return $chats;
+    }
+
     /**
-     * جلب أIDs جميع أولياء الأمور المشترك معهم السائق
+     * جلب قائمة محادثات السائق بالكامل متوافقة مع كافة الهياكل
      */
-    public function getDriverSubscribedParentIds(int $userId): array
+    public function getDriverChats(int $userId): array
     {
         $driver = Driver::where('user_id', $userId)->first();
-        if (!$driver) {
-            return [];
+        $driverId = $driver ? $driver->id : $userId;
+
+        $subscriptions = ActiveSubscription::with(['parent'])
+            ->where(function ($q) use ($driverId, $userId) {
+                $q->where('driver_id', $driverId)->orWhere('driver_id', $userId);
+            })
+            ->get();
+
+        $requestSubs = SubscriptionRequest::with(['parent.user'])
+            ->where(function ($q) use ($driverId, $userId) {
+                $q->where('driver_id', $driverId)->orWhere('driver_id', $userId);
+            })
+            ->whereIn('status', ['accepted', 'contract_offered', 'pending', 'active'])
+            ->get();
+
+        $processedParents = [];
+        $chats = [];
+
+        foreach ($subscriptions as $sub) {
+            $parentUser = $sub->parent; // العلاقة parent في ActiveSubscription ترجع User
+            if (!$parentUser) {
+                // تجربة جلب المستخدم من جدول parents إذا كان parent_id هو id من جدول parents
+                $parentRecord = ParentModel::with('user')->find($sub->parent_id);
+                $parentUser = $parentRecord?->user;
+            }
+
+            if (!$parentUser) continue;
+            if (in_array($parentUser->id, $processedParents)) continue;
+            $processedParents[] = $parentUser->id;
+
+            $parentRecord = ParentModel::where('user_id', $parentUser->id)->first();
+            $parentId = $parentRecord ? $parentRecord->id : $parentUser->id;
+
+            $chats[] = [
+                "chat_room_id"        => "parent_" . $parentId . "_driver_" . $driverId,
+                "parent_id"           => $parentId,
+                "parent_user_id"      => $parentUser->id,
+                "parent_name"         => $parentUser->full_name,
+                "parent_phone"        => $parentUser->phone_number,
+                "parent_photo"        => $parentUser->avatar_url,
+                "can_chat"            => in_array(strtolower($sub->status ?? 'active'), ['active', 'approved']),
+                "subscription_status" => $sub->status ?? 'active'
+            ];
         }
 
-        // جلب الـ parent_id مباشرة من جدول الاشتراكات النشطة/المكتملة/الملغاة
-        return ActiveSubscription::where('driver_id', $driver->id)
-            ->whereIn('status', ['active', 'completed', 'cancelled'])
-            ->pluck('parent_id')
-            ->unique()
-            ->values()
-            ->toArray();
-    }
-    public function getSubscribedDrivers(Request $request): JsonResponse
-    {
-        try {
-            $driverIds = $this->subscriptionService->getParentSubscribedDriverIds($request->user()->id);
+        foreach ($requestSubs as $req) {
+            $parentRecord = $req->parent;
+            $parentUser = $parentRecord?->user;
 
-            return response()->json([
-                'success'    => true,
-                'driver_ids' => $driverIds
-            ], 200);
-        } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'حدث خطأ: ' . $e->getMessage()
-            ], 400);
+            if (!$parentUser) continue;
+            if (in_array($parentUser->id, $processedParents)) continue;
+            $processedParents[] = $parentUser->id;
+
+            $parentId = $parentRecord ? $parentRecord->id : $parentUser->id;
+
+            $chats[] = [
+                "chat_room_id"        => "parent_" . $parentId . "_driver_" . $driverId,
+                "parent_id"           => $parentId,
+                "parent_user_id"      => $parentUser->id,
+                "parent_name"         => $parentUser->full_name,
+                "parent_phone"        => $parentUser->phone_number,
+                "parent_photo"        => $parentUser->avatar_url,
+                "can_chat"            => true,
+                "subscription_status" => $req->status
+            ];
         }
-    }
 
+        return $chats;
+    }
     
 }

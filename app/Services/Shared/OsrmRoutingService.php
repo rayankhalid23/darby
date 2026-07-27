@@ -12,12 +12,12 @@ class OsrmRoutingService
 
     public function __construct()
     {
-        // البورت المتاح والمشغل محلياً عندك بنجاح
-        $this->baseUrl = 'http://localhost:5001/route/v1/driving/';
+        // استخدام الرابط المحلي مع إمكانية قراءته من .env مستقبلاً
+        $this->baseUrl = config('services.osrm.url', 'http://localhost:5001/route/v1/driving/');
     }
 
     /**
-     * حساب المسار والتواقيت التقديرية بين مجموعة نقاط متتالية مع جلب الرسم الهندسي (Geometry)
+     * حساب المسار والتواقيت التقديرية بين مجموعة نقاط متتالية
      *
      * @param array $coordinates مصفوفة تحتوي على خطوط الطول والعرض بترتيب السير [['lat' => 32.8, 'lng' => 13.1], ...]
      * @return array|null
@@ -28,37 +28,47 @@ class OsrmRoutingService
             return null;
         }
 
+        // 1. حماية: التحقق من صحة الإحداثيات وتخطي الاستعلام فوراً إذا كانت الإحداثيات صفرية (0,0) أو مفقودة
+        foreach ($coordinates as $point) {
+            $lat = (float)($point['lat'] ?? 0);
+            $lng = (float)($point['lng'] ?? 0);
+
+            if ($lat == 0.0 || $lng == 0.0) {
+                Log::warning('OSRM Route Skipped: تم تخطي طلب المسار لوجود إحداثيات صفرية أو غير مكتملة.');
+                return null;
+            }
+        }
+
         try {
-            // تحويل الإحداثيات إلى الصيغة التي يفهمها OSRM وهي (lng,lat) مفصولة بفاصلة منقوطة
-            // تنبيه: OSRM يطلب الـ Longitude أولاً ثم Latitude
+            // تحويل الإحداثيات إلى صيغة (lng,lat)
             $formattedCoords = collect($coordinates)->map(function ($point) {
                 return $point['lng'] . ',' . $point['lat'];
             })->implode(';');
 
-            // التعديل الجوهري: طلب التفاصيل الهندسية (geometries=geojson) لرسم المسار في الواجهة
-            // و overview=full لضمان جودة ودقة المنعطفات في خط السير
-            $url = $this->baseUrl . $formattedCoords . '?overview=full&geometries=geojson';
+            $baseUrl = rtrim($this->baseUrl, '/') . '/';
+            $url = $baseUrl . $formattedCoords . '?overview=full&geometries=geojson';
 
-            // تم رفع الـ timeout إلى 10 ثوانٍ لتجنب انقطاع الاتصال عند جلب بيانات المسارات الطويلة
-            $response = Http::timeout(10)->get($url);
+            // تقليل الـ timeout إلى 3 ثوانٍ حتى لا ينتظر النظام كثيراً في حال توقف السيرفر المحلي
+            $response = Http::timeout(3)->get($url);
 
             if ($response->successful() && $response->json('code') === 'Ok') {
                 return $response->json();
             }
 
-            Log::error('OSRM Route Error: Invalid response code from local engine.', [
+            Log::warning('OSRM Route Warning: لم يتم إرجاع مسار صالح من المحرك المحلي.', [
                 'response' => $response->json()
             ]);
             return null;
 
         } catch (Exception $e) {
-            Log::error('OSRM Connection Failed: ' . $e->getMessage());
+            // تسجيل warning لتفادي ملء ملف الـ Logs بالأخطاء عند توقف سيرفر OSRM
+            Log::warning('OSRM Connection Warning: تعذر الاتصال بخدمة الخرائط المحلية (' . $e->getMessage() . ')');
             return null;
         }
     }
 
     /**
-     * دالة مخصصة لحساب الوقت التقديري بالثواني والمسافة بالأمتار بين نقطتين فقط بسرعة
+     * دالة مخصصة لحساب الوقت التقديري بالثواني والمسافة بالأمتار بين نقطتين
      */
     public function getDistanceMatrix(array $source, array $destination): array
     {

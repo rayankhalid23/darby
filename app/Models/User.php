@@ -97,6 +97,11 @@ class User extends Authenticatable implements HasName
         return $this->hasOne(ParentModel::class); // تأكد من اسم الكلاس الصحيح
     }
 
+    public function devices()
+    {
+        return $this->hasMany(UserDevice::class, 'user_id');
+    }
+
     // *** إضـافـة 3: الدالة التي تخبر النظام بقراءة حقل full_name بدلاً من name ***
     public function getFilamentName(): string
     {

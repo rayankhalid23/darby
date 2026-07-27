@@ -97,7 +97,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('driver-reviews')->group(function () {
         Route::get('/driver/{driverId}', [DriverReviewController::class, 'index']);
         Route::post('/', [DriverReviewController::class, 'store']);
-        Route::post('/{id}', [DriverReviewController::class, 'update']);
+        Route::put('/{id}', [DriverReviewController::class, 'update']);
         Route::delete('/{id}', [DriverReviewController::class, 'destroy']);
     });
 
