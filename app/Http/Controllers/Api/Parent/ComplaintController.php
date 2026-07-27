@@ -120,37 +120,32 @@ class ComplaintController extends Controller
     }
 
    /**
-     * تعديل شكوى قائمة مع حماية ضد التعديل بعد المعالجة
-     */
-   public function update(UpdateComplaintRequest $request, int $id): JsonResponse
-   {
-       try {
-           $complaint = $this->complaintService->updateComplaint(
-               auth()->id(),
-               $id,
-               $request->validated()
-           );
+ * تعديل شكوى قائمة مع حماية ضد التعديل بعد المعالجة
+ */
+public function update(UpdateComplaintRequest $request, int $id): JsonResponse
+{
+    try {
+        $complaint = $this->complaintService->updateComplaint(
+            auth()->id(),
+            $id,
+            $request->validated()
+        );
 
-           return response()->json([
-               'success' => true,
-               'message' => 'تم تحديث الشكوى بنجاح.',
-               'data'    => new ComplaintResource($complaint),
-           ], 200);
+        return response()->json([
+            'success' => true,
+            'message' => 'تم تحديث الشكوى بنجاح.',
+            'data'    => new ComplaintResource($complaint),
+        ], 200);
 
-       } catch (Exception $e) {
-           Log::error("Complaint Update Error [ID {$id}]: " . $e->getMessage());
+    } catch (Exception $e) {
+        Log::error("Complaint Update Error [ID {$id}]: " . $e->getMessage());
 
-           // إرجاع رسالة الخطأ المحددة من السيرفس (مثلاً: "لا يمكن تعديل الشكوى لأنها قيد المعالجة")
-           return [
-            'title'       => 'sometimes|required|string|max:255',
-            'description' => 'sometimes|required|string|min:10|max:5000',
-            'type'        => 'sometimes|required|string|in:driver,trip,app,other',
-            'driver_id'   => 'nullable|integer|exists:drivers,id',
-            'trip_id'     => 'sometimes|nullable|integer|exists:trips,id', // <--- أضف هذه القاعدة
-            'attachments' => 'nullable|array',
-        ];
-       }
-   }
+        return response()->json([
+            'success' => false,
+            'message' => $e->getMessage() ?: 'حدث خطأ أثناء تحديث الشكوى.',
+        ], 400);
+    }
+}
 
     /**
      * حذف شكوى

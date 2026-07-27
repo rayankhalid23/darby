@@ -55,11 +55,17 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('children/{childId}')->group(function () {
         
-        // جدولة غياب طفل في تواريخ معينة
+        // تسجيل غياب طفل مع تحديد نوع الغياب (pickup/dropoff/both)
         Route::post('set-absence', [ParentChildController::class, 'setAbsence']);
         
-        // إلغاء غياب مجدول مسبقاً للطفل
+        // إلغاء غياب مجدول مسبقاً للطفل (يمكن إلغاء نوع معين أو كل الغياب في الأيام المحددة)
         Route::post('cancel-absence', [ParentChildController::class, 'cancelAbsence']);
+        
+        // عرض قائمة الغيابات المسجلة للطفل (المستقبلية)
+        Route::get('absences', [ParentChildController::class, 'getAbsences']);
+        
+        // جلب الأيام المتاحة لتسجيل الغياب بناءً على الاشتراك الفعال
+        Route::get('available-absence-dates', [ParentChildController::class, 'getAvailableAbsenceDates']);
         
         // التأكيد اليدوي لصعود الطفل (بديل الـ QR في حال تعطل هاتف السائق أو كاميرته)
         Route::post('confirm-pickup/{tripId}', [ParentChildController::class, 'confirmManualPickup']);
@@ -134,9 +140,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/trips/upcoming', [ParentTripController::class, 'getUpcomingTrips']);
     Route::get('/trips/history', [ParentTripController::class, 'getTripHistory']);
 
-    // 2. العمليات والإجراءات (الموجودة سابقاً)
+    // 2. العمليات والإجراءات (الموجودة سابقاً مع الإضافات الجديدة)
     Route::post('/children/{childId}/absence', [ParentChildController::class, 'setAbsence']);
     Route::delete('/children/{childId}/absence', [ParentChildController::class, 'cancelAbsence']);
+    Route::get('/children/{childId}/absences', [ParentChildController::class, 'getAbsences']);
+    Route::get('/children/{childId}/available-absence-dates', [ParentChildController::class, 'getAvailableAbsenceDates']);
     Route::post('/trips/{tripId}/children/{childId}/manual-pickup', [ParentChildController::class, 'confirmManualPickup']);
 
 });

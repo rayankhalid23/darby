@@ -169,13 +169,16 @@ class TripLifecycleService
     }
 
     /**
-     * الدالة 11 (محدثة): setChildAbsence (تحديد الأم لتواريخ غياب طفلها مع الحماية التامة)
+     * الدالة 11 (محدثة): setChildAbsence (تحديد الأم لتواريخ غياب طفلها مع دعم نوع الغياب)
+     * absence_type: pickup (ذهاب فقط) | dropoff (عودة فقط) | both (الاثنين، الافتراضي)
      */
-    public function setChildAbsence(int $childId, array $dates): void
+    public function setChildAbsence(int $childId, array $dates, string $absenceType = 'both'): void
     {
         $today = Carbon::today()->toDateString();
+        $validTypes = ['pickup', 'dropoff', 'both'];
+        $absenceType = in_array($absenceType, $validTypes) ? $absenceType : 'both';
         
-        DB::transaction(function () use ($childId, $dates) {
+        DB::transaction(function () use ($childId, $dates, $absenceType) {
             foreach ($dates as $date) {
                 $formattedDate = Carbon::parse($date)->toDateString();
 
@@ -184,15 +187,15 @@ class TripLifecycleService
                     continue;
                 }
 
-                // حفظ الغياب في جدول المجلد المشترك
-                AbsenceLog::firstOrCreate([
-                    'child_id' => $childId,
-                    'absence_date' => $formattedDate
-                ]);
+                // البحث عن سجل غياب موجود لنفس الطفل ونفس اليوم وتحديثه، أو إنشاء سجل جديد
+                AbsenceLog::updateOrCreate(
+                    ['child_id' => $childId, 'absence_date' => $formattedDate],
+                    ['absence_type' => $absenceType]
+                );
             }
         });
 
-        // [تحديث لحظي فورى]: لو عدلت الأم غياب اليوم وكانت رحلة الحافلة بدأت فعلاً، نحدث المسار فوراَ
+        // [تحديث لحظي فوري]: لو سُجّل غياب اليوم وكانت رحلة الحافلة بدأت فعلاً، نعيد حساب المسار
         if (in_array($today, $dates)) {
             $this->recalculateActiveTripsForChild($childId);
         }
@@ -200,15 +203,24 @@ class TripLifecycleService
 
     /**
      * دالة إضافية: removeChildAbsence (تراجع الأم عن طلب الغياب وإعادة الطفل للمسار)
+     * يمكن تمرير absence_type لإلغاء نوع غياب محدد فقط بدل حذف كل الغياب في اليوم
      */
-    public function removeChildAbsence(int $childId, array $dates): void
+    public function removeChildAbsence(int $childId, array $dates, ?string $absenceType = null): void
     {
-        AbsenceLog::where('child_id', $childId)
-            ->whereIn('absence_date', collect($dates)->map(fn($d) => Carbon::parse($d)->toDateString()))
-            ->delete();
+        $formattedDates = collect($dates)->map(fn($d) => Carbon::parse($d)->toDateString());
+
+        $query = AbsenceLog::where('child_id', $childId)
+            ->whereIn('absence_date', $formattedDates);
+
+        // لو حدد ولي الأمر نوع غياب معين، نحذف ذلك النوع فقط وليس كل الغياب
+        if ($absenceType && in_array($absenceType, ['pickup', 'dropoff', 'both'])) {
+            $query->where('absence_type', $absenceType);
+        }
+
+        $query->delete();
 
         $today = Carbon::today()->toDateString();
-        if (in_array($today, $dates)) {
+        if ($formattedDates->contains($today)) {
             $this->recalculateActiveTripsForChild($childId);
         }
     }

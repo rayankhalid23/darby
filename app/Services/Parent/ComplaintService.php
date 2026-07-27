@@ -152,35 +152,23 @@ class ComplaintService
             ->firstOrFail();
 
         $complaint->delete();
-    }public function updateComplaint(int $parentUserId, int $complaintId, array $data): Complaint
-    {
-        $parentId = $this->getParentRecordId($parentUserId);
-
-        $complaint = Complaint::where('id', $complaintId)
-            ->where(function ($q) use ($parentId, $parentUserId) {
-                $q->where('submitted_by', $parentId)
-                  ->orWhere('submitted_by', $parentUserId);
-            })
-            ->where('status', 'pending')
-            ->firstOrFail();
-
-        return \DB::transaction(function () use ($complaint, $data) {
-            
-            // استخراج الحقول المرسلة فقط دون مسح القيمة القديمة إذا لم تُرسل
-            $updateData = array_filter([
-                'description' => $data['description'] ?? null,
-                'trip_id'     => $data['trip_id'] ?? null,       // <--- تحديث الرحلة
-                'driver_id'   => $data['driver_id'] ?? null,     // <--- تحديث السائق
-                'type'        => $data['type'] ?? null,
-            ], fn($value) => !is_null($value));
-
-            if (!empty($updateData)) {
-                $complaint->update($updateData);
-            }
-
-            return $complaint->fresh();
-        });
     }
+
+    public function updateComplaint(int $userId, int $complaintId, array $data): Complaint
+{
+    $complaint = Complaint::where('id', $complaintId)->firstOrFail();
+
+    // التحقق من حالة الشكوى (مثلاً: عدم السماح للتعديل إذا كانت مغلقة أو قيد المعالجة)
+    if (in_array($complaint->status, ['in_progress', 'resolved', 'closed'])) {
+        throw new Exception('لا يمكن تعديل الشكوى لأنها قيد المعالجة أو مكتملة.');
+    }
+
+    // تحديث البيانات مباشرة (إذا تم إرسال trip_id كـ null ستتحدث في قاعدة البيانات إلى null)
+    $complaint->update($data);
+
+    return $complaint;
+}
+    
 
     
 

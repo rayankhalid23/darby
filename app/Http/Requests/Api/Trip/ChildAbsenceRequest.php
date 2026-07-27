@@ -8,8 +8,9 @@ class ChildAbsenceRequest extends FormRequest
 
     public function rules(): array {
         return [
-            'dates'   => 'required|array|min:1',
-            'dates.*' => 'required|date|after_or_equal:today',
+            'dates'        => 'required|array|min:1',
+            'dates.*'      => 'required|date|after_or_equal:today',
+            'absence_type' => 'nullable|string|in:pickup,dropoff,both',
         ];
     }
 
@@ -22,6 +23,7 @@ class ChildAbsenceRequest extends FormRequest
             'dates.*.required' => 'يوجد حقل تاريخ فارغ داخل قائمة التواريخ المرسلة.',
             'dates.*.date'     => 'أحد التواريخ المرسلة غير صالحة أو صيغتها غير مدعومة.',
             'dates.*.after_or_equal' => 'لا يمكنك تحديد تاريخ غياب قد مضى؛ يجب أن يكون التاريخ اليوم أو في المستقبل.',
+            'absence_type.in'        => 'نوع الغياب يجب أن يكون: pickup (ذهاب)، dropoff (عودة)، أو both (الاثنين).',
         ];
     }
 }

@@ -1,14 +1,18 @@
 <?php
 
-namespace App\Http\Controllers\Api\Trip; // مسار الكنترولر المنظم الجديد
+namespace App\Http\Controllers\Api\Trip;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\API\Trip\ChildAbsenceRequest; // استدعاء الـ Request من مجلده الجديد
+use App\Http\Requests\API\Trip\ChildAbsenceRequest;
+use App\Models\Shared\AbsenceLog;
+use App\Models\Shared\ActiveSubscription;
 use App\Services\Trip\TripLifecycleService;
 use App\Services\Trip\TripStopService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log; // 👈 استدعاء واجهة الـ Log
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
 use Exception;
 
 class ParentChildController extends Controller
@@ -25,14 +29,14 @@ class ParentChildController extends Controller
     private function resolveParentId(): int
     {
         $user = Auth::user();
-        $parent = \Illuminate\Support\Facades\DB::table('parents')->where('user_id', $user->id)->first();
+        $parent = DB::table('parents')->where('user_id', $user->id)->first();
         return $parent ? (int) $parent->id : (int) $user->id;
     }
 
     private function checkChildBelongsToParent(int $childId): void
     {
         $user = Auth::user();
-        $parent = \Illuminate\Support\Facades\DB::table('parents')->where('user_id', $user->id)->first();
+        $parent = DB::table('parents')->where('user_id', $user->id)->first();
         $parentId = $parent ? $parent->id : null;
 
         $child = \App\Models\Parent\Child::where('id', $childId)
@@ -48,77 +52,208 @@ class ParentChildController extends Controller
         }
     }
 
+    /**
+     * تسجيل غياب طفل في تواريخ محددة مع تحديد نوع الغياب
+     * absence_type: pickup (ذهاب فقط) | dropoff (عودة فقط) | both (الاثنين، الافتراضي)
+     */
     public function setAbsence(ChildAbsenceRequest $request, $childId): JsonResponse
     {
         $user = Auth::user();
         $parentId = $this->resolveParentId();
+        $absenceType = $request->input('absence_type', 'both');
 
         try {
             $this->checkChildBelongsToParent((int) $childId);
-            $this->lifecycleService->setChildAbsence((int) $childId, $request->dates);
+            $this->lifecycleService->setChildAbsence((int) $childId, $request->dates, $absenceType);
 
-            // تسجيل عملية غياب الطفل في الـ Log
+            $typeLabels = [
+                'pickup'  => 'رحلة الذهاب فقط',
+                'dropoff' => 'رحلة العودة فقط',
+                'both'    => 'الذهاب والعودة',
+            ];
+
             Log::info("Parent Registered Child Absence", [
-                'parent_id'   => $parentId,
-                'parent_name' => $user->full_name ?? $user->name,
-                'child_id'    => $childId,
-                'dates'       => $request->dates
+                'parent_id'    => $parentId,
+                'parent_name'  => $user->full_name ?? $user->name,
+                'child_id'     => $childId,
+                'dates'        => $request->dates,
+                'absence_type' => $absenceType
             ]);
 
-            return response()->json(['status' => 'success', 'message' => 'تم جدولة غياب الطفل بنجاح وتحديث المسارات الجارية إن وجدت']);
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'تم جدولة غياب الطفل بنجاح (' . ($typeLabels[$absenceType] ?? $absenceType) . ')',
+                'data'    => [
+                    'child_id'     => (int) $childId,
+                    'dates'        => $request->dates,
+                    'absence_type' => $absenceType,
+                ]
+            ]);
         } catch (Exception $e) {
             Log::error("Failed to set child absence", [
                 'parent_id' => $parentId,
                 'child_id'  => $childId,
                 'error'     => $e->getMessage()
             ]);
-
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 400);
         }
     }
 
+    /**
+     * إلغاء غياب مجدول للطفل في تواريخ محددة (يمكن تحديد نوع الغياب لإلغاء نوع معين فقط)
+     */
     public function cancelAbsence(ChildAbsenceRequest $request, $childId): JsonResponse
     {
         $user = Auth::user();
         $parentId = $this->resolveParentId();
+        $absenceType = $request->input('absence_type', null);
 
         try {
             $this->checkChildBelongsToParent((int) $childId);
-            $this->lifecycleService->removeChildAbsence((int) $childId, $request->dates);
+            $this->lifecycleService->removeChildAbsence((int) $childId, $request->dates, $absenceType);
 
-            // تسجيل إلغاء الغياب في الـ Log
             Log::info("Parent Cancelled Child Absence", [
-                'parent_id'   => $parentId,
-                'parent_name' => $user->full_name ?? $user->name,
-                'child_id'    => $childId,
-                'dates'       => $request->dates
+                'parent_id'    => $parentId,
+                'parent_name'  => $user->full_name ?? $user->name,
+                'child_id'     => $childId,
+                'dates'        => $request->dates,
+                'absence_type' => $absenceType ?? 'all_types'
             ]);
 
-            return response()->json(['status' => 'success', 'message' => 'تم إلغاء الغياب وإعادة الطفل للمسارات التشغيلية']);
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'تم إلغاء الغياب وإعادة الطفل للمسارات التشغيلية',
+                'data'    => [
+                    'child_id'     => (int) $childId,
+                    'dates'        => $request->dates,
+                    'absence_type' => $absenceType ?? 'all',
+                ]
+            ]);
         } catch (Exception $e) {
             Log::error("Failed to cancel child absence", [
                 'parent_id' => $parentId,
                 'child_id'  => $childId,
                 'error'     => $e->getMessage()
             ]);
-
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 400);
         }
     }
 
+    /**
+     * عرض قائمة الغيابات المسجلة للطفل (المستقبلية)
+     */
+    public function getAbsences($childId): JsonResponse
+    {
+        try {
+            $this->checkChildBelongsToParent((int) $childId);
+
+            $typeLabels = [
+                'pickup'  => 'رحلة الذهاب فقط',
+                'dropoff' => 'رحلة العودة فقط',
+                'both'    => 'ذهاب وعودة',
+            ];
+
+            $absences = AbsenceLog::where('child_id', $childId)
+                ->where('absence_date', '>=', Carbon::today())
+                ->orderBy('absence_date')
+                ->get()
+                ->map(fn($log) => [
+                    'id'           => $log->id,
+                    'date'         => Carbon::parse($log->absence_date)->format('Y-m-d'),
+                    'absence_type' => $log->absence_type ?? 'both',
+                    'type_label'   => $typeLabels[$log->absence_type ?? 'both'] ?? 'ذهاب وعودة',
+                ]);
+
+            return response()->json([
+                'status' => 'success',
+                'data'   => [
+                    'child_id' => (int) $childId,
+                    'absences' => $absences,
+                    'total'    => $absences->count(),
+                ]
+            ]);
+        } catch (Exception $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 400);
+        }
+    }
+
+    /**
+     * جلب الأيام المتاحة لتسجيل الغياب بناءً على اشتراك الطفل الفعال
+     */
+    public function getAvailableAbsenceDates($childId): JsonResponse
+    {
+        try {
+            $this->checkChildBelongsToParent((int) $childId);
+
+            $subscription = ActiveSubscription::where('child_id', $childId)
+                ->where('status', 'active')
+                ->with('contract')
+                ->first();
+
+            if (!$subscription || !$subscription->contract) {
+                return response()->json([
+                    'status'  => 'success',
+                    'data'    => ['child_id' => (int) $childId, 'available_dates' => []],
+                    'message' => 'لا يوجد اشتراك نشط لهذا الطفل.'
+                ]);
+            }
+
+            $contract  = $subscription->contract;
+            $startDate = Carbon::parse($contract->start_date);
+            $endDate   = Carbon::parse($contract->end_date ?? now()->addMonths(3));
+            $today     = Carbon::today();
+            $fromDate  = $startDate->lt($today) ? $today->copy() : $startDate->copy();
+            $limit     = $endDate->lt(Carbon::today()->addDays(60)) ? $endDate : Carbon::today()->addDays(60);
+
+            // أيام العمل الأساسية: الأحد(0) إلى الخميس(4)
+            $workDays = [0, 1, 2, 3, 4];
+
+            $alreadyAbsent = AbsenceLog::where('child_id', $childId)
+                ->where('absence_date', '>=', $fromDate->toDateString())
+                ->pluck('absence_date')
+                ->map(fn($d) => Carbon::parse($d)->format('Y-m-d'))
+                ->toArray();
+
+            $availableDates = [];
+            $cursor = $fromDate->copy();
+            while ($cursor->lte($limit)) {
+                if (in_array($cursor->dayOfWeek, $workDays) && !in_array($cursor->format('Y-m-d'), $alreadyAbsent)) {
+                    $availableDates[] = $cursor->format('Y-m-d');
+                }
+                $cursor->addDay();
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'data'   => [
+                    'child_id'             => (int) $childId,
+                    'subscription_start'   => $contract->start_date,
+                    'subscription_end'     => $contract->end_date,
+                    'available_dates'      => $availableDates,
+                    'total_available'      => count($availableDates),
+                    'already_absent_dates' => $alreadyAbsent,
+                ]
+            ]);
+        } catch (Exception $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 400);
+        }
+    }
+
+    /**
+     * التأكيد اليدوي لصعود الطفل (بديل الـ QR في حال تعطل هاتف السائق أو كاميرته)
+     */
     public function confirmManualPickup($param1 = null, $param2 = null): JsonResponse
     {
         $user = Auth::user();
         $parentId = $this->resolveParentId();
 
         $childId = request()->route('childId') ?? $param2 ?? $param1;
-        $tripId = request()->route('tripId') ?? $param1 ?? $param2;
+        $tripId  = request()->route('tripId')  ?? $param1 ?? $param2;
 
         try {
             $this->checkChildBelongsToParent((int) $childId);
             $this->stopService->confirmManualPickup((int) $tripId, (int) $childId, $parentId);
 
-            // تسجيل عملية التأكيد اليدوي كإثبات أمان بديل للـ QR
             Log::notice("Parent Confirmed Manual Pickup", [
                 'trip_id'     => $tripId,
                 'parent_id'   => $parentId,
@@ -134,7 +269,6 @@ class ParentChildController extends Controller
                 'child_id'  => $childId,
                 'error'     => $e->getMessage()
             ]);
-
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 400);
         }
     }
