@@ -3,52 +3,27 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
     public function up(): void
     {
-        Schema::disableForeignKeyConstraints();
-
-        // 1. تفريغ جدول الأطفال لتجنب تعارض البيانات القديمة (Integrity violation)
-        DB::table('children')->truncate();
-
-        // 2. إسقاط القيد القديم بأمان دون إيقاف العملية إذا كان محذوفاً مسبقاً
-        try {
-            DB::statement('ALTER TABLE `children` DROP FOREIGN KEY `children_parent_id_foreign`');
-        } catch (\Throwable $e) {
-            // تم تجاهل الخطأ لأن القيد محذوف بالفعل
+        if (!Schema::hasColumn('absence_logs', 'absence_type')) {
+            Schema::table('absence_logs', function (Blueprint $table) {
+                $table->enum('absence_type', ['pickup', 'dropoff', 'both'])
+                      ->default('both')
+                      ->after('absence_date')
+                      ->comment('نوع الغياب: pickup=ذهاب فقط، dropoff=عودة فقط، both=ذهاب وعودة');
+            });
         }
-
-        // 3. ربط القيد بجدول parents الصحيح
-        Schema::table('children', function (Blueprint $table) {
-            $table->foreign('parent_id')
-                  ->references('id')
-                  ->on('parents')
-                  ->onDelete('cascade');
-        });
-
-        Schema::enableForeignKeyConstraints();
     }
 
     public function down(): void
     {
-        Schema::disableForeignKeyConstraints();
-
-        try {
-            DB::statement('ALTER TABLE `children` DROP FOREIGN KEY `children_parent_id_foreign`');
-        } catch (\Throwable $e) {
-            // ignore
+        if (Schema::hasColumn('absence_logs', 'absence_type')) {
+            Schema::table('absence_logs', function (Blueprint $table) {
+                $table->dropColumn('absence_type');
+            });
         }
-
-        Schema::table('children', function (Blueprint $table) {
-            $table->foreign('parent_id')
-                  ->references('id')
-                  ->on('users')
-                  ->onDelete('cascade');
-        });
-
-        Schema::enableForeignKeyConstraints();
     }
 };
