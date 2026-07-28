@@ -11,17 +11,19 @@ return new class extends Migration
     {
         Schema::disableForeignKeyConstraints();
 
-        // 1. تفريغ جدول الأطفال لتجنب تعارض البيانات القديمة (Integrity violation)
+        // 1. تفريغ جدول الأطفال لتجنب أية أخطاء تعارض بيانات قديمة
         DB::table('children')->truncate();
 
-        // 2. إسقاط القيد القديم بأمان دون إيقاف العملية إذا كان محذوفاً مسبقاً
+        // 2. محاولة حذف القيد القديم (إن وجد) في بلوك مستقل
         try {
-            DB::statement('ALTER TABLE `children` DROP FOREIGN KEY `children_parent_id_foreign`');
+            Schema::table('children', function (Blueprint $table) {
+                $table->dropForeign('children_parent_id_foreign');
+            });
         } catch (\Throwable $e) {
-            // تم تجاهل الخطأ لأن القيد محذوف بالفعل
+            // القيد محذوف مسبقاً، يتجاوز النظام الخطأ ويستكمل
         }
 
-        // 3. ربط القيد بجدول parents الصحيح
+        // 3. إضافة القيد الجديد الموجه لجدول parents
         Schema::table('children', function (Blueprint $table) {
             $table->foreign('parent_id')
                   ->references('id')
@@ -37,7 +39,9 @@ return new class extends Migration
         Schema::disableForeignKeyConstraints();
 
         try {
-            DB::statement('ALTER TABLE `children` DROP FOREIGN KEY `children_parent_id_foreign`');
+            Schema::table('children', function (Blueprint $table) {
+                $table->dropForeign(['parent_id']);
+            });
         } catch (\Throwable $e) {
             // ignore
         }

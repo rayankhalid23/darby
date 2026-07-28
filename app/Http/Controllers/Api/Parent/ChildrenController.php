@@ -55,26 +55,60 @@ class ChildrenController extends Controller
 
     public function store(StoreChildRequest $request): JsonResponse
     {
+        $userId = auth()->id();
         $parentId = $this->getActualParentId();
         
+        // 1. حالة فشل: عدم العثور على حساب ولي الأمر
         if (!$parentId) {
+            Log::warning('Failed to add child: Parent profile not found', [
+                'user_id' => $userId,
+                'input_data' => $request->validated()
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'لا يمكن إضافة طفل لعدم وجود ملف ولي أمر نشط.'
             ], 400);
         }
 
-        // دمج الـ parent_id الصحيح داخل البيانات الممررة للسيرفس لضمان التخزين السليم
-        $data = $request->validated();
-        $data['parent_id'] = $parentId;
+        try {
+            // دمج الـ parent_id الصحيح داخل البيانات
+            $data = $request->validated();
+            $data['parent_id'] = $parentId;
 
-        $child = $this->childService->createChild($data);
+            // محاولة إنشاء الطفل عبر السيرفس
+            $child = $this->childService->createChild($data);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'تم إضافة بيانات الطفل بنجاح.',
-            'data'    => new ChildResource($child->load('logistics'))
-        ], 201);
+            // سجل النجاح
+            Log::info('Parent Added New Child Successfully', [
+                'parent_id'  => $parentId,
+                'child_id'   => $child->id,
+                'child_name' => $child->name ?? ($child->first_name . ' ' . $child->last_name),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'تم إضافة بيانات الطفل بنجاح.',
+                'data'    => new ChildResource($child->load('logistics'))
+            ], 201);
+
+        } catch (\Throwable $e) {
+            // 2. حالة فشل: حدوث استثناء (Exception / Query Error / Runtime Error)
+            Log::error('Failed to add child: Exception occurred', [
+                'user_id'       => $userId,
+                'parent_id'     => $parentId,
+                'error_message' => $e->getMessage(), // نص الخطأ المباشر
+                'file'          => $e->getFile(),    // اسم الملف الذي وقع فيه الخطأ
+                'line'          => $e->getLine(),    // رقم السطر
+                'payload'       => $request->validated() // البيانات التي أرسلها المستخدم
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'حدث خطأ أثناء حفظ بيانات الطفل، يرجى المحاولة لاحقاً.',
+                'error'   => config('app.debug') ? $e->getMessage() : null // إظهار التفاصيل للبيئة التطويرية فقط
+            ], 500);
+        }
     }
 
     public function show($id): JsonResponse
