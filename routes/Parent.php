@@ -74,6 +74,8 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // إدارة الأبناء والطلبة المضافين
     Route::prefix('children')->group(function () {
+        Route::get('/has-children', [ChildrenController::class, 'checkHasChildren']);
+        Route::get('/active-subscribed', [ChildrenController::class, 'getActiveSubscribedChildren']);
         Route::get('/', [ChildrenController::class, 'index']);
         Route::post('/', [ChildrenController::class, 'store']);
         Route::get('/{id}', [ChildrenController::class, 'show']);

@@ -8,6 +8,7 @@ use App\Http\Requests\Api\Parent\UpdateChildRequest;
 use App\Models\Parent\Child;
 use App\Services\Parent\ChildService;
 use App\Http\Resources\Api\Parent\ChildResource;
+use App\Http\Resources\Api\Parent\ActiveSubscribedChildResource;
 use Illuminate\Http\JsonResponse;
 use App\Http\Resources\Api\Parent\SubscriptionResource;
 use Illuminate\Support\Facades\DB;
@@ -29,6 +30,40 @@ class ChildrenController extends Controller
     {
         $parent = DB::table('parents')->where('user_id', auth()->id())->first();
         return $parent ? (int) $parent->id : null;
+    }
+
+    /**
+     * دالة 1: التحقق مما إذا كان ولي الأمر عنده أطفال مضافين أم لا (ترجع true / false)
+     * GET /api/parent/children/has-children
+     */
+    public function checkHasChildren(): JsonResponse
+    {
+        $userId = auth()->id();
+        $parentId = $this->getActualParentId();
+
+        $hasChildren = $this->childService->hasChildren($userId, $parentId);
+
+        return response()->json([
+            'success'      => true,
+            'has_children' => $hasChildren
+        ], 200);
+    }
+
+    /**
+     * دالة 2: جلب الأطفال الذين لديهم اشتراكات نشطة فقط لولي الأمر (id, name, photo_url)
+     * GET /api/parent/children/active-subscribed
+     */
+    public function getActiveSubscribedChildren(): JsonResponse
+    {
+        $userId = auth()->id();
+        $parentId = $this->getActualParentId();
+
+        $children = $this->childService->getActiveSubscribedChildren($userId, $parentId);
+
+        return response()->json([
+            'success' => true,
+            'data'    => ActiveSubscribedChildResource::collection($children)
+        ], 200);
     }
 
     public function index(): JsonResponse

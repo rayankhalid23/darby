@@ -101,6 +101,53 @@ class ChildService
     }
 
     /**
+     * التحقق مما إذا كان ولي الأمر لديه أطفال مضافين في النظام أم لا.
+     */
+    public function hasChildren(int $userId, ?int $parentId): bool
+    {
+        return Child::where(function ($q) use ($userId, $parentId) {
+            $q->where('parent_id', $userId);
+            if ($parentId) {
+                $q->orWhere('parent_id', $parentId);
+            }
+        })->exists();
+    }
+
+    /**
+     * جلب الأطفال الذين لديهم اشتراكات نشطة فقط لولي الأمر الحالي.
+     */
+    public function getActiveSubscribedChildren(int $userId, ?int $parentId)
+    {
+        // 1. جلب معرفات الأطفال الذين لديهم اشتراك نشط من جدول active_subscriptions
+        $activeChildIdsFromSubs = \App\Models\Shared\ActiveSubscription::where(function ($q) use ($userId, $parentId) {
+                $q->where('parent_id', $userId);
+                if ($parentId) {
+                    $q->orWhere('parent_id', $parentId);
+                }
+            })
+            ->where('status', 'active')
+            ->pluck('child_id')
+            ->toArray();
+
+        // 2. جلب معرفات الأطفال الذين لديهم اشتراك نشط من جدول child_logistics
+        $activeChildIdsFromLogistics = Child::where(function ($q) use ($userId, $parentId) {
+                $q->where('parent_id', $userId);
+                if ($parentId) {
+                    $q->orWhere('parent_id', $parentId);
+                }
+            })
+            ->whereHas('logistics', function ($l) {
+                $l->where('is_active', true);
+            })
+            ->pluck('id')
+            ->toArray();
+
+        $allActiveChildIds = array_unique(array_merge($activeChildIdsFromSubs, $activeChildIdsFromLogistics));
+
+        return Child::whereIn('id', $allActiveChildIds)->get();
+    }
+
+    /**
      * دالة مساعدة خاصة برفع صور الأطفال بشكل آمن ومنظم
      */
     private function uploadPhoto(UploadedFile $photo): string
