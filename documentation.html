@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Api Technical Documentation - Darby System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Mermaid.js Library Integration -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            mermaid.initialize({ 
+                startOnLoad: true, 
+                theme: 'neutral',
+                fontFamily: 'Cairo',
+                securityLevel: 'loose'
+            });
+        });
+    </script>
+
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-dark: #3730a3;
+            --primary-light: #e0e7ff;
+            --secondary: #0f172a;
+            --surface: #ffffff;
+            --background: #f8fafc;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --success: #059669;
+            --success-bg: #ecfdf5;
+            --warning: #d97706;
+            --warning-bg: #fffbeb;
+            --danger: #dc2626;
+            --danger-bg: #fef2f2;
+            --code-bg: #0f172a;
+            --code-text: #f8fafc;
+            --radius: 12px;
+            --shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.08);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Cairo', system-ui, -apple-system, sans-serif;
+            background-color: var(--background);
+            color: var(--text-main);
+            line-height: 1.8;
+            font-size: 15px;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: var(--surface);
+            border-radius: 20px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            padding: 60px;
+        }
+
+        /* Header / Banner */
+        .doc-header {
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 30px;
+            margin-bottom: 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .doc-header h1 {
+            font-size: 32px;
+            font-weight: 800;
+            color: var(--secondary);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .badge-system {
+            background: var(--primary-light);
+            color: var(--primary);
+            padding: 6px 16px;
+            border-radius: 30px;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        /* Navigation / TOC */
+        .toc-card {
+            background: #f1f5f9;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px 30px;
+            margin-bottom: 50px;
+        }
+
+        .toc-card h3 {
+            font-size: 18px;
+            color: var(--secondary);
+            margin-bottom: 15px;
+        }
+
+        .toc-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 12px;
+            list-style: none;
+        }
+
+        .toc-list a {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .toc-list a:hover {
+            color: var(--primary-dark);
+            text-decoration: underline;
+        }
+
+        /* Typography */
+        h2 {
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--secondary);
+            margin: 45px 0 20px 0;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--primary-light);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        h3 {
+            font-size: 19px;
+            font-weight: 700;
+            color: var(--primary-dark);
+            margin: 30px 0 15px 0;
+        }
+
+        h4 {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--secondary);
+            margin: 20px 0 10px 0;
+        }
+
+        p {
+            margin-bottom: 15px;
+            color: #334155;
+        }
+
+        ul, ol {
+            margin-bottom: 20px;
+            padding-right: 25px;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        /* Diagram Box Styling */
+        .diagram-container {
+            background: #ffffff;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 25px;
+            margin: 25px 0 35px 0;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+            text-align: center;
+            overflow-x: auto;
+        }
+
+        pre.mermaid {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+
+        /* Tables Design */
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            margin: 20px 0 30px 0;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: right;
+            font-size: 14.5px;
+        }
+
+        thead {
+            background-color: #f1f5f9;
+        }
+
+        th {
+            color: var(--secondary);
+            font-weight: 700;
+            padding: 14px 18px;
+            border-bottom: 2px solid var(--border);
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--border);
+            color: #334155;
+        }
+
+        tbody tr:nth-child(even) {
+            background-color: #f8fafc;
+        }
+
+        tbody tr:hover {
+            background-color: #f1f5f9;
+        }
+
+        /* Code Blocks Design */
+        pre:not(.mermaid) {
+            background-color: var(--code-bg);
+            color: var(--code-text);
+            padding: 22px 25px;
+            border-radius: var(--radius);
+            font-family: 'Fira Code', monospace;
+            font-size: 13.5px;
+            line-height: 1.6;
+            overflow-x: auto;
+            direction: ltr;
+            text-align: left;
+            margin: 15px 0 25px 0;
+            box-shadow: inset 0 2px 8px rgba(0,0,0,0.4);
+            border: 1px solid #334155;
+        }
+
+        code {
+            font-family: 'Fira Code', monospace;
+            background-color: #f1f5f9;
+            color: var(--primary-dark);
+            padding: 2px 7px;
+            border-radius: 6px;
+            font-size: 13px;
+            direction: ltr;
+            display: inline-block;
+        }
+
+        pre:not(.mermaid) code {
+            background-color: transparent;
+            color: inherit;
+            padding: 0;
+        }
+
+        /* HTTP Badges */
+        .method {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 12.5px;
+            font-family: 'Fira Code', monospace;
+            text-transform: uppercase;
+        }
+
+        .method.get { background: #dbeafe; color: #1e40af; }
+        .method.post { background: #dcfce7; color: #166534; }
+        .method.put, .method.patch { background: #fef3c7; color: #92400e; }
+        .method.delete { background: #fee2e2; color: #991b1b; }
+
+        .endpoint-box {
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-right: 5px solid var(--primary);
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin: 25px 0 15px 0;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-family: 'Fira Code', monospace;
+        }
+
+        .endpoint-url {
+            font-weight: 600;
+            color: var(--secondary);
+            direction: ltr;
+        }
+
+        /* Callout boxes */
+        .callout {
+            padding: 16px 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-size: 14.5px;
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+        }
+
+        .callout.info { background: var(--primary-light); color: #1e1b4b; border-right: 4px solid var(--primary); }
+        .callout.warning { background: var(--warning-bg); color: #78350f; border-right: 4px solid var(--warning); }
+        .callout.success { background: var(--success-bg); color: #064e3b; border-right: 4px solid var(--success); }
+
+        /* PRINT STYLES (@media print) */
+        @media print {
+            body {
+                background: #ffffff !important;
+                padding: 0 !important;
+                font-size: 12pt !important;
+                color: #000000 !important;
+            }
+
+            .container {
+                box-shadow: none !important;
+                border: none !important;
+                padding: 0 !important;
+                max-width: 100% !important;
+            }
+
+            .toc-card {
+                display: none !important;
+            }
+
+            h2 {
+                page-break-after: avoid;
+                break-after: avoid;
+                border-bottom-color: #000 !important;
+            }
+
+            h3, h4 {
+                page-break-after: avoid;
+                break-after: avoid;
+            }
+
+            tr, table, pre, .endpoint-box, .callout, .diagram-container {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+            }
+
+            pre:not(.mermaid) {
+                background-color: #1e293b !important;
+                color: #ffffff !important;
+                border: 1px solid #000 !important;
+                white-space: pre-wrap !important;
+                word-wrap: break-word !important;
+            }
+
+            a {
+                text-decoration: none !important;
+                color: #000000 !important;
+            }
+
+            .badge-system {
+                border: 1px solid #000;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <!-- Document Header -->
+    <header class="doc-header">
+        <div>
+            <h1>📘 التوثيق التقني الشامل لمنظومة النقل المدرسي (Darby API)</h1>
+            <p style="margin-top: 8px; color: var(--text-muted);">وثيقة المواصفات البرمجية والمعمارية الشاملة للـ Backend والـ REST APIs والمخططات التفاعلية</p>
+        </div>
+        <div>
+            <span class="badge-system">v2.0 • Interactive Diagrams</span>
+        </div>
+    </header>
+
+    <!-- Table of Contents -->
+    <nav class="toc-card">
+        <h3>📌 الفهرس الرئيسي للتوثيق</h3>
+        <ul class="toc-list">
+            <li><a href="#overview">1. نظرة عامة ومعمارية النظام (System Architecture)</a></li>
+            <li><a href="#schema">2. هيكلية قاعدة البيانات والمخطط (Database ERD Diagram)</a></li>
+            <li><a href="#sequence">3. مخطط تدفق البيانات (API Sequence Diagram)</a></li>
+            <li><a href="#auth-api">4.1 APIs المصادقة والحسابات</a></li>
+            <li><a href="#parent-api">4.2 APIs أولياء الأمور والأطفال</a></li>
+            <li><a href="#driver-api">4.3 APIs السائقين والرحلات</a></li>
+            <li><a href="#admin-api">4.4 APIs لوحة تحكم الأدمن</a></li>
+            <li><a href="#business-logic">5. منطق العمل والخدمات الذكية</a></li>
+            <li><a href="#setup-guide">6. دليل بيئة التشغيل والتنفيذ</a></li>
+        </ul>
+    </nav>
+
+    <!-- Section 1: Architecture & System Diagram -->
+    <section id="overview">
+        <h2>1. نظرة عامة على المشروع والمعمارية (System Architecture Diagram)</h2>
+        
+        <h3>🎯 هدف النظام</h3>
+        <p>منصة <strong>داربي (Darby)</strong> هي منظومة متكاملة لإدارة النقل المدرسي الذكي، تهدف لربط <strong>أولياء الأمور</strong> و<strong>السائقين</strong> و<strong>إدارة النظام (الآدمن)</strong> عبر شبكة تفاعلية تتيح إدارة طلبات الاشتراك، تتبع الرحلات المباشرة (GPS)، إثبات الصعود والهبوط بواسطة الـ QR Code، إدارة الغيابات والشكاوى، ومعالجة المدفوعات والفواتير.</p>
+
+        <h3>🏗️ مخطط معمارية النظام التفاعلي (System Architecture Diagram)</h3>
+        <p>يوضح المخطط التالي الاتصال والتدفق الهيكلي بين واجهات المستخدم (Front-end) وطبقات نظام Laravel API وصولاً لبيئة البيانات والتخزين:</p>
+        
+        <div class="diagram-container">
+            <pre class="mermaid">
+graph TD
+    subgraph ClientLayer ["📱 طبقة واجهات المستخدم (Frontend Layer)"]
+        MobileApp["📱 تطبيق الهاتف المحمول (Parent / Driver Mobile App)"]
+        WebApp["💻 لوحة التحكم والويب (Admin Dashboard)"]
+    end
+
+    subgraph LaravelAPI ["⚙️ طبقة النظام الخلفي (Laravel Backend API Layer)"]
+        Router["🛣️ المسارات والحماية (Routes & Sanctum Auth Middleware)"]
+        FormReq["🔍 التدقيق والتحقق (FormRequest Validation)"]
+        Controllers["🎮 المتحكمات (API Controllers)"]
+        Services["⚙️ الخدمات ومنطق العمل (Business Services Layer)"]
+        Resources["📦 المخرجات القياسية (API Resources / JSON Formatter)"]
+    end
+
+    subgraph DataLayer ["🗄️ طبقة البيانات والتخزين (Database & Storage Layer)"]
+        Models["🗄️ النماذج (Eloquent Models)"]
+        Database[("🐬 قاعدة بيانات MySQL 8.0")]
+        Storage["📁 قرص التخزين (Storage Public Disk)"]
+    end
+
+    MobileApp -->|HTTPS / REST API Requests| Router
+    WebApp -->|HTTPS / REST API Requests| Router
+    Router -->|تأكيد صلاحية التوكن| FormReq
+    FormReq -->|بيانات مدققة| Controllers
+    Controllers -->|استدعاء خدمات العمل| Services
+    Services -->|الاستعلامات والمعاملات| Models
+    Services -->|توليد وحفظ ملفات العقود| Storage
+    Models -->|تنفيذ SQL Query| Database
+    Controllers -->|تنسيق الـ Payload| Resources
+    Resources -->|Structured JSON Response| MobileApp
+    Resources -->|Structured JSON Response| WebApp
+            </pre>
+        </div>
+
+        <h3>🛠️ التقنيات والحزم الأساسية (Tech Stack)</h3>
+        <ul>
+            <li><strong>Framework</strong>: Laravel 11.x / PHP 8.2+</li>
+            <li><strong>Database</strong>: MySQL 8.0</li>
+            <li><strong>Authentication</strong>: Laravel Sanctum (Token-Based Authorization & Signed URLs)</li>
+            <li><strong>API Standardization</strong>: Eloquent API Resources + FormRequest Validation</li>
+            <li><strong>Storage</strong>: Laravel Storage Disk (Public / Private Documents & Images)</li>
+        </ul>
+    </section>
+
+    <!-- Section 2: Database Schema & ERD Diagram -->
+    <section id="schema">
+        <h2>2. هيكلية قاعدة البيانات وعلاقاتها (Database ERD Diagram)</h2>
+
+        <h3>📊 مخطط علاقات الكيانات التفاعلي (Database Entity Relationship Diagram)</h3>
+        <p>يوضح المخطط التالي العلاقات الهيكلية بين جداول النظام (One-to-Many, One-to-One, Foreign Keys Constraints):</p>
+
+        <div class="diagram-container">
+            <pre class="mermaid">
+erDiagram
+    users ||--o| parents : "1-to-1 Parent Profile"
+    users ||--o| drivers : "1-to-1 Driver Profile"
+    users ||--o{ addresses : "1-to-Many Home Addresses"
+    parents ||--o{ children : "1-to-Many Children"
+    parents ||--o{ requests : "1-to-Many Subscription Requests"
+    drivers ||--o{ vehicles : "1-to-Many Driver Vehicles"
+    drivers ||--o{ requests : "1-to-Many Incoming Requests"
+    schools ||--o{ children : "1-to-Many Enrolled Students"
+    schools ||--o{ requests : "1-to-Many School Destinations"
+    requests ||--o| contracts : "1-to-1 Legal Contract"
+    requests ||--o{ request_children : "1-to-Many Request Students"
+    contracts ||--o{ active_subscriptions : "1-to-Many Active Subs"
+    children ||--o{ active_subscriptions : "1-to-Many Child Active Subs"
+    children ||--o{ absence_logs : "1-to-Many Scheduled Absences"
+    drivers ||--o{ trips : "1-to-Many Conducted Trips"
+    trips ||--o{ trip_tracking : "1-to-Many GPS Live Logs"
+    trips ||--o{ trip_events : "1-to-Many QR Scan Events"
+    trips ||--o{ trip_student_attendance : "1-to-Many Student Attendance"
+
+    users {
+        bigint id PK
+        string full_name
+        string phone_number
+        int role_id
+    }
+    parents {
+        bigint id PK
+        bigint user_id FK
+    }
+    children {
+        bigint id PK
+        bigint parent_id FK
+        bigint school_id FK
+        string full_name
+        string qr_code_token
+    }
+    drivers {
+        bigint id PK
+        bigint user_id FK
+        string status
+    }
+    requests {
+        bigint id PK
+        bigint parent_id FK
+        bigint driver_id FK
+        string status
+    }
+    contracts {
+        bigint id PK
+        bigint subscription_request_id FK
+        string contract_number
+    }
+    active_subscriptions {
+        bigint id PK
+        bigint contract_id FK
+        bigint child_id FK
+        bigint driver_id FK
+        string status
+    }
+    trips {
+        bigint id PK
+        bigint driver_id FK
+        string status
+        date trip_date
+    }
+            </pre>
+        </div>
+
+        <h3>🗄️ تفاصيل الجداول الأساسية</h3>
+
+        <h4>1. جدول المستخدمين (<code>users</code>)</h4>
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>اسم الحقل</th>
+                        <th>نوع البيانات</th>
+                        <th>القيود والملاحظات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>id</code></td><td>BigInt (PK)</td><td>Auto Increment</td></tr>
+                    <tr><td><code>full_name</code></td><td>Varchar(255)</td><td>اسم المستخدم الكامل</td></tr>
+                    <tr><td><code>email</code></td><td>Varchar(255)</td><td>Unique, Nullable</td></tr>
+                    <tr><td><code>phone_number</code></td><td>Varchar(255)</td><td>Unique</td></tr>
+                    <tr><td><code>password_hash</code></td><td>Varchar(255)</td><td>كلمة المرور المشفرة</td></tr>
+                    <tr><td><code>role_id</code></td><td>ForeignId</td><td><code>1=Admin</code>, <code>2=Driver</code>, <code>3=Parent</code></td></tr>
+                    <tr><td><code>is_active</code></td><td>Boolean</td><td>Default: 1</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h4>2. جدول الأطفال (<code>children</code>)</h4>
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>اسم الحقل</th>
+                        <th>نوع البيانات</th>
+                        <th>القيود والملاحظات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>id</code></td><td>BigInt (PK)</td><td>Auto Increment</td></tr>
+                    <tr><td><code>parent_id</code></td><td>ForeignId</td><td>FK -> <code>parents.id</code> (CASCADE)</td></tr>
+                    <tr><td><code>school_id</code></td><td>ForeignId</td><td>FK -> <code>schools.id</code> (SET NULL)</td></tr>
+                    <tr><td><code>address_id</code></td><td>ForeignId</td><td>FK -> <code>addresses.id</code> (SET NULL)</td></tr>
+                    <tr><td><code>full_name</code></td><td>Varchar(255)</td><td>اسم الطفل الكامل</td></tr>
+                    <tr><td><code>birth_date</code></td><td>Date</td><td>تاريخ الميلاد</td></tr>
+                    <tr><td><code>gender</code></td><td>Enum</td><td><code>'male'</code>, <code>'female'</code></td></tr>
+                    <tr><td><code>grade</code></td><td>Unsigned TinyInt</td><td>الصف الدراسي</td></tr>
+                    <tr><td><code>photo_url</code></td><td>Varchar(255)</td><td>رابط صورة الطفل</td></tr>
+                    <tr><td><code>qr_code_token</code></td><td>Varchar(255)</td><td>Unique QR Token (توليد تلقائي)</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h4>3. جدول سجلات الغياب (<code>absence_logs</code>)</h4>
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>اسم الحقل</th>
+                        <th>نوع البيانات</th>
+                        <th>القيود والملاحظات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>id</code></td><td>BigInt (PK)</td><td>Auto Increment</td></tr>
+                    <tr><td><code>child_id</code></td><td>ForeignId</td><td>FK -> <code>children.id</code> (CASCADE)</td></tr>
+                    <tr><td><code>absence_date</code></td><td>Date</td><td>تاريخ الغياب المجدول</td></tr>
+                    <tr><td><code>absence_type</code></td><td>Enum</td><td><code>'pickup'</code> (ذهاب), <code>'dropoff'</code> (عودة), <code>'both'</code> (كلتا الرحلتين)</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="callout warning">
+            ⚠️ <strong>قيد الفرادة (Unique Constraint)</strong>: <code>unique(['child_id', 'absence_date'])</code> لمنع تكرار الغياب لنفس الطفل في ذات اليوم.
+        </div>
+    </section>
+
+    <!-- Section 3: API Sequence Diagram -->
+    <section id="sequence">
+        <h2>3. مخطط تدفق البيانات والدورة الحياتية للطلب (API Sequence Diagram)</h2>
+        
+        <p>يوضح مخطط التتابع التالي الدورة الحياتية لمعالجة الطلب (Request/Response Lifecycle) من لحظة إرساله بواسطة المستخدم عبر Sanctum Authentication، مروراً بالتدقيق ومنطق العمل وحفظ المعاملة في قاعدة البيانات، وصولاً لتنسيق الرد النهائي:</p>
+
+        <div class="diagram-container">
+            <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    actor Client as 📱 التطبيق (Mobile App / Web)
+    participant Route as 🛣️ المسارات والحماية (Sanctum Auth)
+    participant Controller as 🎮 الكنترولر (API Controller)
+    participant Service as ⚙️ السيرفس (Business Service)
+    participant DB as 🗄️ قاعدة البيانات (MySQL DB)
+    participant Resource as 📦 التنسيق القياسي (API Resource)
+
+    Client->>Route: POST /api/parent/requests (Bearer Token & Payload)
+    Route->>Route: فحص وصلاحية Sanctum Auth Token & Role
+    alt التوكن غير صالح أو منتهي
+        Route-->>Client: 401 Unauthorized {status: false, message: "Unauthenticated"}
+    else التوكن صحيح
+        Route->>Controller: تسليم الطلب إلى الكنترولر المعني
+        Controller->>Controller: فحص وتدقيق البيانات عبر FormRequest
+        alt فشل التدقيق في البيانات
+            Controller-->>Client: 422 Unprocessable Entity {errors: [...]}
+        else نجاح التحقق في البيانات
+            Controller->>Service: استدعاء دالة الخدمة (createSubscriptionRequest)
+            Service->>DB: فتح معاملة مالية وقاعدة بيانات (DB Transaction)
+            Service->>DB: إدراج البيانات في جدول `requests` و `request_children`
+            Service->>DB: تثبيت وحفظ المعاملة (Commit Transaction)
+            Service-->>Controller: إرجاع الموديل المعالج
+            Controller->>Resource: تحويل الموديل بواسطة API Resource
+            Resource-->>Client: 201 Created {success: true, data: {...}}
+        end
+    end
+            </pre>
+        </div>
+    </section>
+
+    <!-- Section 4: Endpoints Documentation -->
+    <section id="auth-api">
+        <h2>4. توثيق الواجهات والـ APIs (API Endpoints & Contracts)</h2>
+
+        <h3>4.1 موديل المصادقة (Auth API)</h3>
+        
+        <div class="endpoint-box">
+            <span class="method post">POST</span>
+            <span class="endpoint-url">/api/auth/login</span>
+        </div>
+        <p><strong>الوصف</strong>: تسجيل الدخول واستخراج توكن Sanctum لتطبيقات الهاتف والويب.</p>
+        
+        <h4>Request Body (JSON):</h4>
+        <pre><code>{
+  "email_or_phone": "0913334455",
+  "password": "password123",
+  "device_name": "iPhone 15 Pro"
+}</code></pre>
+
+        <h4>Success Response (200 OK):</h4>
+        <pre><code>{
+  "status": true,
+  "message": "تم تسجيل الدخول بنجاح",
+  "token": "1|qX8zK...token_hash",
+  "user": {
+    "id": 93,
+    "full_name": "طه سالم القمودي",
+    "role_id": 3
+  }
+}</code></pre>
+    </section>
+
+    <section id="parent-api">
+        <h3>4.2 موديل ولي الأمر (Parent API)</h3>
+
+        <div class="endpoint-box">
+            <span class="method get">GET</span>
+            <span class="endpoint-url">/api/parent/children/has-children</span>
+        </div>
+        <p><strong>الوصف</strong>: التحقق الفوري هل يملك ولي الأمر أطفال مضافين بالنظام أم لا.</p>
+        <h4>Success Response (200 OK):</h4>
+        <pre><code>{
+  "success": true,
+  "has_children": true
+}</code></pre>
+
+        <div class="endpoint-box">
+            <span class="method get">GET</span>
+            <span class="endpoint-url">/api/parent/children/active-subscribed</span>
+        </div>
+        <p><strong>الوصف</strong>: جلب قائمة الأطفال الذين لديهم اشتراكات نشطة حالياً.</p>
+        <h4>Success Response (200 OK):</h4>
+        <pre><code>{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "name": "أحمد طه القمودي",
+      "photo_url": "http://localhost:8000/storage/children_photos/child1.png",
+      "image": "http://localhost:8000/storage/children_photos/child1.png"
+    }
+  ]
+}</code></pre>
+
+        <div class="endpoint-box">
+            <span class="method post">POST</span>
+            <span class="endpoint-url">/api/parent/children/{childId}/set-absence</span>
+        </div>
+        <p><strong>الوصف</strong>: تسجيل وتحديد تواريخ غياب الطفل ونوعه (ذهاب/عودة/الاثنين).</p>
+        <h4>Request Body (JSON):</h4>
+        <pre><code>{
+  "dates": ["2026-07-30", "2026-07-31"],
+  "absence_type": "pickup"
+}</code></pre>
+
+        <h4>Success Response (200 OK):</h4>
+        <pre><code>{
+  "status": "success",
+  "message": "تم جدولة غياب الطفل بنجاح (رحلة الذهاب فقط)",
+  "data": {
+    "child_id": 1,
+    "dates": ["2026-07-30", "2026-07-31"],
+    "absence_type": "pickup"
+  }
+}</code></pre>
+    </section>
+
+    <section id="driver-api">
+        <h3>4.3 موديل السائق (Driver API)</h3>
+
+        <div class="endpoint-box">
+            <span class="method get">GET</span>
+            <span class="endpoint-url">/api/driver/active-subscriptions/{id}</span>
+        </div>
+        <p><strong>الوصف</strong>: عرض التفاصيل الهيكلية الكاملة لاشتراك نشط محدد لدى السائق.</p>
+        <h4>Success Response (200 OK):</h4>
+        <pre><code>{
+  "success": true,
+  "message": "تم جلب تفاصيل الاشتراك النشط بنجاح.",
+  "data": {
+    "subscription_info": {
+      "subscription_id": 21,
+      "request_id": 26,
+      "contract_number": "CNT-2026-001",
+      "status": "active",
+      "created_at": "2026-07-27T11:09:37+02:00"
+    },
+    "parent": {
+      "name": "طه سالم القمودي",
+      "phone": "0911111111",
+      "image": null
+    },
+    "child": {
+      "name": "سند طه القمودي",
+      "age": 10,
+      "gender": "male",
+      "educational_stage": "الثالث الابتدائي",
+      "medical_notes": "لا توجد"
+    },
+    "locations": {
+      "home": {
+        "address_name": "منزل الولي طه",
+        "latitude": 32.892,
+        "longitude": 13.175
+      },
+      "school": {
+        "name": "مدرسة الجيل الجديد الدولية",
+        "address": "حي الأندلس",
+        "latitude": 32.89,
+        "longitude": 13.17
+      }
+    },
+    "subscription_details": {
+      "subscription_type": "monthly",
+      "direction": "two_way",
+      "period": "morning",
+      "pickup_time": "07:00:00",
+      "dropoff_time": "14:00:00",
+      "start_date": "2026-07-27",
+      "end_date": "2026-08-26",
+      "subscription_days": 22,
+      "child_subscription_price": 300.00,
+      "total_contract_value": 600.00
+    },
+    "vehicle": {
+      "manufacturer": "تويوتا",
+      "model": "كوستر",
+      "color": "أبيض",
+      "plate_number": "5-12345"
+    },
+    "contract": {
+      "status": "active",
+      "signed_at": "2026-07-27T11:09:37+02:00",
+      "pdf_url": "http://localhost:8000/storage/contracts/CNT-2026-001.pdf"
+    }
+  }
+}</code></pre>
+    </section>
+
+    <!-- Section 5: Business Logic -->
+    <section id="business-logic">
+        <h2>5. منطق العمل والخدمات الذكية (Business Logic & Core Services)</h2>
+        
+        <h3>🔄 1. دورة حياة طلب الاشتراك والعقد (Subscription Lifecycle Flow)</h3>
+        <p>تبدأ العملية باختيار ولي الأمر للسائق وتحديد الأبناء والمدرسة. عند إرسال الطلب، يتلقى السائق إشعاراً فورياً. في حال قبول الطلب، يقوم كائن <code>ContractService</code> آلياً بتوليد عقد موثق بصيغة PDF وتفعيله وإصدار فاتورة مدفوعة.</p>
+
+        <h3>🛑 2. نظام حساب وتعديل الغيابات اللحظي (Real-time Absence Recalculation)</h3>
+        <p>عندما يقوم ولي الأمر بتسجيل غياب لطفل لليوم الحالي عبر <code>setAbsence</code>:</p>
+        <ol>
+            <li>يتم حفظ السجل في <code>absence_logs</code>.</li>
+            <li>تستدعى دالة الحماية الحية <code>recalculateActiveTripsForChild($childId)</code> داخل <code>TripLifecycleService</code>.</li>
+            <li>إذا كانت هناك رحلة قائمة ومفعلة حالياً للسائق (<code>Trip status = 'started'</code>)، يتم تحديث مسار الحافلة فورياً وإزالة المحطة الخاصة بالطفل لتوفير وقت السائق وتنظيمه.</li>
+        </ol>
+    </section>
+
+    <!-- Section 6: Setup Guide -->
+    <section id="setup-guide">
+        <h2>6. دليل بيئة التشغيل والتنفيذ (Environment & Setup Guide)</h2>
+
+        <h3>⚙️ 1. أوامر التشغيل والـ Seeders</h3>
+        <pre><code># 1. تنفيذ الهجرات
+php artisan migrate
+
+# 2. زرع بيانات الأطفال والاشتراكات الكاملة (بدون مسح البيانات السابقة)
+php artisan db:seed --class=AddChildrenAndSubscriptionsSeeder
+
+# 3. زرع رحلات نشطة للأطفال 1, 2, 3 طوال أيام الأسبوع
+php artisan db:seed --class=Children123TripsSeeder
+
+# 4. تشغيل السيرفر المحلي للشبكة المحلية (LAN Access)
+php artisan serve --host=0.0.0.0 --port=8000</code></pre>
+
+        <div class="callout success">
+            ✅ <strong>جاهزية الملف للطباعة والعرض التفاعلي</strong>: هذا الملف مجهز بمكتبة Mermaid.js لتوليد الرسومات والمخططات تفاعلياً، ويمكن طباعته مباشرة عبر (<code>Ctrl + P</code>) كملف PDF عالي الدقة بدون أي تعارض في الصفحات.
+        </div>
+    </section>
+
+</div>
+
+</body>
+</html>

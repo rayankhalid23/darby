@@ -136,13 +136,20 @@ Route::middleware('auth:sanctum')->group(function () {
     // التحقق من وجود اشتراك لولي الأمر مع سائق معين ?driver_id=
     Route::get('/subscriptions/check', [ParentSubscriptionController::class, 'checkSubscription']);
 
-    // 1. شاشات العرض والتتبع (الجديدة)
+    // شاشات العرض والتتبع للرحلات (الرحلة الكيان الأساسي)
     Route::get('/trips/active', [ParentTripController::class, 'getActiveTrips']);
-    Route::get('/trips/{tripId}/track', [ParentTripController::class, 'getLiveTracking']);
+    Route::get('/trips/active/tracking', [ParentTripController::class, 'getBulkActiveTracking']);
     Route::get('/trips/upcoming', [ParentTripController::class, 'getUpcomingTrips']);
     Route::get('/trips/history', [ParentTripController::class, 'getTripHistory']);
+    
+    Route::get('/trips/{tripId}', [ParentTripController::class, 'getTripDetails']);
+    Route::get('/trips/{tripId}/track', [ParentTripController::class, 'getLiveTracking']);
+    Route::get('/trips/{tripId}/timeline', [ParentTripController::class, 'getTripTimeline']);
+    Route::get('/trips/{tripId}/children/{childId}/status', [ParentTripController::class, 'getChildTripStatus']);
 
-    // 2. العمليات والإجراءات (الموجودة سابقاً مع الإضافات الجديدة)
+    Route::get('/children/{childId}/trips', [ParentTripController::class, 'getChildTripsOverview']);
+
+    // العمليات والإجراءات (الموجودة سابقاً)
     Route::post('/children/{childId}/absence', [ParentChildController::class, 'setAbsence']);
     Route::delete('/children/{childId}/absence', [ParentChildController::class, 'cancelAbsence']);
     Route::get('/children/{childId}/absences', [ParentChildController::class, 'getAbsences']);
