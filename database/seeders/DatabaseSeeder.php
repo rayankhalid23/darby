@@ -12,35 +12,28 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call([
-            // 1. بناء الهيكل الجغرافي (البلديات والمناطق) أولاً
+            // 1. البنية التحتية، الجغرافيا، والبيانات الأساسية
+            ZoneSeeder::class,
             TripoliGeographySeeder::class,
-
-            // 2. بناء المدارس بعد توفر الـ Zones في قاعدة البيانات
             SchoolSeeder::class,
-
-            // 3. بناء الشروط والأحكام
             ClauseSeeder::class,
-
-            // 4. بناء البيانات الأساسية للنظام (الصلاحيات، الأدوار، المستخدمين الافتراضيين)
             SystemInitialSeeder::class,
 
-            // 5. بيانات وهمية شاملة لاختبار دالة البحث والفلترة والتسعير
+            // 2. حسابات أولياء الأمور، الأطفال، والاشتراكات
+            TenParentsSeeder::class,
+            AddChildrenAndSubscriptionsSeeder::class,
+
+            // 3. الرحلات النشطة، التقييمات، والشكاوى
+            ActiveTripsSeeder::class,
+            Children123TripsSeeder::class,
+            ComplaintAndReviewSeeder::class,
+
+            // 4. بيانات الاختبارات الشاملة والنظام المالي
             DriverSearchTestSeeder::class,
-
-            // 6. بيانات اختبار E2E للمسارات والرحلات
-            E2eTestSeeder::class,
-
-            // 7. بيانات اختبار النظام المالي (فواتير, محافظ, شحن, سحب)
             FinancialTestSeeder::class,
+            TestingDataSeeder::class,
+            E2eTestSeeder::class,
+            FullSystemSeeder::class,
         ]);
-
-        public function run(): void
-{
-    // استدعاء ملف السيدر الجديد
-    $this->call([
-        ComplaintAndReviewSeeder::class,
-    ]);
-}
     }
-
 }
