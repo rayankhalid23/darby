@@ -52,6 +52,7 @@ class ParentTripService
 
         foreach ($activeTrips as $trip) {
             $subChildren = $subscriptions->where('driver_id', $trip->driver_id);
+            $direction = strtolower($trip->trip_type) === 'afternoon' ? 'to_home' : 'to_school';
             $childrenArray = [];
 
             foreach ($subChildren as $sub) {
@@ -79,11 +80,23 @@ class ParentTripService
                 $rawPhoto = $childObj->photo_url ?? null;
                 $photoUrl = $rawPhoto ? (str_starts_with($rawPhoto, 'http') ? $rawPhoto : Storage::url($rawPhoto)) : asset('assets/images/default-child.png');
 
+                $childSchool = optional($sub->school);
+                $destName = $direction === 'to_school' ? ($childSchool->name ?? 'المدرسة') : 'المنزل';
+                $destType = $direction === 'to_school' ? 'school' : 'home';
+                $destLat  = (float)($direction === 'to_school' ? ($childSchool->latitude ?? $sub->dropoff_lat ?? 32.890000) : ($sub->dropoff_lat ?? $sub->pickup_lat ?? 32.890000));
+                $destLng  = (float)($direction === 'to_school' ? ($childSchool->longitude ?? $sub->dropoff_lng ?? 13.180000) : ($sub->dropoff_lng ?? $sub->pickup_lng ?? 13.180000));
+
                 $childrenArray[] = [
                     'child_id'     => $childObj->id,
                     'child_name'   => $childObj->full_name ?? $childObj->name,
                     'child_photo'  => $photoUrl,
                     'child_status' => $childStatus,
+                    'destination'  => [
+                        'name' => $destName,
+                        'type' => $destType,
+                        'lat'  => $destLat,
+                        'lng'  => $destLng,
+                    ],
                 ];
             }
 
@@ -92,8 +105,6 @@ class ParentTripService
             $vehicle = optional($driver?->vehicles)->first();
             $firstSub = $subChildren->first();
             $school = optional($firstSub?->school);
-
-            $direction = strtolower($trip->trip_type) === 'afternoon' ? 'to_home' : 'to_school';
 
             $driverAvatar = optional($driverUser)->avatar_url ?? optional($driverUser)->photo_url;
             $driverPhotoUrl = $driverAvatar ? (str_starts_with($driverAvatar, 'http') ? $driverAvatar : Storage::url($driverAvatar)) : asset('assets/images/default-driver.png');
@@ -170,7 +181,7 @@ class ParentTripService
 
     /**
      * 3. GET /api/parent/trips/upcoming
-     * عرض الرحلات القادمة بشكل برمجي واضح (scheduled_date & scheduled_time)
+     * عرض الرحلات القادمة المجمعة على مستوى الرحلة
      */
     public function getUpcomingTrips(int $userId): array
     {
@@ -180,7 +191,7 @@ class ParentTripService
             $q->whereIn('parent_id', $parentIds);
         })
         ->where('status', 'active')
-        ->with(['child', 'driver.user', 'school'])
+        ->with(['child', 'driver.user', 'school', 'contract'])
         ->get();
 
         $upcoming = [];
@@ -191,6 +202,7 @@ class ParentTripService
         foreach ($subsByDriver as $driverId => $subs) {
             $driver = $subs->first()?->driver;
             $driverUser = $driver?->user;
+            $driverName = $driverUser?->full_name ?? $driverUser?->name ?? 'عبد السلام المصراتي';
 
             $completedToday = Trip::where('driver_id', $driverId)
                 ->whereDate('trip_date', $today)
@@ -198,57 +210,95 @@ class ParentTripService
                 ->pluck('trip_type')
                 ->toArray();
 
+            // 1. رحلة الذهاب صباحاً (Morning)
             if (!in_array('Morning', $completedToday)) {
-                $childrenArr = $subs->map(function ($s) {
-                    return [
-                        'child_id'   => $s->child_id,
-                        'child_name' => $s->child->full_name ?? $s->child->name,
+                $childrenArr = [];
+                $totalCost = 0.0;
+
+                foreach ($subs as $s) {
+                    $c = $s->child;
+                    if (!$c) continue;
+                    $costPerChildNum = (float)($s->contract->price_per_day ?? 15.00);
+                    $totalCost += $costPerChildNum;
+
+                    $childrenArr[] = [
+                        'child_id'    => (int)$c->id,
+                        'child_name'  => $c->full_name ?? $c->name,
+                        'school_name' => optional($s->school)->name ?? 'مدرسة الجيل الجديد الدولية',
                     ];
-                })->values()->toArray();
+                }
 
-                $firstSub = $subs->first();
-                $school = optional($firstSub->school);
+                if (!empty($childrenArr)) {
+                    $firstSub = $subs->first();
+                    $school = optional($firstSub->school);
+                    $costPerChildFormatted = number_format(($totalCost / count($childrenArr)), 2, '.', '');
 
-                $upcoming[] = [
-                    'trip_id'        => (int) ($firstSub->id * 100 + 1),
-                    'trip_type'      => 'Morning',
-                    'direction'      => 'to_school',
-                    'scheduled_date' => $today,
-                    'scheduled_time' => '07:00',
-                    'driver'         => [
-                        'name' => $driverUser?->full_name ?? $driverUser?->name ?? 'السائق'
-                    ],
-                    'children'    => $childrenArr,
-                    'destination' => [
-                        'name' => $school->name ?? 'المدرسة',
-                        'type' => 'school'
-                    ]
-                ];
+                    $upcoming[] = [
+                        'trip_id'       => (int) ($firstSub->id * 100 + 1),
+                        'trip_type'     => 'Morning',
+                        'title'         => 'رحلة الذهاب للمدرسة',
+                        'scheduled_for' => 'اليوم صباحاً',
+                        'driver'        => [
+                            'name' => $driverName,
+                        ],
+                        'destination'   => [
+                            'type' => 'school',
+                            'name' => $school->name ?? 'مدرسة الجيل الجديد الدولية',
+                        ],
+                        'children'       => $childrenArr,
+                        'total_children' => count($childrenArr),
+                        'pricing'        => [
+                            'total_trip_cost' => number_format($totalCost, 2, '.', ''),
+                            'cost_per_child'  => $costPerChildFormatted,
+                            'currency'        => 'LYD',
+                        ],
+                    ];
+                }
             }
 
+            // 2. رحلة العودة ظهراً (Afternoon)
             if (!in_array('Afternoon', $completedToday)) {
-                $childrenArr = $subs->map(function ($s) {
-                    return [
-                        'child_id'   => $s->child_id,
-                        'child_name' => $s->child->full_name ?? $s->child->name,
-                    ];
-                })->values()->toArray();
+                $childrenArr = [];
+                $totalCost = 0.0;
 
-                $upcoming[] = [
-                    'trip_id'        => (int) ($firstSub->id * 100 + 2),
-                    'trip_type'      => 'Afternoon',
-                    'direction'      => 'to_home',
-                    'scheduled_date' => $today,
-                    'scheduled_time' => '13:30',
-                    'driver'         => [
-                        'name' => $driverUser?->full_name ?? $driverUser?->name ?? 'السائق'
-                    ],
-                    'children'    => $childrenArr,
-                    'destination' => [
-                        'name' => 'المنزل',
-                        'type' => 'home'
-                    ]
-                ];
+                foreach ($subs as $s) {
+                    $c = $s->child;
+                    if (!$c) continue;
+                    $costPerChildNum = (float)($s->contract->price_per_day ?? 15.00);
+                    $totalCost += $costPerChildNum;
+
+                    $childrenArr[] = [
+                        'child_id'    => (int)$c->id,
+                        'child_name'  => $c->full_name ?? $c->name,
+                        'school_name' => optional($s->school)->name ?? 'مدرسة الجيل الجديد الدولية',
+                    ];
+                }
+
+                if (!empty($childrenArr)) {
+                    $firstSub = $subs->first();
+                    $costPerChildFormatted = number_format(($totalCost / count($childrenArr)), 2, '.', '');
+
+                    $upcoming[] = [
+                        'trip_id'       => (int) ($firstSub->id * 100 + 2),
+                        'trip_type'     => 'Afternoon',
+                        'title'         => 'رحلة العودة للمنزل',
+                        'scheduled_for' => 'اليوم ظهراً',
+                        'driver'        => [
+                            'name' => $driverName,
+                        ],
+                        'destination'   => [
+                            'type' => 'home',
+                            'name' => 'المنزل',
+                        ],
+                        'children'       => $childrenArr,
+                        'total_children' => count($childrenArr),
+                        'pricing'        => [
+                            'total_trip_cost' => number_format($totalCost, 2, '.', ''),
+                            'cost_per_child'  => $costPerChildFormatted,
+                            'currency'        => 'LYD',
+                        ],
+                    ];
+                }
             }
         }
 
@@ -257,60 +307,134 @@ class ParentTripService
 
     /**
      * 4. GET /api/parent/trips/history
-     * أرشيف كل الرحلات مع الاتجاه وأوقات الصعود والهبوط
+     * أرشيف كل الرحلات السابقة مجمعة على مستوى الرحلة الواحدة
      */
-    public function getTripHistory(int $userId, int $perPage = 15)
+    public function getTripHistory(int $userId, int $perPage = 15): array
     {
         $parentIds = $this->resolveParentIds($userId);
+        $childIds = DB::table('children')->whereIn('parent_id', $parentIds)->pluck('id')->toArray();
 
-        $trips = DB::table('trip_events')
-            ->join('trips', 'trip_events.trip_id', '=', 'trips.id')
-            ->join('children', 'trip_events.child_id', '=', 'children.id')
-            ->join('drivers', 'trips.driver_id', '=', 'drivers.id')
-            ->join('users', 'drivers.user_id', '=', 'users.id')
-            ->whereIn('children.parent_id', $parentIds)
-            ->select(
-                'trips.id as trip_id',
-                'trips.trip_type',
-                'trips.trip_date',
-                'children.id as child_id',
-                'children.full_name as child_name',
-                'users.full_name as driver_name',
-                'trip_events.action_type',
-                'trip_events.scanned_at',
-                'trip_events.trip_cost'
-            )
-            ->orderBy('trip_events.scanned_at', 'desc')
+        if (empty($childIds)) {
+            return [
+                'current_page' => 1,
+                'per_page'     => $perPage,
+                'total'        => 0,
+                'data'         => [],
+            ];
+        }
+
+        $paginatedTrips = Trip::whereHas('events', function ($q) use ($childIds) {
+                $q->whereIn('child_id', $childIds);
+            })
+            ->orWhereHas('activeSubscriptions', function ($q) use ($childIds) {
+                $q->whereIn('child_id', $childIds);
+            })
+            ->with(['driver.user'])
+            ->orderBy('trip_date', 'desc')
+            ->orderBy('id', 'desc')
             ->paginate($perPage);
 
-        $transformed = $trips->getCollection()->groupBy('trip_id')->map(function ($events, $tripId) {
-            $first = $events->first();
-            $direction = strtolower($first->trip_type) === 'afternoon' ? 'to_home' : 'to_school';
+        $transformedTrips = [];
 
-            $children = $events->map(function ($e) {
-                return [
-                    'child_id'   => $e->child_id,
-                    'child_name' => $e->child_name,
+        foreach ($paginatedTrips->items() as $trip) {
+            $events = DB::table('trip_events')
+                ->where('trip_id', $trip->id)
+                ->whereIn('child_id', $childIds)
+                ->join('children', 'trip_events.child_id', '=', 'children.id')
+                ->leftJoin('schools', 'children.school_id', '=', 'schools.id')
+                ->leftJoin('active_subscriptions', function ($join) use ($trip) {
+                    $join->on('children.id', '=', 'active_subscriptions.child_id')
+                         ->where('active_subscriptions.driver_id', '=', $trip->driver_id);
+                })
+                ->leftJoin('schools as sub_schools', 'active_subscriptions.school_id', '=', 'sub_schools.id')
+                ->select(
+                    'children.id as child_id',
+                    'children.full_name as child_name',
+                    'trip_events.action_type',
+                    'trip_events.scanned_at',
+                    'trip_events.trip_cost',
+                    DB::raw('COALESCE(sub_schools.name, schools.name, "مدرسة الجيل الجديد الدولية") as school_name')
+                )
+                ->get();
+
+            $childrenArr = [];
+            $totalTripCostNum = 0.0;
+            $latestScannedAt = null;
+            $primaryActionType = 'picked_up';
+
+            foreach ($events as $e) {
+                $costNum = (float)($e->trip_cost > 0 ? $e->trip_cost : 15.00);
+                $totalTripCostNum += $costNum;
+                if ($e->scanned_at && (!$latestScannedAt || $e->scanned_at > $latestScannedAt)) {
+                    $latestScannedAt = $e->scanned_at;
+                }
+                if ($e->action_type) {
+                    $primaryActionType = $e->action_type;
+                }
+
+                $childrenArr[] = [
+                    'child_id'    => (int)$e->child_id,
+                    'child_name'  => $e->child_name,
+                    'school_name' => $e->school_name,
+                    'trip_cost'   => number_format($costNum, 2, '.', ''),
                 ];
-            })->unique('child_id')->values()->toArray();
+            }
 
-            $pickupTime = $events->where('action_type', 'picked_up')->first()?->scanned_at;
-            $dropoffTime = $events->where('action_type', 'dropped_off')->first()?->scanned_at;
+            if (empty($childrenArr)) {
+                $subs = ActiveSubscription::whereIn('child_id', $childIds)
+                    ->where('driver_id', $trip->driver_id)
+                    ->with(['child', 'school'])
+                    ->get();
 
-            return [
-                'trip_id'      => (int) $tripId,
-                'trip_type'    => $first->trip_type,
-                'direction'    => $direction,
-                'trip_date'    => $first->trip_date,
-                'children'     => $children,
-                'driver_name'  => $first->driver_name,
-                'pickup_time'  => $pickupTime ? Carbon::parse($pickupTime)->format('H:i') : '07:40',
-                'dropoff_time' => $dropoffTime ? Carbon::parse($dropoffTime)->format('H:i') : '08:00',
-                'trip_cost'    => (string) ($first->trip_cost ?? '15.50')
+                foreach ($subs as $sub) {
+                    $c = $sub->child;
+                    if (!$c) continue;
+                    $costNum = 15.00;
+                    $totalTripCostNum += $costNum;
+                    $childrenArr[] = [
+                        'child_id'    => (int)$c->id,
+                        'child_name'  => $c->full_name ?? $c->name,
+                        'school_name' => optional($sub->school)->name ?? 'مدرسة الجيل الجديد الدولية',
+                        'trip_cost'   => '15.00',
+                    ];
+                }
+            }
+
+            if (empty($childrenArr)) {
+                continue;
+            }
+
+            $driverUser = $trip->driver?->user;
+            $driverName = $driverUser?->full_name ?? $driverUser?->name ?? 'عبد السلام المصراتي';
+            $scannedAtFormatted = $latestScannedAt 
+                ? Carbon::parse($latestScannedAt)->format('Y-m-d H:i:s') 
+                : ($trip->actual_start_time 
+                    ? Carbon::parse($trip->actual_start_time)->format('Y-m-d H:i:s') 
+                    : Carbon::parse($trip->created_at ?? now())->format('Y-m-d H:i:s'));
+
+            $transformedTrips[] = [
+                'trip_id'     => (int)$trip->id,
+                'trip_type'   => $trip->trip_type ?? 'Morning',
+                'trip_date'   => $trip->trip_date ? Carbon::parse($trip->trip_date)->format('Y-m-d') : Carbon::today()->format('Y-m-d'),
+                'driver'      => [
+                    'name' => $driverName,
+                ],
+                'action_type' => $primaryActionType,
+                'scanned_at'  => $scannedAtFormatted,
+                'children'    => $childrenArr,
+                'pricing'     => [
+                    'total_trip_cost' => number_format($totalTripCostNum > 0 ? $totalTripCostNum : (count($childrenArr) * 15.00), 2, '.', ''),
+                    'currency'        => 'LYD',
+                ],
             ];
-        })->values();
+        }
 
-        return $transformed;
+        return [
+            'current_page' => $paginatedTrips->currentPage(),
+            'per_page'     => $paginatedTrips->perPage(),
+            'total'        => $paginatedTrips->total(),
+            'data'         => $transformedTrips,
+        ];
     }
 
     /**
@@ -328,6 +452,8 @@ class ParentTripService
             ->where('driver_id', $trip->driver_id)
             ->with(['child', 'school'])
             ->get();
+
+        $direction = strtolower($trip->trip_type) === 'afternoon' ? 'to_home' : 'to_school';
 
         $childrenArray = [];
         foreach ($subscriptions as $sub) {
@@ -348,6 +474,8 @@ class ParentTripService
                 'child_name'   => $c->full_name ?? $c->name,
                 'child_photo'  => $photoUrl,
                 'child_status' => $event->action_type ?? 'waiting',
+                'school_name'  => optional($sub->school)->name ?? 'المدرسة',
+                'direction'    => $direction,
             ];
         }
 
@@ -356,7 +484,6 @@ class ParentTripService
         $vehicle = optional($driver?->vehicles)->first();
         $firstSub = $subscriptions->first();
         $school = optional($firstSub?->school);
-        $direction = strtolower($trip->trip_type) === 'afternoon' ? 'to_home' : 'to_school';
 
         $driverAvatar = optional($driverUser)->avatar_url ?? optional($driverUser)->photo_url;
         $driverPhotoUrl = $driverAvatar ? (str_starts_with($driverAvatar, 'http') ? $driverAvatar : Storage::url($driverAvatar)) : asset('assets/images/default-driver.png');
@@ -508,6 +635,92 @@ class ParentTripService
             'child_id' => $childId,
             'status'   => $status,
             'time'     => $time
+        ];
+    }
+
+    /**
+     * 8.1. GET /api/parent/trips/{tripId}/children/{childId}/progress
+     * خطوات التقدم والتتبع المخصصة للطفل في رحلة معينة
+     */
+    public function getChildTripProgress(int $userId, int $tripId, int $childId): array
+    {
+        $trip = Trip::findOrFail($tripId);
+
+        $child = DB::table('children')->where('id', $childId)->first();
+        if (!$child) {
+            throw new \Exception('بيانات الطفل غير موجودة.');
+        }
+
+        $isAfternoon = strtolower($trip->trip_type) === 'afternoon';
+
+        $pickupEvent = DB::table('trip_events')
+            ->where('trip_id', $tripId)
+            ->where('child_id', $childId)
+            ->where('action_type', 'picked_up')
+            ->first();
+
+        $dropoffEvent = DB::table('trip_events')
+            ->where('trip_id', $tripId)
+            ->where('child_id', $childId)
+            ->where('action_type', 'dropped_off')
+            ->first();
+
+        $isStarted = !empty($trip->actual_start_time) || !empty($trip->started_at) || in_array($trip->status, ['started', 'in_progress', 'completed']);
+        $startTime = $trip->actual_start_time ? Carbon::parse($trip->actual_start_time)->format('Y-m-d H:i:s') : ($trip->started_at ? Carbon::parse($trip->started_at)->format('Y-m-d H:i:s') : null);
+
+        $isPickedUp = !empty($pickupEvent) || !empty($dropoffEvent);
+        $pickupTime = $pickupEvent ? Carbon::parse($pickupEvent->scanned_at)->format('Y-m-d H:i:s') : null;
+
+        $isArrived = !empty($dropoffEvent);
+        $dropoffTime = $dropoffEvent ? Carbon::parse($dropoffEvent->scanned_at)->format('Y-m-d H:i:s') : null;
+
+        $isCompleted = $trip->status === 'completed' && !empty($trip->completed_at);
+        $completedTime = $trip->completed_at ? Carbon::parse($trip->completed_at)->format('Y-m-d H:i:s') : null;
+
+        $steps = [
+            [
+                'key'       => 'started',
+                'title'     => 'انطلقت',
+                'completed' => (bool)$isStarted,
+                'timestamp' => $startTime
+            ],
+            [
+                'key'       => 'picked_up',
+                'title'     => 'في الطريق',
+                'completed' => (bool)$isPickedUp,
+                'timestamp' => $pickupTime
+            ],
+            [
+                'key'       => $isAfternoon ? 'arrived_home' : 'arrived_school',
+                'title'     => 'الاستلام',
+                'completed' => (bool)$isArrived,
+                'timestamp' => $dropoffTime
+            ],
+            [
+                'key'       => 'completed',
+                'title'     => $isAfternoon ? 'وصلت للمنزل' : 'وصلت للمدرسة',
+                'completed' => (bool)$isCompleted,
+                'timestamp' => $completedTime
+            ]
+        ];
+
+        $currentStep = 0;
+        if ($isCompleted) {
+            $currentStep = 4;
+        } elseif ($isArrived) {
+            $currentStep = 3;
+        } elseif ($isPickedUp) {
+            $currentStep = 2;
+        } elseif ($isStarted) {
+            $currentStep = 1;
+        }
+
+        return [
+            'trip_id'      => (int)$tripId,
+            'child_id'     => (int)$childId,
+            'child_name'   => $child->full_name ?? $child->name ?? 'الطفل',
+            'current_step' => $currentStep,
+            'steps'        => $steps
         ];
     }
 

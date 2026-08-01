@@ -26,6 +26,7 @@ Content-Type: application/json
 | 5 | جدولة وتسجيل غياب طفل | `POST` | `/api/parent/children/{childId}/set-absence` |
 | 6 | إلغاء غياب طفل | `POST` | `/api/parent/children/{childId}/cancel-absence` |
 | 7 | تأكيد صعود الطفل يدوياً (بديل QR) | `POST` | `/api/parent/children/{childId}/confirm-pickup/{tripId}` |
+| 8 | خطوات ومراحل تقدم الطفل في الرحلة (Child Progress) | `GET` | `/api/parent/trips/{tripId}/children/{childId}/progress` |
 
 ---
 
@@ -46,28 +47,50 @@ Content-Type: application/json
     {
       "trip_id": 24,
       "trip_type": "Morning",
+      "direction": "to_school",
       "status": "started",
-      "driver_name": "عبد السلام المصراتي",
-      "driver_phone": "0921111111",
-      "vehicle_info": "حافلة مدرسية",
-      "child_id": 49,
-      "child_name": "سند طه القمودي",
-      "child_status": "waiting",
-      "waiting_timer": null,
-      "started_at": "2026-07-27T17:00:06.000000Z"
-    },
-    {
-      "trip_id": 24,
-      "trip_type": "Morning",
-      "status": "started",
-      "driver_name": "عبد السلام المصراتي",
-      "driver_phone": "0921111111",
-      "vehicle_info": "حافلة مدرسية",
-      "child_id": 50,
-      "child_name": "مروة طه القمودي",
-      "child_status": "picked_up",
-      "waiting_timer": null,
-      "started_at": "2026-07-27T17:00:06.000000Z"
+      "started_at": "2026-08-01T07:05:00.000000Z",
+      "driver": {
+        "id": 36,
+        "name": "عبد السلام المصراتي",
+        "phone": "0921111111",
+        "photo": "http://localhost:8000/storage/avatars/driver.jpg"
+      },
+      "vehicle": {
+        "info": "تويوتا كوستر 2022"
+      },
+      "children": [
+        {
+          "child_id": 49,
+          "child_name": "سند طه القمودي",
+          "child_photo": "http://localhost:8000/assets/images/default-child.png",
+          "child_status": "waiting",
+          "destination": {
+            "name": "مدرسة الجيل الجديد الدولية",
+            "type": "school",
+            "lat": 32.890000,
+            "lng": 13.180000
+          }
+        },
+        {
+          "child_id": 50,
+          "child_name": "مروة طه القمودي",
+          "child_photo": "http://localhost:8000/assets/images/default-child.png",
+          "child_status": "picked_up",
+          "destination": {
+            "name": "مدرسة الجيل الجديد الدولية",
+            "type": "school",
+            "lat": 32.890000,
+            "lng": 13.180000
+          }
+        }
+      ],
+      "destination": {
+        "name": "مدرسة الجيل الجديد الدولية",
+        "type": "school",
+        "lat": 32.890000,
+        "lng": 13.180000
+      }
     }
   ]
 }
@@ -117,20 +140,35 @@ Content-Type: application/json
   "status": "success",
   "data": [
     {
-      "child_name": "سند طه القمودي",
+      "trip_id": 45,
       "trip_type": "Afternoon",
       "title": "رحلة العودة للمنزل",
       "scheduled_for": "اليوم ظهراً",
-      "driver_name": "عبد السلام المصراتي",
-      "school_name": "مدرسة الجيل الجديد الدولية"
-    },
-    {
-      "child_name": "مروة طه القمودي",
-      "trip_type": "Afternoon",
-      "title": "رحلة العودة للمنزل",
-      "scheduled_for": "اليوم ظهراً",
-      "driver_name": "عبد السلام المصراتي",
-      "school_name": "مدرسة الجيل الجديد الدولية"
+      "driver": {
+        "name": "عبد السلام المصراتي"
+      },
+      "destination": {
+        "type": "school",
+        "name": "مدرسة الجيل الجديد الدولية"
+      },
+      "children": [
+        {
+          "child_id": 12,
+          "child_name": "سند طه القمودي",
+          "school_name": "مدرسة الجيل الجديد الدولية"
+        },
+        {
+          "child_id": 15,
+          "child_name": "محمد علي",
+          "school_name": "مدرسة الجيل الجديد الدولية"
+        }
+      ],
+      "total_children": 2,
+      "pricing": {
+        "total_trip_cost": "30.00",
+        "cost_per_child": "15.00",
+        "currency": "LYD"
+      }
     }
   ]
 }
@@ -139,7 +177,7 @@ Content-Type: application/json
 ---
 
 ### 4️⃣ أرشيف وسجل الرحلات السابقة (Trip History Log)
-تستخدم لشاشة سجل وتاريخ الرحلات مع دعم الـ Pagination (صفحات النتائج).
+تستخدم لشاشة سجل وتاريخ الرحلات مجمعة على مستوى الرحلة الواحدة مع دعم الـ Pagination (صفحات النتائج).
 
 * **Method:** `GET`
 * **URL:** `http://localhost:8000/api/parent/trips/history`
@@ -153,38 +191,38 @@ Content-Type: application/json
   "status": "success",
   "data": {
     "current_page": 1,
+    "per_page": 15,
+    "total": 2,
     "data": [
       {
         "trip_id": 24,
         "trip_type": "Morning",
-        "trip_date": "2026-07-27",
-        "child_name": "سند طه القمودي",
-        "driver_name": "عبد السلام المصراتي",
+        "trip_date": "2026-08-01",
+        "driver": {
+          "name": "عبد السلام المصراتي"
+        },
         "action_type": "picked_up",
-        "scanned_at": "2026-07-27 19:00:07",
-        "trip_cost": "15.00"
-      },
-      {
-        "trip_id": 21,
-        "trip_type": "Morning",
-        "trip_date": "2026-07-27",
-        "child_name": "سند طه القمودي",
-        "driver_name": "عبد السلام المصراتي",
-        "action_type": "dropped_off",
-        "scanned_at": "2026-07-27 07:25:00",
-        "trip_cost": "15.00"
+        "scanned_at": "2026-08-01 07:12:30",
+        "children": [
+          {
+            "child_id": 12,
+            "child_name": "سند طه القمودي",
+            "school_name": "مدرسة الجيل الجديد الدولية",
+            "trip_cost": "15.00"
+          },
+          {
+            "child_id": 15,
+            "child_name": "محمد علي",
+            "school_name": "مدرسة الجيل الجديد الدولية",
+            "trip_cost": "15.00"
+          }
+        ],
+        "pricing": {
+          "total_trip_cost": "30.00",
+          "currency": "LYD"
+        }
       }
-    ],
-    "first_page_url": "http://localhost:8000/api/parent/trips/history?page=1",
-    "from": 1,
-    "last_page": 1,
-    "last_page_url": "http://localhost:8000/api/parent/trips/history?page=1",
-    "next_page_url": null,
-    "path": "http://localhost:8000/api/parent/trips/history",
-    "per_page": 15,
-    "prev_page_url": null,
-    "to": 2,
-    "total": 2
+    ]
   }
 }
 ```

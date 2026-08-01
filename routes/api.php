@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\Auth\LoginController;
 use App\Http\Controllers\Api\Auth\PasswordController;
 use App\Http\Controllers\Api\Shared\NotificationController;
+use App\Http\Controllers\Api\NotificationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -34,6 +35,8 @@ Route::middleware('auth:sanctum')->group(function () {
             'user' => $request->user()
         ]);
     });
+
+    Route::post('/send-notification', [NotificationController::class, 'sendTestNotification']);
 
     // مسارات الإشعارات الفورية وإدارة التوكنات (Notifications & Device Tokens)
     Route::prefix('notifications')->group(function () {

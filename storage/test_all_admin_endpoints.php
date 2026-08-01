@@ -12,18 +12,13 @@ echo "========================================================\n";
 echo "🧪 TESTING ALL ADMIN CONTROLLER METHODS AND ENDPOINTS\n";
 echo "========================================================\n\n";
 
-// Authenticate as Admin (role_id = 1)
-$adminUser = User::where('role_id', 1)->first();
+$adminUser = User::where('role_id', 1)->first() ?? User::where('email', 'admin@darby.com')->first();
 if (!$adminUser) {
-    echo "⚠️ Admin user not found! Creating temporary admin user...\n";
-    $adminUser = User::create([
-        'full_name' => 'مدير المنظومة الاختباري',
-        'email' => 'admin_test@darby.com',
-        'phone_number' => '0910000000',
-        'password_hash' => bcrypt('password123'),
-        'role_id' => 1,
-        'is_active' => 1
-    ]);
+    $adminUser = User::first();
+    if ($adminUser) {
+        $adminUser->role_id = 1;
+        $adminUser->save();
+    }
 }
 
 Auth::login($adminUser);

@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\Driver\DriverPreferenceController;
 use App\Http\Controllers\Api\Driver\AddressController;
 use App\Http\Controllers\Api\Driver\ZoneController; 
 use App\Http\Controllers\API\Trip\DriverTripController;
+use App\Http\Controllers\Api\DriverTrackingController;
 
 // أو إذا كان داخل مجلد فرعي:
  use App\Http\Controllers\API\Driver\DriverProfileController;
@@ -152,5 +153,6 @@ Route::get('/{vehicle}', [DriverProfileController::class, 'showVehicle'])
     ->name('api.driver.vehicles.show');
 
 });
+Route::post('/driver/update-location', [DriverTrackingController::class, 'updateLocation']);
 
 });

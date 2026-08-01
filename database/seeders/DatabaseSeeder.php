@@ -13,26 +13,13 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             // 1. البنية التحتية، الجغرافيا، والبيانات الأساسية
-            ZoneSeeder::class,
             TripoliGeographySeeder::class,
+            ZoneSeeder::class,
             SchoolSeeder::class,
             ClauseSeeder::class,
             SystemInitialSeeder::class,
 
-            // 2. حسابات أولياء الأمور، الأطفال، والاشتراكات
-            TenParentsSeeder::class,
-            AddChildrenAndSubscriptionsSeeder::class,
-
-            // 3. الرحلات النشطة، التقييمات، والشكاوى
-            ActiveTripsSeeder::class,
-            Children123TripsSeeder::class,
-            ComplaintAndReviewSeeder::class,
-
-            // 4. بيانات الاختبارات الشاملة والنظام المالي
-            DriverSearchTestSeeder::class,
-            FinancialTestSeeder::class,
-            TestingDataSeeder::class,
-            E2eTestSeeder::class,
+            // 2. البنية الشاملة لكافة بيانات واشتراكات ورجلات النظام
             FullSystemSeeder::class,
         ]);
     }

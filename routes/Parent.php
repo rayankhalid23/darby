@@ -146,6 +146,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/trips/{tripId}/track', [ParentTripController::class, 'getLiveTracking']);
     Route::get('/trips/{tripId}/timeline', [ParentTripController::class, 'getTripTimeline']);
     Route::get('/trips/{tripId}/children/{childId}/status', [ParentTripController::class, 'getChildTripStatus']);
+    Route::get('/trips/{tripId}/children/{childId}/progress', [ParentTripController::class, 'getChildTripProgress']);
 
     Route::get('/children/{childId}/trips', [ParentTripController::class, 'getChildTripsOverview']);
 

@@ -122,7 +122,20 @@ class ParentTripController extends Controller
     }
 
     /**
-     * 9. GET /api/parent/trips/active/tracking
+     * 9. GET /api/parent/trips/{tripId}/children/{childId}/progress
+     */
+    public function getChildTripProgress($tripId, $childId): JsonResponse
+    {
+        try {
+            $data = $this->parentTripService->getChildTripProgress(Auth::id(), (int)$tripId, (int)$childId);
+            return response()->json(['status' => 'success', 'data' => $data]);
+        } catch (Exception $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 400);
+        }
+    }
+
+    /**
+     * 10. GET /api/parent/trips/active/tracking
      */
     public function getBulkActiveTracking(): JsonResponse
     {
