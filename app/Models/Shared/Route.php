@@ -49,4 +49,9 @@ class Route extends Model
     {
         return $this->hasMany(Trip::class, 'route_id');
     }
+
+    public function activeSubscriptions(): HasMany
+    {
+        return $this->hasMany(ActiveSubscription::class, 'route_id');
+    }
 }

@@ -49,6 +49,11 @@ Route::middleware('auth:sanctum')->group(function () {
     // إدارة الحساب الشخصي لولي الأمر
     Route::get('/profile', [ParentAuthController::class, 'getProfile']);
     Route::post('/profile/update', [ParentAuthController::class, 'updateProfile']); 
+    Route::put('/profile', [ParentAuthController::class, 'updateProfile']);
+    Route::get('/profile/email-status', [ParentAuthController::class, 'checkEmailChangeStatus']);
+    Route::get('/profile/email-change/status', [ParentAuthController::class, 'checkEmailChangeStatus']);
+    Route::post('/profile/email-change/cancel', [ParentAuthController::class, 'cancelEmailChange']);
+    Route::post('/profile/email-change/resend', [ParentAuthController::class, 'resendEmailChange']);
     
     // مسار جلب المدارس المعتمدة (الآن أصبح: api/parent/schools فوراً وبشكل صحيح)
     Route::get('schools', [SchoolController::class, 'index']);

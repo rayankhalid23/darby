@@ -320,3 +320,37 @@ Content-Type: application/json
   "message": "عذراً، قام السائق بتجاوز هذه المحطة بالفعل."
 }
 ```
+
+---
+
+### 8️⃣ فحص حالة وتأكيد تعديل البريد الإلكتروني (Parent Email Change & Status Check)
+تستخدم للتحقق من حالة طلب تغيير البريد الإلكتروني أو الاستجابة عند الموافقة عبر الرابط الموقع.
+
+* **1. فحص حالة تغيير الإيميل للفرونت إند (Email Status Check):**
+  - **Method:** `GET`
+  - **URL:** `http://localhost:8000/api/parent/profile/email-status`
+  - **Headers:** `Authorization: Bearer <SANCTUM_TOKEN>`
+
+  - **🟢 Response النجاح (200 OK):**
+    ```json
+    {
+      "status": true,
+      "has_pending_change": false,
+      "pending_email": null,
+      "email_changed": true,
+      "current_email": "parent.new@darby.ly",
+      "message": "تم موافقة وتحديث البريد الإلكتروني بنجاح."
+    }
+    ```
+
+* **2. رابط موافقة التعديل الموقع (Signed Approval URL):**
+  - **Method:** `GET`
+  - **URL:** `http://localhost:8000/api/parent/profile/email/approve/{id}?signature=...`
+  - **🟢 Response النجاح (200 OK):**
+    ```json
+    {
+      "status": true,
+      "email_changed": true,
+      "message": "تم تأكيد وتحديث البريد الإلكتروني بنجاح."
+    }
+    ```

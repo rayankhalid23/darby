@@ -146,21 +146,22 @@ class ParentRegistrationService
                     }
 
                     Cache::put("parent_email_change_{$user->id}", $newEmail, now()->addMinutes(30));
+                    Cache::put("parent_email_change_status_{$user->id}", 'pending', now()->addMinutes(30));
                     Log::info("Service: Email change requested. Cache set for User ID: {$userId}");
 
                     $approveUrl = URL::temporarySignedRoute('parent.profile.email.approve', now()->addMinutes(30), ['id' => $user->id]);
                     $this->emailService->sendParentEmailChangeLink($newEmail, $user->full_name, $approveUrl, $approveUrl);
 
-                    // نحدد المتغير المؤقت بـ true بدلاً من إضافته للـ Model مباشرة هنا
                     $isEmailChanged = true;
+                    $pendingEmailTemp = $newEmail;
                 }
 
-                // 4. حفظ التعديلات الفعلية في قاعدة البيانات (الآن آمنة 100%)
+                // 4. حفظ التعديلات الفعلية في قاعدة البيانات
                 $user->save();
 
-                // 5. تعيين المتغير المؤقت بعد الحفظ مباشرة ليمر إلى الـ Resource دون تضارب مع قاعدة البيانات
                 if ($isEmailChanged) {
                     $user->email_change_pending = true;
+                    $user->pending_new_email = $pendingEmailTemp;
                 }
 
                 Log::info("Service: User fields updated and saved successfully for ID: {$userId}");
@@ -180,6 +181,7 @@ class ParentRegistrationService
 
         if (!Cache::has($cacheKey)) {
             Log::warning("Service: Invalid or expired email change link for User ID: {$userId}");
+            Cache::put("parent_email_change_status_{$userId}", 'expired', now()->addMinutes(15));
             throw new Exception("رابط التأكيد منتهي الصلاحية أو غير صالح.");
         }
 
@@ -189,6 +191,7 @@ class ParentRegistrationService
             DB::transaction(function () use ($userId, $newEmail, $cacheKey) {
                 User::where('id', $userId)->update(['email' => $newEmail, 'email_verified_at' => Carbon::now()]);
                 Cache::forget($cacheKey);
+                Cache::put("parent_email_change_status_{$userId}", 'verified', now()->addMinutes(15));
             });
             Log::info("Service: Email successfully updated for User ID: {$userId} to {$newEmail}");
             return true;
@@ -202,7 +205,32 @@ class ParentRegistrationService
     {
         $cacheKey = "parent_email_change_{$userId}";
         Cache::forget($cacheKey);
+        Cache::put("parent_email_change_status_{$userId}", 'rejected', now()->addMinutes(15));
         Log::info("Service: Email change rejected for User ID: {$userId}");
+        return true;
+    }
+
+    public function cancelEmailChange(int $userId): bool
+    {
+        Cache::forget("parent_email_change_{$userId}");
+        Cache::forget("parent_email_change_status_{$userId}");
+        Log::info("Service: Email change cancelled by user ID: {$userId}");
+        return true;
+    }
+
+    public function resendEmailChange(int $userId): bool
+    {
+        $cacheKey = "parent_email_change_{$userId}";
+        if (!Cache::has($cacheKey)) {
+            throw new Exception("لا يوجد طلب معلق لتعديل البريد الإلكتروني لإعادة إرساله.");
+        }
+
+        $newEmail = Cache::get($cacheKey);
+        $user = User::findOrFail($userId);
+
+        $approveUrl = URL::temporarySignedRoute('parent.profile.email.approve', now()->addMinutes(30), ['id' => $user->id]);
+        $this->emailService->sendParentEmailChangeLink($newEmail, $user->full_name, $approveUrl, $approveUrl);
+        Log::info("Service: Email change link resent to: {$newEmail} for user ID: {$userId}");
         return true;
     }
 }

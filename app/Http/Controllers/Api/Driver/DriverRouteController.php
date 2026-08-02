@@ -4,75 +4,546 @@ namespace App\Http\Controllers\Api\Driver;
 
 use App\Http\Controllers\Controller;
 use App\Models\Shared\Route as RouteModel;
+use App\Models\Shared\ActiveSubscription;
+use App\Services\Trip\RouteRecommendationService;
+use App\Services\Trip\RouteModuleException;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-/**
- * Class DriverRouteController
- * يدير عمليات عرض وتحديث مسارات السائقين ضمن منظومة النقل.
- */
 class DriverRouteController extends Controller
 {
+    protected RouteRecommendationService $recommendationService;
+
+    public function __construct(RouteRecommendationService $recommendationService)
+    {
+        $this->recommendationService = $recommendationService;
+    }
+
     /**
-     * جلب قائمة المسارات النشطة للسائق الحالي مع تفاصيلها.
-     * * @return JsonResponse
+     * Helper لإرجاع الاستجابة الموحدة للأخطاء مع Error Code
+     */
+    protected function errorResponse(string $message, string $code = 'INVALID_ACTION', int $httpCode = 422): JsonResponse
+    {
+        return response()->json([
+            'status'  => 'error',
+            'code'    => $code,
+            'message' => $message,
+        ], $httpCode);
+    }
+
+    /**
+     * 0️⃣ فحص التزام وتطور إسناد الأطفال المقبولين (Enforcement Flow Check)
+     * GET /api/v1/driver/home-status
+     */
+    public function checkPendingAssignments(): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            $driver = $user?->driver;
+
+            if (!$driver) {
+                return $this->errorResponse('بيانات السائق غير مقترنة بالحساب.', 'DRIVER_NOT_FOUND', 403);
+            }
+
+            $pendingSubs = ActiveSubscription::where('driver_id', $driver->id)
+                ->whereNull('route_id')
+                ->where('status', '!=', 'cancelled')
+                ->with(['child', 'school', 'contract'])
+                ->get();
+
+            $pendingCount = $pendingSubs->count();
+            $hasPending = $pendingCount > 0;
+            $requestId = $pendingSubs->first()?->contract?->subscription_request_id ?? null;
+
+            $pendingData = $pendingSubs->map(function ($sub) {
+                return [
+                    'subscription_id' => (int) $sub->id,
+                    'child' => [
+                        'id'          => (int) $sub->child_id,
+                        'name'        => $sub->child->full_name ?? $sub->child->name ?? 'طفل',
+                        'school'      => optional($sub->school)->name ?? 'المدرسة',
+                        'photo'       => $sub->child->photo_url ?? null,
+                    ]
+                ];
+            })->values();
+
+            return response()->json([
+                'status'                  => 'success',
+                'has_pending_assignments' => $hasPending,
+                'pending_count'           => $pendingCount,
+                'request_id'              => $requestId,
+                'pending_subscriptions'   => $pendingData,
+            ], 200);
+
+        } catch (Throwable $e) {
+            Log::error('Error in checkPendingAssignments: ' . $e->getMessage());
+            return $this->errorResponse($e->getMessage(), 'SERVER_ERROR', 500);
+        }
+    }
+
+    /**
+     * 1️⃣ GET /api/v1/driver/routes
+     * جلب جميع المسارات الخاصة بالسائق
      */
     public function index(): JsonResponse
     {
         try {
-            // 1. التحقق من هوية السائق بأسلوب دفاعي
             $user = Auth::user();
-            if (!$user || !$user->driver) {
-                return response()->json([
-                    'success' => false, 
-                    'message' => 'بيانات السائق غير مرتبطة بهذا الحساب.'
-                ], 403);
+            $driver = $user?->driver;
+
+            if (!$driver) {
+                return $this->errorResponse('بيانات السائق غير مرتبطة بهذا الحساب.', 'DRIVER_NOT_FOUND', 403);
             }
 
-            $driverId = $user->driver->id;
-
-            // 2. استخدام Eager Loading لتحسين الأداء ومنع N+1 Query Problem
-            $routes = RouteModel::where('driver_id', $driverId)
-                ->where('status', 'Active') // جلب المسارات النشطة فقط
-                ->with([
-                    'contract' => function($query) {
-                        $query->select('id', 'contract_number', 'subscription_request_id');
-                    },
-                    'contract.subscriptionRequest' => function($query) {
-                        $query->select('id', 'parent_id', 'school_id', 'total_price');
-                    }
-                ])
-                ->latest() // ترتيب تنازلي حسب الأحدث
+            $routes = RouteModel::where('driver_id', $driver->id)
+                ->latest()
                 ->get();
 
-            // 3. معالجة حالة عدم وجود مسارات (لا نعتبرها خطأ برمجياً بل حالة طبيعية)
-            if ($routes->isEmpty()) {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'لا توجد مسارات نشطة حالياً.',
-                    'data'    => []
-                ], 200);
-            }
+            $transformed = $routes->map(function ($route) {
+                return $this->recommendationService->calculateRouteMetrics($route);
+            })->values();
 
             return response()->json([
-                'success' => true,
-                'count'   => $routes->count(),
-                'data'    => $routes
+                'status' => 'success',
+                'routes' => $transformed
             ], 200);
 
         } catch (Throwable $e) {
-            // 4. معالجة أخطاء عبقرية: تسجيل الخطأ في السيرفر مع إخفاء التفاصيل عن المستخدم النهائي
-            Log::error('خطأ في جلب مسارات السائق (DriverRouteController): ' . $e->getMessage(), [
-                'driver_id' => Auth::id(),
-                'trace'     => $e->getTraceAsString()
+            Log::error('Error in DriverRouteController@index: ' . $e->getMessage());
+            return $this->errorResponse('تعذر جلب المسارات حالياً.', 'SERVER_ERROR', 500);
+        }
+    }
+
+    /**
+     * 2️⃣ POST /api/v1/driver/routes
+     * إنشاء Route جديد
+     */
+    public function store(Request $request): JsonResponse
+    {
+        $request->validate([
+            'name'      => 'required|string|max:50',
+            'trip_type' => 'required|in:morning,evening,afternoon',
+        ]);
+
+        try {
+            $user = Auth::user();
+            $driver = $user?->driver;
+
+            if (!$driver) {
+                return $this->errorResponse('السائق غير موجود.', 'DRIVER_NOT_FOUND', 403);
+            }
+
+            $vehicle = $driver->vehicle;
+            $tripTypeLower = strtolower($request->trip_type);
+            $dbTripType = (in_array($tripTypeLower, ['morning', 'صباح']) ? 'Morning' : 'Afternoon');
+
+            $route = RouteModel::create([
+                'driver_id'          => $driver->id,
+                'vehicle_id'         => $vehicle?->id ?? 1,
+                'route_name'         => $request->name,
+                'route_type'         => $dbTripType,
+                'start_time'         => '07:15:00',
+                'status'             => 'Active',
+                'estimated_duration' => 45,
             ]);
 
             return response()->json([
-                'success' => false,
-                'message' => 'تعذر جلب المسارات حالياً، يرجى التواصل مع الدعم الفني.'
-            ], 500);
+                'status'  => 'success',
+                'message' => 'تم إنشاء المسار.',
+                'route'   => [
+                    'id' => (int) $route->id
+                ]
+            ], 201);
+
+        } catch (Throwable $e) {
+            Log::error('Error in DriverRouteController@store: ' . $e->getMessage());
+            return $this->errorResponse($e->getMessage(), 'CREATE_ROUTE_FAILED', 422);
+        }
+    }
+
+    /**
+     * 3️⃣ GET /api/v1/driver/routes/{routeId}
+     * تفاصيل Route كاملة مع إحداثيات المنازل والمدارس والـ Lock Status
+     */
+    public function show($routeId): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            $driver = $user?->driver;
+
+            $route = RouteModel::where('id', $routeId)
+                ->where('driver_id', $driver->id)
+                ->with(['activeSubscriptions.child', 'activeSubscriptions.school'])
+                ->firstOrFail();
+
+            $metrics = $this->recommendationService->calculateRouteMetrics($route);
+
+            $subscriptionsData = $route->activeSubscriptions
+                ->where('status', '!=', 'cancelled')
+                ->sortBy('sort_order')
+                ->values()
+                ->map(function ($sub, $index) {
+                    $schoolModel = $sub->school;
+                    
+                    return [
+                        'id'               => (int) $sub->id,
+                        'subscription_id'  => (int) $sub->id,
+                        'child_id'         => (int) $sub->child_id,
+                        'child_name'       => $sub->child->full_name ?? $sub->child->name ?? 'طفل',
+                        'route_status'     => strtolower($sub->status ?? 'active'),
+                        'pickup_order'     => $sub->sort_order ?? ($index + 1),
+                        'estimated_pickup' => $sub->pickup_time ?? '07:28',
+                        'needs_review'     => ($sub->status === 'needs_review'),
+                        'review_reason'    => ($sub->status === 'needs_review') ? ($sub->review_reason ?? 'تم تغيير المدرسة أو العنوان') : null,
+                        'pickup' => [
+                            'label'     => $sub->pickup_label ?? 'حي الأندلس',
+                            'latitude'  => (float) ($sub->pickup_lat ?? 32.887201),
+                            'longitude' => (float) ($sub->pickup_lng ?? 13.191345),
+                        ],
+                        'school' => [
+                            'id'        => (int) ($schoolModel?->id ?? 1),
+                            'name'      => $schoolModel?->name ?? 'مدرسة الأمل الدولية',
+                            'latitude'  => (float) ($schoolModel?->latitude ?? 32.901000),
+                            'longitude' => (float) ($schoolModel?->longitude ?? 13.205000),
+                        ],
+                    ];
+                })->values();
+
+            $metrics['subscriptions'] = $subscriptionsData;
+
+            return response()->json([
+                'status' => 'success',
+                'route'  => $metrics
+            ], 200);
+
+        } catch (Throwable $e) {
+            return $this->errorResponse('المسار غير موجود أو لا تملك صلاحية الوصول إليه.', 'ROUTE_NOT_FOUND', 404);
+        }
+    }
+
+    /**
+     * 4️⃣ PUT /api/v1/driver/routes/{routeId}
+     * تعديل Route
+     */
+    public function update(Request $request, $routeId): JsonResponse
+    {
+        $request->validate([
+            'name'      => 'sometimes|required|string|max:50',
+            'trip_type' => 'sometimes|in:morning,evening,afternoon',
+        ]);
+
+        try {
+            $user = Auth::user();
+            $driver = $user?->driver;
+
+            $route = RouteModel::where('id', $routeId)
+                ->where('driver_id', $driver->id)
+                ->firstOrFail();
+
+            $this->recommendationService->validateRouteNotRunning($route);
+
+            if ($request->has('trip_type')) {
+                $hasChildren = ActiveSubscription::where('route_id', $route->id)
+                    ->where('status', '!=', 'cancelled')
+                    ->exists();
+
+                if ($hasChildren) {
+                    return $this->errorResponse('لا يسمح بتعديل فترة المسار لأنه يحتوي على اشتراكات مسندة بالفعل.', 'ROUTE_HAS_CHILDREN', 422);
+                }
+
+                $tripTypeLower = strtolower($request->trip_type);
+                $route->route_type = (in_array($tripTypeLower, ['morning', 'صباح']) ? 'Morning' : 'Afternoon');
+            }
+
+            if ($request->has('name')) {
+                $route->route_name = $request->name;
+            }
+
+            $route->save();
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'تم تحديث المسار.'
+            ], 200);
+
+        } catch (RouteModuleException $e) {
+            return $this->errorResponse($e->getMessage(), $e->getErrorCode(), 422);
+        } catch (Throwable $e) {
+            return $this->errorResponse($e->getMessage(), 'UPDATE_FAILED', 422);
+        }
+    }
+
+    /**
+     * 5️⃣ DELETE /api/v1/driver/routes/{routeId}
+     * حذف Route
+     */
+    public function destroy($routeId): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            $driver = $user?->driver;
+
+            $route = RouteModel::where('id', $routeId)
+                ->where('driver_id', $driver->id)
+                ->firstOrFail();
+
+            $this->recommendationService->validateRouteNotRunning($route);
+
+            $childrenCount = ActiveSubscription::where('route_id', $route->id)
+                ->where('status', '!=', 'cancelled')
+                ->count();
+
+            if ($childrenCount > 0) {
+                return $this->errorResponse('لا يمكن حذف المسار لأنه يحتوي على اشتراكات.', 'ROUTE_HAS_CHILDREN', 409);
+            }
+
+            $route->delete();
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'تم حذف المسار.'
+            ], 200);
+
+        } catch (RouteModuleException $e) {
+            return $this->errorResponse($e->getMessage(), $e->getErrorCode(), 422);
+        } catch (Throwable $e) {
+            return $this->errorResponse($e->getMessage(), 'DELETE_FAILED', 400);
+        }
+    }
+
+    /**
+     * 6️⃣ GET /api/v1/driver/subscriptions/{subscriptionId}/route-recommendations
+     * إيجاد التوصيات لأفضل Route
+     */
+    public function recommendations($subscriptionId): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            $driver = $user?->driver;
+
+            $sub = ActiveSubscription::where('id', $subscriptionId)
+                ->where('driver_id', $driver->id)
+                ->firstOrFail();
+
+            $recommendations = $this->recommendationService->getRecommendationsForSubscription($sub);
+
+            return response()->json(array_merge(['status' => 'success'], $recommendations), 200);
+
+        } catch (Throwable $e) {
+            return $this->errorResponse('الاشتراك غير موجود.', 'SUBSCRIPTION_NOT_FOUND', 404);
+        }
+    }
+
+    /**
+     * 7️⃣ POST /api/v1/driver/subscriptions/{subscriptionId}/assign-route
+     * إسناد Subscription إلى Route
+     */
+    public function assignSubscription(Request $request, $subscriptionId): JsonResponse
+    {
+        $request->validate([
+            'route_id' => 'required|integer|exists:routes,id',
+        ]);
+
+        try {
+            $user = Auth::user();
+            $driver = $user?->driver;
+
+            $sub = ActiveSubscription::where('id', $subscriptionId)
+                ->where('driver_id', $driver->id)
+                ->firstOrFail();
+
+            $route = RouteModel::where('id', $request->route_id)
+                ->where('driver_id', $driver->id)
+                ->firstOrFail();
+
+            $this->recommendationService->validateSubscriptionAssignment($sub, $route);
+
+            $sub->route_id = $route->id;
+            if ($sub->status === 'needs_review') {
+                $sub->status = 'active';
+            }
+            $sub->save();
+
+            $updatedMetrics = $this->recommendationService->calculateRouteMetrics($route->fresh());
+
+            return response()->json([
+                'status'        => 'success',
+                'message'       => 'تم إسناد الاشتراك.',
+                'route_summary' => [
+                    'children_count'        => $updatedMetrics['children_count'],
+                    'available_seats'       => $updatedMetrics['available_seats'],
+                    'recommended_departure' => $updatedMetrics['recommended_departure'],
+                    'first_school_time'     => $updatedMetrics['first_school_time'],
+                    'last_school_time'      => $updatedMetrics['last_school_time'],
+                    'estimated_duration'   => $updatedMetrics['estimated_duration'],
+                    'health_score'          => $updatedMetrics['health_score'],
+                ]
+            ], 200);
+
+        } catch (RouteModuleException $e) {
+            return $this->errorResponse($e->getMessage(), $e->getErrorCode(), 422);
+        } catch (Throwable $e) {
+            return $this->errorResponse($e->getMessage(), 'ASSIGN_FAILED', 422);
+        }
+    }
+
+    /**
+     * 8️⃣ POST /api/v1/driver/subscriptions/{subscriptionId}/move-route
+     * نقل اشتراك من مسار إلى آخر وإعادة ملخص المسارين (old_route & new_route)
+     */
+    public function moveSubscription(Request $request, $subscriptionId): JsonResponse
+    {
+        $request->validate([
+            'to_route' => 'required|integer|exists:routes,id',
+        ]);
+
+        try {
+            $user = Auth::user();
+            $driver = $user?->driver;
+
+            $sub = ActiveSubscription::where('id', $subscriptionId)
+                ->where('driver_id', $driver->id)
+                ->firstOrFail();
+
+            $oldRoute = $sub->route;
+            $targetRoute = RouteModel::where('id', $request->to_route)
+                ->where('driver_id', $driver->id)
+                ->firstOrFail();
+
+            if ($oldRoute) {
+                $this->recommendationService->validateRouteNotRunning($oldRoute);
+            }
+            $this->recommendationService->validateSubscriptionAssignment($sub, $targetRoute);
+
+            $sub->route_id = $targetRoute->id;
+            $sub->save();
+
+            $oldMetrics = $oldRoute ? $this->recommendationService->calculateRouteMetrics($oldRoute->fresh()) : null;
+            $targetMetrics = $this->recommendationService->calculateRouteMetrics($targetRoute->fresh());
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'تم نقل الاشتراك.',
+                'old_route' => $oldMetrics ? [
+                    'id'              => (int) $oldMetrics['id'],
+                    'children_count'  => $oldMetrics['children_count'],
+                    'available_seats' => $oldMetrics['available_seats'],
+                ] : null,
+                'new_route' => [
+                    'id'              => (int) $targetMetrics['id'],
+                    'children_count'  => $targetMetrics['children_count'],
+                    'available_seats' => $targetMetrics['available_seats'],
+                ]
+            ], 200);
+
+        } catch (RouteModuleException $e) {
+            return $this->errorResponse($e->getMessage(), $e->getErrorCode(), 422);
+        } catch (Throwable $e) {
+            return $this->errorResponse($e->getMessage(), 'MOVE_FAILED', 422);
+        }
+    }
+
+    /**
+     * 9️⃣ DELETE /api/v1/driver/routes/{routeId}/subscriptions/{subscriptionId}
+     * إلغاء إسناد الاشتراك وإرجاع ملخص المسار المحدث
+     */
+    public function unassignSubscription($routeId, $subscriptionId): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            $driver = $user?->driver;
+
+            $route = RouteModel::where('id', $routeId)
+                ->where('driver_id', $driver->id)
+                ->firstOrFail();
+
+            $this->recommendationService->validateRouteNotRunning($route);
+
+            $sub = ActiveSubscription::where('id', $subscriptionId)
+                ->where('route_id', $routeId)
+                ->where('driver_id', $driver->id)
+                ->firstOrFail();
+
+            $sub->route_id = null;
+            $sub->save();
+
+            $metrics = $this->recommendationService->calculateRouteMetrics($route->fresh());
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'تمت إزالة الاشتراك من المسار.',
+                'route_summary' => [
+                    'id'              => (int) $metrics['id'],
+                    'children_count'  => $metrics['children_count'],
+                    'available_seats' => $metrics['available_seats'],
+                ]
+            ], 200);
+
+        } catch (RouteModuleException $e) {
+            return $this->errorResponse($e->getMessage(), $e->getErrorCode(), 422);
+        } catch (Throwable $e) {
+            return $this->errorResponse($e->getMessage(), 'UNASSIGN_FAILED', 422);
+        }
+    }
+
+    /**
+     * 🔟 PUT /api/v1/driver/routes/{routeId}/reorder
+     * إعادة ترتيب الوقفات والتقاط الأطفال (يدعم صيغة items وصيغة Array)
+     */
+    public function reorderStops(Request $request, $routeId): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            $driver = $user?->driver;
+
+            $route = RouteModel::where('id', $routeId)
+                ->where('driver_id', $driver->id)
+                ->firstOrFail();
+
+            $this->recommendationService->validateRouteNotRunning($route);
+
+            $items = $request->input('items', []);
+            $subscriptionsArr = $request->input('subscriptions', []);
+
+            DB::transaction(function () use ($items, $subscriptionsArr, $route) {
+                if (!empty($items) && is_array($items)) {
+                    foreach ($items as $item) {
+                        $subId = $item['subscription_id'] ?? null;
+                        $order = $item['order'] ?? 1;
+                        if ($subId) {
+                            ActiveSubscription::where('id', $subId)
+                                ->where('route_id', $route->id)
+                                ->update(['sort_order' => $order]);
+                        }
+                    }
+                } elseif (!empty($subscriptionsArr) && is_array($subscriptionsArr)) {
+                    foreach ($subscriptionsArr as $index => $subId) {
+                        ActiveSubscription::where('id', $subId)
+                            ->where('route_id', $route->id)
+                            ->update(['sort_order' => $index + 1]);
+                    }
+                }
+            });
+
+            $metrics = $this->recommendationService->calculateRouteMetrics($route->fresh());
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'تم تحديث الترتيب.',
+                'route_summary' => [
+                    'recommended_departure' => $metrics['recommended_departure'],
+                    'first_school_time'     => $metrics['first_school_time'],
+                ]
+            ], 200);
+
+        } catch (RouteModuleException $e) {
+            return $this->errorResponse($e->getMessage(), $e->getErrorCode(), 422);
+        } catch (Throwable $e) {
+            return $this->errorResponse($e->getMessage(), 'REORDER_FAILED', 422);
         }
     }
 }

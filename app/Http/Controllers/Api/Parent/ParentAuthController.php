@@ -124,27 +124,35 @@ $user = $this->registrationService->registerParent($data);
         try {
             $data = $request->validated();
 
-if ($request->hasFile('avatar')) {
-    $file = $request->file('avatar');
-    $filename = 'parent_avatar_' . time() . '.' . $file->getClientOriginalExtension();
-    $file->move(public_path('uploads/parents/avatars'), $filename);
-    $data['avatar_url'] = 'uploads/parents/avatars/' . $filename;
-}
-
-$user = $this->registrationService->updateParentProfile($request->user()->id, $data);
-            
-            $message = 'تم تحديث بيانات الملف الشخصي بنجاح.';
-            if (isset($user->email_change_pending) && $user->email_change_pending === true) {
-                $message = 'تم تحديث البيانات، يرجى تفعيل البريد الجديد خلال 30 دقيقة.';
-                Log::info("Parent: Email change pending for user ID: " . $user->id);
+            if ($request->hasFile('avatar')) {
+                $file = $request->file('avatar');
+                $filename = 'parent_avatar_' . time() . '.' . $file->getClientOriginalExtension();
+                $file->move(public_path('uploads/parents/avatars'), $filename);
+                $data['avatar_url'] = 'uploads/parents/avatars/' . $filename;
             }
+
+            $user = $this->registrationService->updateParentProfile($request->user()->id, $data);
+            
+            $isEmailPending = isset($user->email_change_pending) && $user->email_change_pending === true;
+
+            $message = $isEmailPending 
+                ? 'Profile updated successfully. Please verify your new email.' 
+                : 'Profile updated successfully.';
+
+            $emailVerificationData = $isEmailPending ? [
+                'status'    => 'pending',
+                'new_email' => $user->pending_new_email ?? null,
+            ] : null;
 
             Log::info("Parent: Profile updated successfully for user ID: " . $user->id);
             
             return response()->json([
-                'status'  => true,
+                'success' => true,
                 'message' => $message,
-                'data'    => new ParentResource($user)
+                'data'    => [
+                    'profile'            => new ParentResource($user),
+                    'email_verification' => $emailVerificationData,
+                ]
             ], 200);
             
         } catch (Exception $e) {
@@ -162,13 +170,84 @@ $user = $this->registrationService->updateParentProfile($request->user()->id, $d
             Log::info("Parent: Email change approved successfully for user ID: " . $id);
 
             return response()->json([
-                'status'  => true,
-                'message' => 'تم تأكيد وتحديث البريد الإلكتروني بنجاح.'
+                'success'       => true,
+                'email_changed' => true,
+                'message'       => 'تم تأكيد وتحديث البريد الإلكتروني بنجاح.'
             ], 200);
 
         } catch (Exception $e) {
             Log::error("Parent Approve Email Change Error for ID {$id}: " . $e->getMessage());
             return $this->errorResponse($e->getMessage());
+        }
+    }
+
+    /**
+     * دالة فحص حالة تغيير البريد الإلكتروني للفرونت إند (Email Change Status Check)
+     * GET /api/parent/profile/email-change/status
+     */
+    public function checkEmailChangeStatus(Request $request): JsonResponse
+    {
+        try {
+            $userId = $request->user()->id;
+            $statusKey = "parent_email_change_status_{$userId}";
+            $pendingKey = "parent_email_change_{$userId}";
+
+            $status = \Illuminate\Support\Facades\Cache::get($statusKey);
+
+            if (!$status) {
+                if (\Illuminate\Support\Facades\Cache::has($pendingKey)) {
+                    $status = 'pending';
+                } else {
+                    $status = 'expired';
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'data'    => [
+                    'status' => $status
+                ]
+            ], 200);
+
+        } catch (Exception $e) {
+            Log::error("Parent Check Email Status Error: " . $e->getMessage());
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * دالة إلغاء تغيير البريد الإلكتروني (Cancel Email Change)
+     * POST /api/parent/profile/email-change/cancel
+     */
+    public function cancelEmailChange(Request $request): JsonResponse
+    {
+        try {
+            $this->registrationService->cancelEmailChange($request->user()->id);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Email change cancelled.'
+            ], 200);
+        } catch (Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 400);
+        }
+    }
+
+    /**
+     * دالة إعادة إرسال رسالة التحقق للبريد الجديد (Resend Email Verification)
+     * POST /api/parent/profile/email-change/resend
+     */
+    public function resendEmailChange(Request $request): JsonResponse
+    {
+        try {
+            $this->registrationService->resendEmailChange($request->user()->id);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Verification email resent successfully.'
+            ], 200);
+        } catch (Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 400);
         }
     }
 
@@ -181,8 +260,9 @@ $user = $this->registrationService->updateParentProfile($request->user()->id, $d
             Log::info("Parent: Email change rejected successfully for user ID: " . $id);
 
             return response()->json([
-                'status'  => true,
-                'message' => 'تم إلغاء طلب تعديل البريد الإلكتروني بنجاح.'
+                'status'        => true,
+                'email_changed' => false,
+                'message'       => 'تم إلغاء طلب تعديل البريد الإلكتروني بنجاح.'
             ], 200);
 
         } catch (Exception $e) {

@@ -89,6 +89,9 @@ class DriverProfileService
                 $oldValues['email'] = $user->email;
                 $requiresApproval = true;
 
+                \Illuminate\Support\Facades\Cache::put("driver_email_change_{$user->id}", $data['email'], now()->addMinutes(30));
+                \Illuminate\Support\Facades\Cache::put("driver_email_change_status_{$user->id}", 'pending', now()->addMinutes(30));
+
                 // تمرير الإيميل الجديد داخل الروابط الموقّعة لقراءته عند الضغط عليه
                 $approveUrl = URL::temporarySignedRoute('api.driver.email.approve', now()->addMinutes(30), [
                     'id' => $user->id,
@@ -127,107 +130,12 @@ class DriverProfileService
             return [
                 'driver'            => $driver->fresh(['user']),
                 'requires_approval' => $requiresApproval,
+                'is_email_changed'  => !empty($pendingChanges['email']),
+                'pending_email'     => $pendingChanges['email'] ?? null,
                 'message'           => $requiresApproval 
                     ? "تم تحديث البيانات الفورية، وباقي التعديلات الحساسة بانتظار الاعتماد/التأكيد." 
                     : "تم تحديث الملف الشخصي بنجاح."
             ];
-        });
-    }
-
-   
-    /**
-     * [ 2 ] تحديث وتجديد البيانات القانونية والوثائق الرسمية للسائق
-     */
-    public function updateLegalDocuments(int $userId, array $data): array
-    {
-        return DB::transaction(function () use ($userId, $data) {
-            $user = User::where('id', $userId)->where('role_id', 4)->firstOrFail();
-            $driver = $user->driver;
-
-            if (!$driver) {
-                throw new Exception("لم يتم العثور على ملف السائق.");
-            }
-
-            $newLegalData = [
-                'national_id'    => $data['national_id'],
-                'license_number' => $data['license_number'],
-                'license_expiry' => $data['license_expiry'],
-            ];
-
-            $oldLegalData = [
-                'national_id'    => $driver->national_id,
-                'license_number' => $driver->license_number,
-                'license_expiry' => $driver->license_expiry,
-            ];
-
-            DB::table('driver_profile_changes')->insert([
-                'driver_id'  => $driver->id,
-                'old_values' => json_encode($oldLegalData),
-                'new_values' => json_encode($newLegalData),
-                'status'     => 'Pending',
-                'created_at' => now()
-            ]);
-
-            $documents = [
-                'LICENSE'         => $data['doc_license_path'],
-                'VEHICLE_LOGBOOK' => $data['doc_logbook_path'],
-                'INSURANCE'       => $data['doc_insurance_path'],
-                'CRIMINAL_RECORD' => $data['doc_criminal_record_path'],
-            ];
-
-            $activeVehicle = $driver->vehicles()->where('status', 'Active')->first() 
-                ?? $driver->vehicles()->latest()->first();
-
-            foreach ($documents as $type => $path) {
-                DriverDocument::create([
-                    'driver_id'   => $driver->id,
-                    'vehicle_id'  => $activeVehicle ? $activeVehicle->id : null,
-                    'doc_type'    => $type,
-                    'file_url'    => $path,
-                    'status'      => 'Pending',
-                    'uploaded_at' => now(),
-                ]);
-            }
-
-            return [
-                'status'  => 'success',
-                'message' => 'تم رفع وثائق التجديد والبيانات القانونية بنجاح، وهي الآن تحت مراجعة الإدارة.'
-            ];
-        });
-    }
-
-    /**
-     * [ 3 ] تحديث بيانات المركبة الحالية
-     */
-    public function updateVehicleDetails(int $userId, int $vehicleId, array $data): Vehicle
-    {
-        return DB::transaction(function () use ($userId, $vehicleId, $data) {
-            $user = User::where('id', $userId)->where('role_id', 4)->firstOrFail();
-            $driver = $user->driver;
-
-            $vehicle = Vehicle::where('id', $vehicleId)->where('driver_id', $driver->id)->firstOrFail();
-
-            if (isset($data['has_ac'])) {
-                $vehicle->has_ac = $data['has_ac'];
-            }
-
-            $vehicle->plate_number    = $data['plate_number'] ?? $vehicle->plate_number;
-            $vehicle->brand           = $data['brand'] ?? $vehicle->brand;
-            $vehicle->model           = $data['model'] ?? $vehicle->model;
-            $vehicle->year            = $data['year'] ?? $vehicle->year;
-            $vehicle->color           = $data['color'] ?? $vehicle->color;
-            $vehicle->type            = $data['type'] ?? $vehicle->type;
-            $vehicle->capacity_manual = $data['capacity_manual'] ?? $vehicle->capacity_manual;
-            
-            if (isset($data['vehicle_image_path'])) {
-                $vehicle->vehicle_image_url = $data['vehicle_image_path'];
-            }
-
-            $vehicle->status      = 'Pending';
-            $vehicle->is_verified = 0;
-            $vehicle->save();
-
-            return $vehicle->fresh();
         });
     }
 
@@ -239,24 +147,67 @@ class DriverProfileService
         return DB::transaction(function () use ($userId) {
             $user = User::where('id', $userId)->where('role_id', 4)->firstOrFail();
             
-            // جلب الإيميل الجديد من معلمات الرابط الموقّع مباشرة
-            $newEmail = request()->query('new_email');
+            $newEmail = request()->query('new_email') ?? \Illuminate\Support\Facades\Cache::get("driver_email_change_{$userId}");
 
             if (empty($newEmail)) {
+                \Illuminate\Support\Facades\Cache::put("driver_email_change_status_{$userId}", 'expired', now()->addMinutes(15));
                 throw new Exception("رابط التأكيد غير صالح أو لا يحتوي على البريد الجديد.");
             }
 
             $user->email = $newEmail;
-            return $user->save();
+            $user->save();
+
+            \Illuminate\Support\Facades\Cache::forget("driver_email_change_{$userId}");
+            \Illuminate\Support\Facades\Cache::put("driver_email_change_status_{$userId}", 'verified', now()->addMinutes(15));
+
+            return true;
         });
     }
 
     /**
-     * دالة إلغاء طلب تعديل البريد
+     * دالة إلغاء طلب تعديل البريد من الرابط
      */
     public function rejectEmailChange(int $userId): bool
     {
-        // بما أنه لا توجد أعمدة، الدالة تعود بـ true فقط لإظهار صفحة نجاح الإلغاء للسائق
+        \Illuminate\Support\Facades\Cache::forget("driver_email_change_{$userId}");
+        \Illuminate\Support\Facades\Cache::put("driver_email_change_status_{$userId}", 'rejected', now()->addMinutes(15));
+        return true;
+    }
+
+    public function cancelEmailChange(int $userId): bool
+    {
+        \Illuminate\Support\Facades\Cache::forget("driver_email_change_{$userId}");
+        \Illuminate\Support\Facades\Cache::forget("driver_email_change_status_{$userId}");
+        return true;
+    }
+
+    public function resendEmailChange(int $userId): bool
+    {
+        $cacheKey = "driver_email_change_{$userId}";
+        if (!\Illuminate\Support\Facades\Cache::has($cacheKey)) {
+            throw new Exception("لا يوجد طلب معلق لتعديل البريد الإلكتروني لإعادة إرساله.");
+        }
+
+        $newEmail = \Illuminate\Support\Facades\Cache::get($cacheKey);
+        $user = User::findOrFail($userId);
+        $driver = $user->driver;
+
+        $approveUrl = URL::temporarySignedRoute('api.driver.email.approve', now()->addMinutes(30), [
+            'id' => $user->id,
+            'new_email' => $newEmail
+        ]);
+        $rejectUrl  = URL::temporarySignedRoute('api.driver.email.reject', now()->addMinutes(30), [
+            'id' => $user->id
+        ]);
+
+        $this->emailService->sendDriverEmailChangeLink(
+            $newEmail, 
+            $user->full_name, 
+            $approveUrl, 
+            $rejectUrl, 
+            $driver?->gender
+        );
+
         return true;
     }
 

@@ -5,6 +5,7 @@ namespace App\Models\Shared;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Driver\Driver;
 use App\Models\Shared\Route;
+use App\Models\Shared\ActiveSubscription;
 
 class Trip extends Model
 {
@@ -52,5 +53,9 @@ class Trip extends Model
     public function tracking()
     {
         return $this->hasMany(TripTracking::class, 'trip_id');
+    }
+    public function activeSubscriptions()
+    {
+        return $this->hasMany(ActiveSubscription::class, 'trip_id'); // أو تحديد المفتاح الأجنبي المناسب
     }
 }

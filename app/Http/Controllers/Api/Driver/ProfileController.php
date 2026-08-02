@@ -22,7 +22,7 @@ class ProfileController extends Controller
     }
 
     /**
-     * 1. تحديث بيانات الملف الشخصي للسائق (PATCH/POST)
+     * 1. تحديث بيانات الملف الشخصي للسائق (PATCH/POST/PUT)
      */
     public function update(ProfileUpdateRequest $request): JsonResponse
     {
@@ -42,13 +42,26 @@ class ProfileController extends Controller
                 $uploadedPaths[] = $avatarPath;
             }
 
-            // استدعاء الخدمة لتحديث البيانات الشخصية الفورية أو حجز الحساسة
             $result = $this->profileService->updateDriverProfile($user->id, $validatedData);
 
+            $isEmailChanged = !empty($result['is_email_changed']);
+
+            $message = $isEmailChanged 
+                ? 'Profile updated successfully. Please verify your new email.' 
+                : 'Profile updated successfully.';
+
+            $emailVerificationData = $isEmailChanged ? [
+                'status'    => 'pending',
+                'new_email' => $result['pending_email'] ?? null,
+            ] : null;
+
             return response()->json([
-                'status'  => true,
-                'message' => $result['message'],
-                'data'    => new DriverResource($result['driver'])
+                'success' => true,
+                'message' => $message,
+                'data'    => [
+                    'profile'            => new DriverResource($result['driver']),
+                    'email_verification' => $emailVerificationData,
+                ]
             ], 200);
 
         } catch (Exception $e) {
@@ -59,9 +72,79 @@ class ProfileController extends Controller
             Log::error("Driver Profile Update Error: " . $e->getMessage(), ['user_id' => auth()->id()]);
 
             return response()->json([
-                'status'  => false,
+                'success' => false,
                 'message' => $e->getMessage() ?: 'تعذر تحديث البيانات بسبب مشكلة تقنية.',
             ], 500);
+        }
+    }
+
+    /**
+     * دالة فحص حالة تغيير البريد الإلكتروني للسائق
+     * GET /api/v1/driver/profile/email-change/status
+     */
+    public function checkEmailChangeStatus(Request $request): JsonResponse
+    {
+        try {
+            $userId = $request->user()->id;
+            $statusKey = "driver_email_change_status_{$userId}";
+            $pendingKey = "driver_email_change_{$userId}";
+
+            $status = \Illuminate\Support\Facades\Cache::get($statusKey);
+
+            if (!$status) {
+                if (\Illuminate\Support\Facades\Cache::has($pendingKey)) {
+                    $status = 'pending';
+                } else {
+                    $status = 'expired';
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'data'    => [
+                    'status' => $status
+                ]
+            ], 200);
+
+        } catch (Exception $e) {
+            Log::error("Driver Check Email Status Error: " . $e->getMessage());
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * دالة إلغاء تغيير البريد الإلكتروني للسائق
+     * POST /api/v1/driver/profile/email-change/cancel
+     */
+    public function cancelEmailChange(Request $request): JsonResponse
+    {
+        try {
+            $this->profileService->cancelEmailChange($request->user()->id);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Email change cancelled.'
+            ], 200);
+        } catch (Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 400);
+        }
+    }
+
+    /**
+     * دالة إعادة إرسال رسالة التحقق للبريد الجديد للسائق
+     * POST /api/v1/driver/profile/email-change/resend
+     */
+    public function resendEmailChange(Request $request): JsonResponse
+    {
+        try {
+            $this->profileService->resendEmailChange($request->user()->id);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Verification email resent successfully.'
+            ], 200);
+        } catch (Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 400);
         }
     }
 
@@ -77,20 +160,20 @@ class ProfileController extends Controller
 
             if (!$driver) {
                 return response()->json([
-                    'status'  => false,
+                    'success' => false,
                     'message' => 'عذراً، هذا الحساب غير مرتبط بملف سائق نشط على النظام.'
                 ], 404);
             }
 
             return response()->json([
-                'status'  => true,
+                'success' => true,
                 'message' => 'تم جلب البيانات بنجاح.',
                 'data'    => new DriverResource($driver)
             ], 200);
 
         } catch (Exception $e) {
             Log::error("Driver Profile Fetch Error: " . $e->getMessage());
-            return response()->json(['status' => false, 'message' => 'حدث خطأ أثناء جلب الملف الشخصي.'], 500);
+            return response()->json(['success' => false, 'message' => 'حدث خطأ أثناء جلب الملف الشخصي.'], 500);
         }
     }
 
@@ -103,12 +186,13 @@ class ProfileController extends Controller
             $this->profileService->approveEmailChange($id);
             
             return response()->json([
-                'status'  => true,
-                'message' => 'تم تأكيد وتحديث البريد الإلكتروني بنجاح في النظام.'
+                'success'       => true,
+                'email_changed' => true,
+                'message'       => 'تم تأكيد وتحديث البريد الإلكتروني بنجاح في النظام.'
             ], 200);
         } catch (Exception $e) {
             return response()->json([
-                'status'  => false,
+                'success' => false,
                 'message' => $e->getMessage() ?: 'رابط التأكيد غير صالح أو منتهي الصلاحية.'
             ], 400);
         }
@@ -123,12 +207,13 @@ class ProfileController extends Controller
             $this->profileService->rejectEmailChange($id);
             
             return response()->json([
-                'status'  => true,
-                'message' => 'تم إلغاء طلب تغيير البريد الإلكتروني بنجاح.'
+                'success'       => true,
+                'email_changed' => false,
+                'message'       => 'تم إلغاء طلب تغيير البريد الإلكتروني بنجاح.'
             ], 200);
         } catch (Exception $e) {
             return response()->json([
-                'status'  => false,
+                'success' => false,
                 'message' => $e->getMessage()
             ], 400);
         }

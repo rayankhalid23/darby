@@ -58,25 +58,22 @@ Route::middleware('auth:sanctum')->group(function () {
 
     
     Route::prefix('trips')->group(function () {
-        
-        // بدء الرحلة (صباحية / مسائية)
+        Route::get('today', [DriverTripController::class, 'todayTrips']);
+        Route::get('history', [DriverTripController::class, 'history']);
+        Route::get('history/{tripId}', [DriverTripController::class, 'historyDetails']);
+        Route::get('{tripId}', [DriverTripController::class, 'show']);
+        Route::post('{tripId}/start', [DriverTripController::class, 'start']);
         Route::post('start', [DriverTripController::class, 'start']);
-        
-        // تحديث إحداثيات الموقع الحالي للسائق (بث الـ GPS المستمر)
+        Route::get('{tripId}/live', [DriverTripController::class, 'live']);
         Route::post('{tripId}/location', [DriverTripController::class, 'updateLocation']);
-        
-        // تخطي محطة طفل معين (إعادة حساب المسار تلقائياً)
+        Route::post('{tripId}/pickup', [DriverTripController::class, 'pickup']);
+        Route::post('{tripId}/absent', [DriverTripController::class, 'absent']);
+        Route::post('{tripId}/dropoff', [DriverTripController::class, 'dropoff']);
         Route::post('{tripId}/skip/{childId}', [DriverTripController::class, 'skip']);
-        
-        // التحقق من كود الـ QR عند صعود الطفل بسلام
         Route::post('{tripId}/verify-qr/{childId}', [DriverTripController::class, 'verifyQr']);
-        
-        // تسجيل غياب السائق (تواريخ مجدولة مسبقاً)
+        Route::post('{tripId}/children/{tripChildId}/status', [DriverTripController::class, 'updateChildTripStatus']);
         Route::post('register-absence', [DriverTripController::class, 'registerAbsence']);
-        
-        // إنهاء الرحلة وإغلاقها نهائياً
         Route::post('{tripId}/complete', [DriverTripController::class, 'complete']);
-        
     });
 
     // عرض بيانات الملف الشخصي للسائق وعلاقاته
@@ -86,6 +83,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // تحديث البيانات الشخصية والمظهر
     Route::post('profile/update', [ProfileController::class, 'update'])
         ->name('api.driver.profile.update');
+    Route::put('profile', [ProfileController::class, 'update']);
+    Route::get('profile/email-change/status', [ProfileController::class, 'checkEmailChangeStatus']);
+    Route::post('profile/email-change/cancel', [ProfileController::class, 'cancelEmailChange']);
+    Route::post('profile/email-change/resend', [ProfileController::class, 'resendEmailChange']);
 
     // تحديث وتجديد المستندات والوثائق الرسمية
     Route::post('profile/legal-data', [ProfileController::class, 'updateLegalData'])
@@ -142,17 +143,32 @@ Route::get('zones', [ZoneController::class, 'index'])
         Route::get('/{id}', [App\Http\Controllers\Api\Shared\InvoiceController::class, 'show']);
     });
     // --- مسارات إدارة مركبات السائق ---
-Route::prefix('vehicles')->group(function () {
-    
-// 1. عرض قائمة كل السيارات الخاصة بالسائق (بيانات مختصرة: id, brand/name, model, image)
-Route::get('/', [DriverProfileController::class, 'indexVehicles'])
-    ->name('api.driver.vehicles.index');
+    Route::prefix('vehicles')->group(function () {
+        Route::get('/', [DriverProfileController::class, 'indexVehicles'])->name('api.driver.vehicles.index');
+        Route::get('/{vehicle}', [DriverProfileController::class, 'showVehicle'])->name('api.driver.vehicles.show');
+    });
 
-// 2. عرض البيانات الكاملة لسيارة معينة بالـ ID
-Route::get('/{vehicle}', [DriverProfileController::class, 'showVehicle'])
-    ->name('api.driver.vehicles.show');
+    Route::post('/driver/update-location', [DriverTrackingController::class, 'updateLocation']);
 
-});
-Route::post('/driver/update-location', [DriverTrackingController::class, 'updateLocation']);
+    // -------------------------------------------------------------
+    // 🗺️ موديول إدارة المسارات والتزام إسناد الاشتراكات (Routes & Assignments)
+    // -------------------------------------------------------------
+    Route::get('home-status', [App\Http\Controllers\Api\Driver\DriverRouteController::class, 'checkPendingAssignments']);
+
+    Route::prefix('routes')->group(function () {
+        Route::get('/', [App\Http\Controllers\Api\Driver\DriverRouteController::class, 'index']);
+        Route::post('/', [App\Http\Controllers\Api\Driver\DriverRouteController::class, 'store']);
+        Route::get('/{routeId}', [App\Http\Controllers\Api\Driver\DriverRouteController::class, 'show']);
+        Route::put('/{routeId}', [App\Http\Controllers\Api\Driver\DriverRouteController::class, 'update']);
+        Route::delete('/{routeId}', [App\Http\Controllers\Api\Driver\DriverRouteController::class, 'destroy']);
+        Route::put('/{routeId}/reorder', [App\Http\Controllers\Api\Driver\DriverRouteController::class, 'reorderStops']);
+        Route::delete('/{routeId}/subscriptions/{subscriptionId}', [App\Http\Controllers\Api\Driver\DriverRouteController::class, 'unassignSubscription']);
+    });
+
+    Route::prefix('subscriptions')->group(function () {
+        Route::get('/{subscriptionId}/route-recommendations', [App\Http\Controllers\Api\Driver\DriverRouteController::class, 'recommendations']);
+        Route::post('/{subscriptionId}/assign-route', [App\Http\Controllers\Api\Driver\DriverRouteController::class, 'assignSubscription']);
+        Route::post('/{subscriptionId}/move-route', [App\Http\Controllers\Api\Driver\DriverRouteController::class, 'moveSubscription']);
+    });
 
 });

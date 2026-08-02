@@ -4,7 +4,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\Auth\LoginController;
 use App\Http\Controllers\Api\Auth\PasswordController;
-use App\Http\Controllers\Api\Shared\NotificationController;
+use App\Http\Controllers\Api\Shared\NotificationController as SharedNotificationController;
 use App\Http\Controllers\Api\NotificationController;
 
 /*
@@ -40,13 +40,16 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // مسارات الإشعارات الفورية وإدارة التوكنات (Notifications & Device Tokens)
     Route::prefix('notifications')->group(function () {
-        Route::get('/', [NotificationController::class, 'index']);
-        Route::get('/unread-count', [NotificationController::class, 'unreadCount']);
-        Route::patch('/{id}/read', [NotificationController::class, 'markAsRead']);
-        Route::post('/read-all', [NotificationController::class, 'markAllAsRead']);
-        Route::delete('/{id}', [NotificationController::class, 'destroy']);
+        Route::get('/', [SharedNotificationController::class, 'index']);
+        Route::get('/unread-count', [SharedNotificationController::class, 'unreadCount']);
+        Route::post('/{id}/read', [SharedNotificationController::class, 'markAsRead']);
+        Route::patch('/{id}/read', [SharedNotificationController::class, 'markAsRead']);
+        Route::post('/read-all', [SharedNotificationController::class, 'markAllAsRead']);
+        Route::delete('/{id}', [SharedNotificationController::class, 'destroy']);
     });
 
-    Route::post('/user/device-token', [NotificationController::class, 'storeDeviceToken']);
-    Route::delete('/user/device-token', [NotificationController::class, 'removeDeviceToken']);
+    Route::post('/user/device-token', [SharedNotificationController::class, 'storeDeviceToken']);
+    Route::delete('/user/device-token', [SharedNotificationController::class, 'removeDeviceToken']);
+    Route::post('/shared/notifications/device-token', [SharedNotificationController::class, 'storeDeviceToken']);
+    Route::delete('/shared/notifications/device-token', [SharedNotificationController::class, 'removeDeviceToken']);
 });

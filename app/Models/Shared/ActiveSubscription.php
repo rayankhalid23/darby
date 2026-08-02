@@ -17,6 +17,7 @@ class ActiveSubscription extends Model
         'contract_id',
         'child_id',
         'driver_id',
+        'route_id',
         'parent_id',
         'school_id',
         'pickup_lat',
@@ -27,6 +28,7 @@ class ActiveSubscription extends Model
         'dropoff_label',
         'pickup_time',
         'dropoff_time',
+        'sort_order',
         'status',
     ];
 
@@ -54,6 +56,11 @@ class ActiveSubscription extends Model
     public function driver(): BelongsTo
     {
         return $this->belongsTo(Driver::class, 'driver_id');
+    }
+
+    public function route(): BelongsTo
+    {
+        return $this->belongsTo(Route::class, 'route_id');
     }
 
     public function parent(): BelongsTo

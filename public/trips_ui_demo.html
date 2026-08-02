@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Darby - Trips & Routes UI/UX Design System</title>
+    <!-- Cairo Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --bg-dark: #0B0F19;
+            --card-dark: rgba(21, 29, 46, 0.85);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --primary-yellow: #FFB800;
+            --primary-yellow-hover: #E0A200;
+            --accent-blue: #3B82F6;
+            --accent-green: #10B981;
+            --accent-red: #EF4444;
+            --text-main: #F8FAFC;
+            --text-muted: #94A3B8;
+            --radius-lg: 20px;
+            --radius-md: 14px;
+            --shadow-glow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Cairo', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            overflow-x: hidden;
+        }
+
+        /* Top Platform Switcher Header */
+        .platform-header {
+            width: 100%;
+            max-width: 900px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding: 16px 24px;
+            background: var(--card-dark);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-lg);
+            backdrop-filter: blur(12px);
+        }
+
+        .brand-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 22px;
+            font-weight: 900;
+            color: var(--primary-yellow);
+        }
+
+        .brand-logo i {
+            font-size: 26px;
+        }
+
+        .mode-switch {
+            display: flex;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 6px;
+            border-radius: 30px;
+            border: 1px solid var(--card-border);
+        }
+
+        .mode-btn {
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            padding: 10px 24px;
+            border-radius: 25px;
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .mode-btn.active {
+            background: var(--primary-yellow);
+            color: #000;
+            box-shadow: 0 4px 15px rgba(255, 184, 0, 0.3);
+        }
+
+        /* Phone Frame Mockup */
+        .simulator-container {
+            width: 100%;
+            max-width: 420px;
+            height: 840px;
+            background: #000;
+            border-radius: 48px;
+            border: 10px solid #1E293B;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 40px rgba(59, 130, 246, 0.15);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Phone Status Bar */
+        .phone-status-bar {
+            height: 40px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 24px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #fff;
+            z-index: 100;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+        }
+
+        .notch {
+            width: 120px;
+            height: 22px;
+            background: #1E293B;
+            border-bottom-left-radius: 14px;
+            border-bottom-right-radius: 14px;
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        /* View Containers */
+        .app-view {
+            flex: 1;
+            display: none;
+            flex-direction: column;
+            position: relative;
+            overflow-y: auto;
+            scrollbar-width: none;
+        }
+
+        .app-view::-webkit-scrollbar {
+            display: none;
+        }
+
+        .app-view.active {
+            display: flex;
+        }
+
+        /* Simulated Map Canvas */
+        .map-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #111827 url('https://api.mapbox.com/styles/v1/mapbox/dark-v10/static/13.1800,32.8900,14,0/400x800?access_token=pk.placeholder') center/cover;
+            z-index: 1;
+        }
+
+        /* Grid lines SVG overlay for high-tech map aesthetic */
+        .map-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 2;
+            background: 
+                radial-gradient(circle at 50% 40%, rgba(59, 130, 246, 0.15) 0%, transparent 60%),
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 100% 100%, 30px 30px, 30px 30px;
+            pointer-events: none;
+        }
+
+        /* SVG Route & Bus Animation */
+        .route-svg {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 3;
+            pointer-events: none;
+        }
+
+        /* Floating UI Elements (Driver View) */
+        .top-driver-bar {
+            position: relative;
+            z-index: 10;
+            margin: 12px 16px 0;
+            padding: 14px 18px;
+            background: var(--card-dark);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-md);
+            backdrop-filter: blur(16px);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: var(--shadow-glow);
+        }
+
+        .driver-badge {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .driver-avatar {
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            border: 2px solid var(--primary-yellow);
+            object-fit: cover;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 800;
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-green);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .status-pill.pulse::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            animation: pulse-ring 1.5s infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1.1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        /* Bottom Driver Action Sheet */
+        .bottom-action-sheet {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 10;
+            padding: 20px;
+            background: linear-gradient(to top, rgba(11, 15, 25, 0.98) 85%, transparent);
+            border-top: 1px solid var(--card-border);
+            border-radius: 32px 32px 0 0;
+            backdrop-filter: blur(20px);
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .current-stop-card {
+            background: rgba(30, 41, 59, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: var(--radius-md);
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .stop-info {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .child-thumb {
+            width: 52px;
+            height: 52px;
+            border-radius: 16px;
+            object-fit: cover;
+            border: 2px solid var(--primary-yellow);
+        }
+
+        .stop-meta h4 {
+            font-size: 16px;
+            font-weight: 800;
+            margin-bottom: 2px;
+        }
+
+        .stop-meta p {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .stop-timer {
+            text-align: center;
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            padding: 8px 12px;
+            border-radius: 12px;
+            color: var(--accent-red);
+            font-weight: 900;
+            font-size: 15px;
+        }
+
+        .driver-actions-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 12px;
+        }
+
+        .btn-qr-scan {
+            background: var(--primary-yellow);
+            color: #000;
+            border: none;
+            padding: 16px;
+            border-radius: var(--radius-md);
+            font-size: 16px;
+            font-weight: 900;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            cursor: pointer;
+            box-shadow: 0 8px 25px rgba(255, 184, 0, 0.3);
+            transition: transform 0.2s, background 0.2s;
+        }
+
+        .btn-qr-scan:active {
+            transform: scale(0.97);
+        }
+
+        .btn-skip {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-main);
+            border: 1px solid var(--card-border);
+            padding: 16px;
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        /* Parent View Styles */
+        .parent-header {
+            position: relative;
+            z-index: 10;
+            padding: 16px 20px;
+            background: var(--card-dark);
+            border-bottom: 1px solid var(--card-border);
+            backdrop-filter: blur(16px);
+        }
+
+        .parent-top-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+
+        .parent-greeting h3 {
+            font-size: 18px;
+            font-weight: 800;
+        }
+
+        .parent-greeting p {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* Children Selector Chips */
+        .children-chips {
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+        }
+
+        .child-chip {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            padding: 8px 14px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            white-space: nowrap;
+        }
+
+        .child-chip.active {
+            background: rgba(59, 130, 246, 0.2);
+            border-color: var(--accent-blue);
+            color: #fff;
+        }
+
+        .child-chip img {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+
+        /* Parent Live Card */
+        .parent-bottom-sheet {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 10;
+            padding: 20px;
+            background: linear-gradient(to top, rgba(11, 15, 25, 0.98) 85%, transparent);
+            border-top: 1px solid var(--card-border);
+            border-radius: 32px 32px 0 0;
+            backdrop-filter: blur(20px);
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        /* Progress Steps Bar (4 Steps Design) */
+        .progress-steps-container {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-md);
+            padding: 16px;
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+
+        .progress-header h5 {
+            font-size: 14px;
+            font-weight: 800;
+            color: var(--primary-yellow);
+        }
+
+        .eta-badge {
+            font-size: 12px;
+            font-weight: 800;
+            background: rgba(59, 130, 246, 0.2);
+            color: var(--accent-blue);
+            padding: 4px 10px;
+            border-radius: 12px;
+        }
+
+        .steps-wrapper {
+            display: flex;
+            justify-content: space-between;
+            position: relative;
+        }
+
+        .steps-line {
+            position: absolute;
+            top: 16px;
+            left: 20px;
+            right: 20px;
+            height: 3px;
+            background: rgba(255, 255, 255, 0.1);
+            z-index: 1;
+        }
+
+        .steps-line-fill {
+            position: absolute;
+            top: 0;
+            right: 0;
+            height: 100%;
+            width: 66%; /* 2 steps completed */
+            background: var(--accent-green);
+            transition: width 0.5s ease;
+        }
+
+        .step-node {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .step-icon {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            background: #1E293B;
+            border: 2px solid var(--card-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            color: var(--text-muted);
+            transition: all 0.3s;
+        }
+
+        .step-node.completed .step-icon {
+            background: var(--accent-green);
+            border-color: var(--accent-green);
+            color: #000;
+        }
+
+        .step-node.active .step-icon {
+            background: var(--primary-yellow);
+            border-color: var(--primary-yellow);
+            color: #000;
+            animation: pulse-step 1.5s infinite;
+        }
+
+        @keyframes pulse-step {
+            0% { box-shadow: 0 0 0 0 rgba(255, 184, 0, 0.7); }
+            70% { box-shadow: 0 0 0 8px rgba(255, 184, 0, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 184, 0, 0); }
+        }
+
+        .step-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-muted);
+        }
+
+        .step-node.completed .step-label, .step-node.active .step-label {
+            color: #fff;
+        }
+
+        /* Modal Overlay (QR Code Mock) */
+        .modal-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 100;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            backdrop-filter: blur(12px);
+        }
+
+        .modal-overlay.show {
+            display: flex;
+        }
+
+        .qr-box {
+            background: #fff;
+            padding: 20px;
+            border-radius: var(--radius-lg);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 0 40px rgba(255, 184, 0, 0.4);
+        }
+
+        .qr-box img {
+            width: 180px;
+            height: 180px;
+        }
+
+        .qr-box p {
+            color: #000;
+            font-weight: 800;
+            font-size: 14px;
+        }
+
+        /* Footer Controls Info */
+        .design-specs-footer {
+            margin-top: 30px;
+            width: 100%;
+            max-width: 900px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+        }
+
+        .spec-card {
+            background: var(--card-dark);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-lg);
+            padding: 20px;
+        }
+
+        .spec-card h4 {
+            color: var(--primary-yellow);
+            font-size: 16px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .spec-card p {
+            font-size: 13px;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header class="platform-header">
+        <div class="brand-logo">
+            <i class="fa-solid fa-bus-simple"></i>
+            Darby UI/UX Prototype
+        </div>
+        <div class="mode-switch">
+            <button class="mode-btn active" id="btn-driver-view" onclick="switchView('driver')">
+                <i class="fa-solid fa-steering-wheel"></i> تطبيق السائق
+            </button>
+            <button class="mode-btn" id="btn-parent-view" onclick="switchView('parent')">
+                <i class="fa-solid fa-child-reaching"></i> تطبيق ولي الأمر
+            </button>
+        </div>
+    </header>
+
+    <!-- Mobile Frame Simulator -->
+    <div class="simulator-container">
+        
+        <div class="phone-status-bar">
+            <span>07:15</span>
+            <div class="notch"></div>
+            <div style="display: flex; gap: 6px;">
+                <i class="fa-solid fa-wifi"></i>
+                <i class="fa-solid fa-battery-full"></i>
+            </div>
+        </div>
+
+        <!-- Dynamic Map Canvas Background -->
+        <div class="map-bg"></div>
+        <div class="map-overlay"></div>
+
+        <!-- Route SVG Line Simulation -->
+        <svg class="route-svg">
+            <!-- Animated Path Line -->
+            <path d="M 80 700 Q 150 500 200 350 T 320 180" fill="none" stroke="#FFB800" stroke-width="6" stroke-dasharray="8 6" stroke-linecap="round"/>
+            
+            <!-- Bus Location Marker -->
+            <g transform="translate(200, 350)">
+                <circle r="22" fill="rgba(59, 130, 246, 0.3)" />
+                <circle r="12" fill="#3B82F6" stroke="#fff" stroke-width="3" />
+                <text x="0" y="28" fill="#fff" font-size="10" font-weight="bold" text-anchor="middle">الحافلة الآن</text>
+            </g>
+
+            <!-- Stop Location Marker -->
+            <g transform="translate(320, 180)">
+                <circle r="16" fill="rgba(16, 185, 129, 0.3)" />
+                <circle r="8" fill="#10B981" stroke="#fff" stroke-width="2" />
+                <text x="0" y="-14" fill="#10B981" font-size="11" font-weight="bold" text-anchor="middle">مدرسة الجيل الجديد</text>
+            </g>
+        </svg>
+
+        <!-- ================= DRIVER VIEW ================= -->
+        <div class="app-view active" id="view-driver">
+            
+            <!-- Top Bar -->
+            <div class="top-driver-bar">
+                <div class="driver-badge">
+                    <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80" class="driver-avatar" alt="Driver">
+                    <div>
+                        <h4 style="font-size: 14px; font-weight: 800;">عبد السلام المصراتي</h4>
+                        <p style="font-size: 11px; color: var(--text-muted);">رحلة الصباح • إلى المدرسة</p>
+                    </div>
+                </div>
+                <div class="status-pill pulse">
+                    مباشر GPS
+                </div>
+            </div>
+
+            <!-- Bottom Sheet -->
+            <div class="bottom-action-sheet">
+                <div class="current-stop-card">
+                    <div class="stop-info">
+                        <img src="https://images.unsplash.com/photo-1544717305-2782549b5136?w=100&auto=format&fit=crop&q=80" class="child-thumb" alt="Child">
+                        <div class="stop-meta">
+                            <h4>سند طه القمودي</h4>
+                            <p><i class="fa-solid fa-location-dot" style="color: var(--primary-yellow);"></i> حي الأندلس • محطة #2</p>
+                        </div>
+                    </div>
+                    <div class="stop-timer">
+                        <span id="counter-val">04:12</span>
+                        <div style="font-size: 9px; opacity: 0.8;">عداد الانتظار</div>
+                    </div>
+                </div>
+
+                <div class="driver-actions-grid">
+                    <button class="btn-qr-scan" onclick="triggerQrModal()">
+                        <i class="fa-solid fa-qrcode"></i> مسح كود QR للصعود
+                    </button>
+                    <button class="btn-skip" onclick="alert('تم تخطي المحطة وإعادة حساب المسار تلقائياً عبر OSRM Engine')">
+                        <i class="fa-solid fa-forward-step"></i> تخطي
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= PARENT VIEW ================= -->
+        <div class="app-view" id="view-parent">
+            
+            <!-- Parent Header -->
+            <div class="parent-header">
+                <div class="parent-top-row">
+                    <div class="parent-greeting">
+                        <h3>مرحباً، طه القمودي 👋</h3>
+                        <p>تتبع حركة الحافلة ومراحل التوصيل</p>
+                    </div>
+                    <div class="status-pill pulse">
+                        الرحلة جارية
+                    </div>
+                </div>
+
+                <!-- Children Selector -->
+                <div class="children-chips">
+                    <div class="child-chip active">
+                        <img src="https://images.unsplash.com/photo-1544717305-2782549b5136?w=100&auto=format&fit=crop&q=80">
+                        <span>سند القمودي</span>
+                    </div>
+                    <div class="child-chip">
+                        <img src="https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100&auto=format&fit=crop&q=80">
+                        <span>مروة القمودي</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Parent Bottom Progress Sheet -->
+            <div class="parent-bottom-sheet">
+                
+                <!-- 4 Steps Timeline Progress Container -->
+                <div class="progress-steps-container">
+                    <div class="progress-header">
+                        <h5>خطوات رحلة الطفل (Progress Steps)</h5>
+                        <span class="eta-badge"><i class="fa-solid fa-clock"></i> الوصول المتوقع: 8 دقائق</span>
+                    </div>
+
+                    <div class="steps-wrapper">
+                        <div class="steps-line">
+                            <div class="steps-line-fill"></div>
+                        </div>
+
+                        <!-- Step 1 -->
+                        <div class="step-node completed">
+                            <div class="step-icon"><i class="fa-solid fa-check"></i></div>
+                            <span class="step-label">انطلقت</span>
+                        </div>
+
+                        <!-- Step 2 -->
+                        <div class="step-node active">
+                            <div class="step-icon"><i class="fa-solid fa-bus"></i></div>
+                            <span class="step-label">في الطريق</span>
+                        </div>
+
+                        <!-- Step 3 -->
+                        <div class="step-node">
+                            <div class="step-icon"><i class="fa-solid fa-school"></i></div>
+                            <span class="step-label">الاستلام</span>
+                        </div>
+
+                        <!-- Step 4 -->
+                        <div class="step-node">
+                            <div class="step-icon"><i class="fa-solid fa-flag-checkered"></i></div>
+                            <span class="step-label">وصلت</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Driver Card Info -->
+                <div class="current-stop-card">
+                    <div class="stop-info">
+                        <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80" class="child-thumb" alt="Driver">
+                        <div class="stop-meta">
+                            <h4>السائق: عبد السلام المصراتي</h4>
+                            <p><i class="fa-solid fa-bus"></i> تويوتا كوستر • 5-12345</p>
+                        </div>
+                    </div>
+                    <button style="background: rgba(59, 130, 246, 0.2); color: var(--accent-blue); border: none; padding: 10px 14px; border-radius: 12px; font-weight: 800; cursor: pointer;">
+                        <i class="fa-solid fa-phone"></i> اتصال
+                    </button>
+                </div>
+
+            </div>
+
+        </div>
+
+        <!-- Simulated Modal QR Scanner -->
+        <div class="modal-overlay" id="qr-modal">
+            <div class="qr-box">
+                <i class="fa-solid fa-qrcode" style="font-size: 80px; color: #000;"></i>
+                <p>امسح الكود عبر كاميرا السائق</p>
+                <div style="font-size: 11px; color: #666;">كود الطفل: CHLD-49-DARBY</div>
+            </div>
+            <button onclick="closeQrModal()" style="margin-top: 20px; background: #fff; color: #000; border: none; padding: 12px 30px; border-radius: 20px; font-weight: 900; cursor: pointer;">
+                تأكيد ومحاكاة الصعود 🟢
+            </button>
+        </div>
+
+    </div>
+
+    <!-- UI/UX Specification Features Summary -->
+    <div class="design-specs-footer">
+        <div class="spec-card">
+            <h4><i class="fa-solid fa-palette"></i> فلسفة التصميم (Design Aesthetics)</h4>
+            <p>يعتمد النمط على Dark Glassmorphism مع حواف ملساء (20px Rounded) وألوان عالية التباين لضمان سهولة الرؤية والتشغيل بلمسة واحدة ليد السائق أثناء القيادة.</p>
+        </div>
+        <div class="spec-card">
+            <h4><i class="fa-solid fa-route"></i> التوجيه والخرائط (OSRM Navigation)</h4>
+            <p>عرض مسار الحركة بالأصفر النيون مع نقاط توقف محددة للأطفال والمدرسة، مع إعادة حساب المسار ديناميكياً عند تخطي أو غياب أي طفل.</p>
+        </div>
+        <div class="spec-card">
+            <h4><i class="fa-solid fa-list-check"></i> 4 الخطوات الذهبية لولي الأمر</h4>
+            <p>تتبع لحظي دقيق يمر بـ (1. انطلقت ⬅️ 2. في الطريق ⬅️ 3. الاستلام/التسليم ⬅️ 4. الوصول المكتمل) يتيح للأم الراحة والأمان التام.</p>
+        </div>
+    </div>
+
+    <script>
+        function switchView(viewName) {
+            document.querySelectorAll('.app-view').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.mode-btn').forEach(el => el.classList.remove('active'));
+
+            if (viewName === 'driver') {
+                document.getElementById('view-driver').classList.add('active');
+                document.getElementById('btn-driver-view').classList.add('active');
+            } else {
+                document.getElementById('view-parent').classList.add('active');
+                document.getElementById('btn-parent-view').classList.add('active');
+            }
+        }
+
+        function triggerQrModal() {
+            document.getElementById('qr-modal').classList.add('show');
+        }
+
+        function closeQrModal() {
+            document.getElementById('qr-modal').classList.remove('show');
+            alert('تم التحقق من الـ QR وصعود الطفل سند بنجاح! تم تحديث شاشة ولي الأمر وتنبيهه.');
+        }
+
+        // Timer simulation
+        let seconds = 252;
+        setInterval(() => {
+            if(seconds > 0) {
+                seconds--;
+                let mins = Math.floor(seconds / 60);
+                let secs = seconds % 60;
+                document.getElementById('counter-val').innerText = 
+                    `${mins < 10 ? '0'+mins : mins}:${secs < 10 ? '0'+secs : secs}`;
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

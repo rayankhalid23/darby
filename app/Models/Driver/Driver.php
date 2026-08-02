@@ -83,6 +83,11 @@ public function vehicles(): HasMany // قمت بتغييرها من vehicle إل
     return $this->hasMany(\App\Models\Driver\Vehicle::class, 'driver_id');
 }
 
+public function vehicle(): \Illuminate\Database\Eloquent\Relations\HasOne
+{
+    return $this->hasOne(\App\Models\Driver\Vehicle::class, 'driver_id');
+}
+
     /**
      * علاقة مع وثائق السائق (الرخصة، كتيب المركبة، إلخ)
      */
