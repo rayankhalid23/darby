@@ -55,7 +55,8 @@ class Trip extends Model
         return $this->hasMany(TripTracking::class, 'trip_id');
     }
     public function activeSubscriptions()
-    {
-        return $this->hasMany(ActiveSubscription::class, 'trip_id'); // أو تحديد المفتاح الأجنبي المناسب
-    }
+{
+    // إذا كنت تريد جلب الاشتراكات المرتبطة بنفس مسار الرحلة (route_id)
+    return $this->hasMany(ActiveSubscription::class, 'route_id', 'route_id');
+}
 }

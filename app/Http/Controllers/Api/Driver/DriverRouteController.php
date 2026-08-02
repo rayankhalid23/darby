@@ -177,7 +177,7 @@ class DriverRouteController extends Controller
 
             $route = RouteModel::where('id', $routeId)
                 ->where('driver_id', $driver->id)
-                ->with(['activeSubscriptions.child', 'activeSubscriptions.school'])
+                ->with(['activeSubscriptions.child.school', 'activeSubscriptions.school'])
                 ->firstOrFail();
 
             $metrics = $this->recommendationService->calculateRouteMetrics($route);
@@ -187,15 +187,16 @@ class DriverRouteController extends Controller
                 ->sortBy('sort_order')
                 ->values()
                 ->map(function ($sub, $index) {
-                    $schoolModel = $sub->school;
-                    
+                    // يحاول جلب المدرسة من subscription أولاً، ثم من child->school
+                    $schoolModel = $sub->school ?? $sub->child?->school;
+
                     return [
                         'id'               => (int) $sub->id,
                         'subscription_id'  => (int) $sub->id,
                         'child_id'         => (int) $sub->child_id,
                         'child_name'       => $sub->child->full_name ?? $sub->child->name ?? 'طفل',
                         'route_status'     => strtolower($sub->status ?? 'active'),
-                        'pickup_order'     => $sub->sort_order ?? ($index + 1),
+                        'pickup_order'     => ($sub->sort_order > 0) ? (int) $sub->sort_order : ($index + 1),
                         'estimated_pickup' => $sub->pickup_time ?? '07:28',
                         'needs_review'     => ($sub->status === 'needs_review'),
                         'review_reason'    => ($sub->status === 'needs_review') ? ($sub->review_reason ?? 'تم تغيير المدرسة أو العنوان') : null,
@@ -205,10 +206,10 @@ class DriverRouteController extends Controller
                             'longitude' => (float) ($sub->pickup_lng ?? 13.191345),
                         ],
                         'school' => [
-                            'id'        => (int) ($schoolModel?->id ?? 1),
-                            'name'      => $schoolModel?->name ?? 'مدرسة الأمل الدولية',
-                            'latitude'  => (float) ($schoolModel?->latitude ?? 32.901000),
-                            'longitude' => (float) ($schoolModel?->longitude ?? 13.205000),
+                            'id'        => (int) ($schoolModel?->id ?? 0),
+                            'name'      => $schoolModel?->name ?? 'المدرسة',
+                            'latitude'  => (float) ($schoolModel?->lat ?? $schoolModel?->latitude ?? 32.901000),
+                            'longitude' => (float) ($schoolModel?->lng ?? $schoolModel?->longitude ?? 13.205000),
                         ],
                     ];
                 })->values();

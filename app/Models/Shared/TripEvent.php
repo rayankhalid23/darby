@@ -4,6 +4,7 @@ namespace App\Models\Shared;
 
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Parent\Child;
+use App\Models\Shared\ActiveSubscription;
 
 class TripEvent extends Model
 {
@@ -29,5 +30,11 @@ class TripEvent extends Model
     public function child()
     {
         return $this->belongsTo(Child::class, 'child_id');
+    }
+
+    // علاقة الحدث بالاشتراك النشط
+    public function subscription()
+    {
+        return $this->belongsTo(ActiveSubscription::class, 'subscription_id');
     }
 }

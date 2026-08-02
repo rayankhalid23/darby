@@ -83,8 +83,8 @@ class ParentTripService
                 $childSchool = optional($sub->school);
                 $destName = $direction === 'to_school' ? ($childSchool->name ?? 'المدرسة') : 'المنزل';
                 $destType = $direction === 'to_school' ? 'school' : 'home';
-                $destLat  = (float)($direction === 'to_school' ? ($childSchool->latitude ?? $sub->dropoff_lat ?? 32.890000) : ($sub->dropoff_lat ?? $sub->pickup_lat ?? 32.890000));
-                $destLng  = (float)($direction === 'to_school' ? ($childSchool->longitude ?? $sub->dropoff_lng ?? 13.180000) : ($sub->dropoff_lng ?? $sub->pickup_lng ?? 13.180000));
+                $destLat  = (float)($direction === 'to_school' ? ($childSchool->lat ?? $sub->dropoff_lat ?? 32.890000) : ($sub->dropoff_lat ?? $sub->pickup_lat ?? 32.890000));
+                $destLng  = (float)($direction === 'to_school' ? ($childSchool->lng ?? $sub->dropoff_lng ?? 13.180000) : ($sub->dropoff_lng ?? $sub->pickup_lng ?? 13.180000));
 
                 $childrenArray[] = [
                     'child_id'     => $childObj->id,
@@ -128,8 +128,8 @@ class ParentTripService
                 'destination' => [
                     'name' => $direction === 'to_school' ? ($school->name ?? 'المدرسة') : 'المنزل',
                     'type' => $direction === 'to_school' ? 'school' : 'home',
-                    'lat'  => (float)($direction === 'to_school' ? ($school->latitude ?? $firstSub->dropoff_lat ?? 32.890000) : ($firstSub->pickup_lat ?? 32.890000)),
-                    'lng'  => (float)($direction === 'to_school' ? ($school->longitude ?? $firstSub->dropoff_lng ?? 13.180000) : ($firstSub->pickup_lng ?? 13.180000)),
+                    'lat'  => (float)($direction === 'to_school' ? ($school->lat ?? $firstSub->dropoff_lat ?? 32.890000) : ($firstSub->pickup_lat ?? 32.890000)),
+                    'lng'  => (float)($direction === 'to_school' ? ($school->lng ?? $firstSub->dropoff_lng ?? 13.180000) : ($firstSub->pickup_lng ?? 13.180000)),
                 ]
             ];
         }
@@ -171,8 +171,8 @@ class ParentTripService
             'destination' => [
                 'name' => $direction === 'to_school' ? ($school->name ?? 'المدرسة') : 'المنزل',
                 'type' => $direction === 'to_school' ? 'school' : 'home',
-                'lat'  => (float)($direction === 'to_school' ? ($school->latitude ?? 32.890000) : ($firstSub->pickup_lat ?? 32.890000)),
-                'lng'  => (float)($direction === 'to_school' ? ($school->longitude ?? 13.180000) : ($firstSub->pickup_lng ?? 13.180000)),
+                'lat'  => (float)($direction === 'to_school' ? ($school->lat ?? 32.890000) : ($firstSub->pickup_lat ?? 32.890000)),
+                'lng'  => (float)($direction === 'to_school' ? ($school->lng ?? 13.180000) : ($firstSub->pickup_lng ?? 13.180000)),
             ],
             'last_updated' => $lastUpdated,
             'is_online'    => $isOnline
@@ -339,21 +339,20 @@ class ParentTripService
         foreach ($paginatedTrips->items() as $trip) {
             $events = DB::table('trip_events')
                 ->where('trip_id', $trip->id)
-                ->whereIn('child_id', $childIds)
+                ->whereIn('trip_events.child_id', $childIds)
                 ->join('children', 'trip_events.child_id', '=', 'children.id')
                 ->leftJoin('schools', 'children.school_id', '=', 'schools.id')
                 ->leftJoin('active_subscriptions', function ($join) use ($trip) {
                     $join->on('children.id', '=', 'active_subscriptions.child_id')
                          ->where('active_subscriptions.driver_id', '=', $trip->driver_id);
                 })
-                ->leftJoin('schools as sub_schools', 'active_subscriptions.school_id', '=', 'sub_schools.id')
                 ->select(
                     'children.id as child_id',
                     'children.full_name as child_name',
                     'trip_events.action_type',
                     'trip_events.scanned_at',
                     'trip_events.trip_cost',
-                    DB::raw('COALESCE(sub_schools.name, schools.name, "مدرسة الجيل الجديد الدولية") as school_name')
+                    DB::raw('COALESCE(schools.name, "مدرسة الجيل الجديد الدولية") as school_name')
                 )
                 ->get();
 
@@ -450,7 +449,7 @@ class ParentTripService
 
         $subscriptions = ActiveSubscription::whereIn('child_id', $childIds)
             ->where('driver_id', $trip->driver_id)
-            ->with(['child', 'school'])
+            ->with(['child.school'])
             ->get();
 
         $direction = strtolower($trip->trip_type) === 'afternoon' ? 'to_home' : 'to_school';
@@ -469,12 +468,15 @@ class ParentTripService
             $rawPhoto = $c->photo_url ?? null;
             $photoUrl = $rawPhoto ? (str_starts_with($rawPhoto, 'http') ? $rawPhoto : Storage::url($rawPhoto)) : asset('assets/images/default-child.png');
 
+            // Read school name from child->school (reliable) or subscription school
+            $schoolName = optional($c->school)->name ?? optional($sub->school)->name ?? 'المدرسة';
+
             $childrenArray[] = [
                 'child_id'     => $c->id,
                 'child_name'   => $c->full_name ?? $c->name,
                 'child_photo'  => $photoUrl,
                 'child_status' => $event->action_type ?? 'waiting',
-                'school_name'  => optional($sub->school)->name ?? 'المدرسة',
+                'school_name'  => $schoolName,
                 'direction'    => $direction,
             ];
         }
@@ -483,7 +485,11 @@ class ParentTripService
         $driverUser = $driver?->user;
         $vehicle = optional($driver?->vehicles)->first();
         $firstSub = $subscriptions->first();
-        $school = optional($firstSub?->school);
+        // Read school from first child's school (reliable)
+        $school = optional($firstSub?->child?->school);
+        // Fallback pickup coords from subscription
+        $pickupLat = $firstSub?->pickup_lat ?? 32.890000;
+        $pickupLng = $firstSub?->pickup_lng ?? 13.180000;
 
         $driverAvatar = optional($driverUser)->avatar_url ?? optional($driverUser)->photo_url;
         $driverPhotoUrl = $driverAvatar ? (str_starts_with($driverAvatar, 'http') ? $driverAvatar : Storage::url($driverAvatar)) : asset('assets/images/default-driver.png');
@@ -506,8 +512,8 @@ class ParentTripService
             'destination' => [
                 'name' => $direction === 'to_school' ? ($school->name ?? 'المدرسة') : 'المنزل',
                 'type' => $direction === 'to_school' ? 'school' : 'home',
-                'lat'  => (float)($direction === 'to_school' ? ($school->latitude ?? 32.890000) : ($firstSub->pickup_lat ?? 32.890000)),
-                'lng'  => (float)($direction === 'to_school' ? ($school->longitude ?? 13.180000) : ($firstSub->pickup_lng ?? 13.180000)),
+                'lat'  => (float)($direction === 'to_school' ? ($school->lat ?? 32.890000) : ($pickupLat ?? 32.890000)),
+                'lng'  => (float)($direction === 'to_school' ? ($school->lng ?? 13.180000) : ($pickupLng ?? 13.180000)),
             ],
             'started_at'  => $trip->actual_start_time ? Carbon::parse($trip->actual_start_time)->toIso8601String() : null,
             'finished_at' => $trip->completed_at ? Carbon::parse($trip->completed_at)->toIso8601String() : null,
@@ -769,8 +775,8 @@ class ParentTripService
                     'lng' => (float)$driverLng,
                 ],
                 'destination' => [
-                    'lat' => (float)($direction === 'to_school' ? ($school->latitude ?? 32.890000) : ($firstSub->pickup_lat ?? 32.890000)),
-                    'lng' => (float)($direction === 'to_school' ? ($school->longitude ?? 13.180000) : ($firstSub->pickup_lng ?? 13.180000)),
+                    'lat' => (float)($direction === 'to_school' ? ($school->lat ?? 32.890000) : ($firstSub->pickup_lat ?? 32.890000)),
+                    'lng' => (float)($direction === 'to_school' ? ($school->lng ?? 13.180000) : ($firstSub->pickup_lng ?? 13.180000)),
                 ]
             ];
         }
