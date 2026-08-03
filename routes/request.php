@@ -66,6 +66,7 @@ Route::middleware('auth:sanctum')->group(function () {
         
         // المسار الموحد الجديد لجلب طلبات الاشتراك المبدئية بالفلاتر
         Route::get('/requests', [DriverSubscriptionController::class, 'index']); 
+        Route::get('/requests/{id}/trip-details', [DriverSubscriptionController::class, 'tripDetails']);
         Route::get('/requests/{id}', [DriverSubscriptionController::class, 'show']);
         
         // المسار الموحد الجديد لجلب الاشتراكات الفعلية والمثبتة بالفلاتر
@@ -79,7 +80,6 @@ Route::middleware('auth:sanctum')->group(function () {
         
         // 2. مسارات تحتوي على متغيرات (Dynamic Parameters) - توضع أخيراً
         Route::put('/routes/{route}', [DriverRouteController::class, 'update']);
-        Route::get('/requests/{id}', [DriverSubscriptionController::class, 'show']); 
         Route::put('{id}/status', [DriverSubscriptionController::class, 'updateStatus']); 
     });
     

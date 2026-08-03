@@ -138,6 +138,13 @@ class DriverSubscriptionController extends Controller
         ]);
 
         $user   = auth()->user();
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'غير مصرح بالوصول.'
+            ], 401);
+        }
+
         $driver = Driver::where('user_id', $user->id)->first();
 
         if (!$driver) {
@@ -326,8 +333,12 @@ class DriverSubscriptionController extends Controller
      */
     public function show($id): JsonResponse
     {
-        $driver = auth()->user()->driver;
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'غير مصرح بالوصول.'], 401);
+        }
 
+        $driver = $user->driver;
         if (!$driver) {
             return response()->json(['success' => false, 'message' => 'بيانات السائق غير موجودة.'], 403);
         }
@@ -367,8 +378,12 @@ class DriverSubscriptionController extends Controller
      */
     public function tripDetails($id): JsonResponse
     {
-        $driver = auth()->user()->driver;
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'غير مصرح بالوصول.'], 401);
+        }
 
+        $driver = $user->driver;
         if (!$driver) {
             return response()->json(['success' => false, 'message' => 'بيانات السائق غير موجودة.'], 403);
         }
@@ -397,25 +412,25 @@ class DriverSubscriptionController extends Controller
             'pickup_time'  => $subscriptionRequest->pickup_time  ?? null,
             'dropoff_time' => $subscriptionRequest->dropoff_time ?? null,
             'parent'       => [
-                'name'  => $subscriptionRequest->parent->user->name ?? 'غير محدد',
-                'phone' => $subscriptionRequest->parent->user->phone_number ?? $subscriptionRequest->parent->user->phone ?? null,
+                'name'  => $subscriptionRequest->parent?->user?->full_name ?? $subscriptionRequest->parent?->user?->name ?? 'غير محدد',
+                'phone' => $subscriptionRequest->parent?->user?->phone_number ?? $subscriptionRequest->parent?->user?->phone ?? null,
             ],
             'school' => [
-                'id'        => $subscriptionRequest->school->id        ?? null,
-                'name'      => $subscriptionRequest->school->name      ?? 'غير محدد',
-                'address'   => $subscriptionRequest->school->address   ?? null,
-                'latitude'  => (float) ($subscriptionRequest->school->latitude  ?? 0),
-                'longitude' => (float) ($subscriptionRequest->school->longitude ?? 0),
+                'id'        => $subscriptionRequest->school?->id        ?? null,
+                'name'      => $subscriptionRequest->school?->name      ?? 'غير محدد',
+                'address'   => $subscriptionRequest->school?->address   ?? null,
+                'latitude'  => (float) ($subscriptionRequest->school?->lat  ?? $subscriptionRequest->school?->latitude  ?? 0),
+                'longitude' => (float) ($subscriptionRequest->school?->lng ?? $subscriptionRequest->school?->longitude ?? 0),
             ],
             'children' => $subscriptionRequest->children->map(function ($child) {
                 return [
                     'id'           => $child->id,
-                    'name'         => $child->name ?? 'طفل',
+                    'name'         => $child->full_name ?? $child->name ?? 'طفل',
                     'gender'       => $child->gender ?? null,
-                    'home_address' => $child->address->label ?? $child->address->address ?? 'العنوان غير محدد',
-                    'latitude'     => (float) ($child->address->latitude  ?? $child->latitude  ?? 0),
-                    'longitude'    => (float) ($child->address->longitude ?? $child->longitude ?? 0),
-                    'notes'        => $child->notes ?? null,
+                    'home_address' => $child->pivot?->home_label ?? $child->address?->label ?? $child->address?->address ?? 'العنوان غير محدد',
+                    'latitude'     => (float) ($child->pivot?->home_lat  ?? $child->address?->lat  ?? $child->latitude  ?? 0),
+                    'longitude'    => (float) ($child->pivot?->home_lng ?? $child->address?->lng ?? $child->longitude ?? 0),
+                    'notes'        => $child->pivot?->child_notes ?? $child->notes ?? null,
                 ];
             })
         ];

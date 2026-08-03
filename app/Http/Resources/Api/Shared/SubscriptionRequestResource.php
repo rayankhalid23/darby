@@ -99,7 +99,9 @@ class SubscriptionRequestResource extends JsonResource
         $totalAmount = (float) ($this->total_price ?? $this->total_amount ?? $this->contract->total_price ?? 0);
         $count = $items->count() > 0 ? $items->count() : 1;
 
-        return $items->map(function ($item) use ($totalAmount, $count) {
+        $contractId = $this->contract->id ?? null;
+
+        return $items->map(function ($item) use ($totalAmount, $count, $contractId) {
             $child = $item->child ?? $item;
 
             // 1. تواريخ ومدد الاشتراك الخاصة بالطفل (مع Fallback لبيانات الطلب الرئيسية)
@@ -129,30 +131,51 @@ class SubscriptionRequestResource extends JsonResource
                 $item->price 
                 ?? $item->child_price 
                 ?? $item->cost 
+                ?? $item->pivot?->price_per_child
                 ?? $item->pivot?->price 
                 ?? $child->subscription_price 
                 ?? ($totalAmount / $count)
             );
 
             // 5. جلب عنوان منزل الطفل
-            $pickupAddress = $item->pickup_label 
+            $pickupAddress = $item->pivot?->home_label
+                ?? $item->pickup_label 
                 ?? $child->address?->label 
                 ?? $child->address 
                 ?? $child->home_address 
                 ?? $this->parent?->address?->label 
                 ?? 'غير محدد';
 
-            $pickupLat = $item->pickup_lat 
+            $pickupLat = $item->pivot?->home_lat
+                ?? $item->pickup_lat 
                 ?? $child->latitude 
                 ?? $child->address?->lat 
                 ?? $this->parent?->address?->lat 
                 ?? 0;
 
-            $pickupLng = $item->pickup_lng 
+            $pickupLng = $item->pivot?->home_lng
+                ?? $item->pickup_lng 
                 ?? $child->longitude 
                 ?? $child->address?->lng 
                 ?? $this->parent?->address?->lng 
                 ?? 0;
+
+            // جلب معرّف الاشتراك النشط إن وجد
+            $activeSubId = null;
+            if ($contractId && isset($child->id)) {
+                $activeSub = null;
+                if ($this->contract && $this->contract->relationLoaded('activeSubscriptions')) {
+                    $activeSub = $this->contract->activeSubscriptions->firstWhere('child_id', $child->id);
+                }
+                if (!$activeSub) {
+                    $activeSub = \App\Models\Shared\ActiveSubscription::where('contract_id', $contractId)
+                        ->where('child_id', $child->id)
+                        ->first();
+                }
+                if ($activeSub) {
+                    $activeSubId = $activeSub->id;
+                }
+            }
 
             return [
                 'id'          => $child->id ?? null,
@@ -164,6 +187,7 @@ class SubscriptionRequestResource extends JsonResource
 
                 // 📌 بيانات الاشتراك الخاصة بهذا الطفل فقط
                 'subscription' => [
+                    'id'                 => $activeSubId,
                     'type'               => $subscriptionType, // مثل: monthly, term, yearly
                     'trip_type'          => $tripType,         // مثل: one_way_go (ذهاب), one_way_return (إياد), two_way (ذهاب وإياب)
                     'start_date'         => $childStartDate ? Carbon::parse($childStartDate)->format('Y-m-d') : null,

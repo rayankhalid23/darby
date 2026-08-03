@@ -59,6 +59,15 @@ Route::middleware('api')
                     return null;
                 }
 
+                // عدم التوثيق (Unauthenticated)
+                if ($e instanceof \Illuminate\Auth\AuthenticationException) {
+                    return response()->json([
+                        'status'     => false,
+                        'error_code' => 'UNAUTHENTICATED',
+                        'message'    => 'غير مصرح بالوصول، يرجى تسجيل الدخول أولاً.'
+                    ], 401);
+                }
+
                 // [الحالة 1]: ضغط وحمل زائد على السيرفر (تخطي الـ Rate Limit)
                 if ($e instanceof TooManyRequestsHttpException) {
                     return response()->json([

@@ -165,20 +165,7 @@ class SubscriptionRequestService
 
     private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent): SubscriptionRequest
     {
-        // 1. تحديث حالة الطلب الحالي
-        $req->update(['status' => SubscriptionRequest::STATUS_ACCEPTED]);
-
-        // 2. إلغاء الطلبات الأخرى المعلقة لنفس العميل ونفس التوقيت
-        SubscriptionRequest::where('parent_id', $req->parent_id)
-            ->where('timing', $req->timing)
-            ->where('status', SubscriptionRequest::STATUS_PENDING)
-            ->where('id', '!=', $req->id)
-            ->update(['status' => SubscriptionRequest::STATUS_CANCELLED]);
-
-        // 3. توليد العقد
-        $contract = $this->contractService->generateContract($req);
-
-        // 4. التحقق من حالة مركبة السائق
+        // 1. التحقق من وجود وحالة مركبة السائق وسعتها قبل أي تعديل
         $vehicle = \App\Models\Driver\Vehicle::where('driver_id', $req->driver_id)
             ->where('status', 'Active')
             ->first();
@@ -186,6 +173,32 @@ class SubscriptionRequestService
         if (!$vehicle) {
             throw new Exception("تعذر إتمام العملية: لا توجد مركبة نشطة مرتبطة بالسائق.");
         }
+
+        // حساب المقاعد المتاحة مقارنة بطلب الأطفال
+        $requiredSeats = $req->children_count > 0 ? $req->children_count : ($req->children ? $req->children->count() : 1);
+        $currentActiveCount = ActiveSubscription::where('driver_id', $req->driver_id)
+            ->where('status', 'active')
+            ->count();
+
+        $totalCapacity  = $vehicle->capacity_manual ?? 0;
+        $availableSeats = max(0, $totalCapacity - $currentActiveCount);
+
+        if ($availableSeats < $requiredSeats) {
+            throw new Exception("تعذر قبول الطلب: عدد المقاعد المتاحة في المركبة ({$availableSeats}) أقل من عدد الأطفال في الطلب ({$requiredSeats}).");
+        }
+
+        // 2. تحديث حالة الطلب الحالي إلى مقبول
+        $req->update(['status' => SubscriptionRequest::STATUS_ACCEPTED]);
+
+        // 3. إلغاء الطلبات الأخرى المعلقة لنفس العميل ونفس التوقيت
+        SubscriptionRequest::where('parent_id', $req->parent_id)
+            ->where('timing', $req->timing)
+            ->where('status', SubscriptionRequest::STATUS_PENDING)
+            ->where('id', '!=', $req->id)
+            ->update(['status' => SubscriptionRequest::STATUS_CANCELLED]);
+
+        // 4. توليد العقد
+        $contract = $this->contractService->generateContract($req);
 
         // 5. منطق حساب المسار الذكي عبر OSRM
         $distanceKm = 0;
@@ -197,7 +210,7 @@ class SubscriptionRequestService
 
             $driverPos = ['lat' => (float)($req->driver->current_lat ?? 0), 'lng' => (float)($req->driver->current_lng ?? 0)];
             $childPos  = ['lat' => (float)($req->children->first()->pivot->home_lat ?? $req->pickup_lat ?? 0), 'lng' => (float)($req->children->first()->pivot->home_lng ?? $req->pickup_lng ?? 0)];
-            $schoolPos = ['lat' => (float)($req->school->latitude ?? $req->dropoff_lat ?? 0), 'lng' => (float)($req->school->longitude ?? $req->dropoff_lng ?? 0)];
+            $schoolPos = ['lat' => (float)($req->school->lat ?? $req->school->latitude ?? $req->dropoff_lat ?? 0), 'lng' => (float)($req->school->lng ?? $req->school->longitude ?? $req->dropoff_lng ?? 0)];
 
             $routeData = $osrm->calculateRoute([$driverPos, $childPos, $schoolPos]);
 
@@ -216,7 +229,7 @@ class SubscriptionRequestService
         $routeType = ($timingUpper === 'EVENING' || $timingUpper === 'AFTERNOON') ? 'Afternoon' : 'Morning';
 
         // 6. إنشاء سجل المسار
-        \App\Models\Shared\Route::create([
+        $route = \App\Models\Shared\Route::create([
             'contract_id'        => $contract->id,
             'driver_id'          => $req->driver_id,
             'vehicle_id'         => $vehicle->id,
@@ -229,8 +242,8 @@ class SubscriptionRequestService
             'status'             => 'Active'
         ]);
 
-        // 7. تفعيل اشتراكات الأطفال لجدول active_subscriptions
-        $this->createActiveSubscriptions($req, $contract);
+        // 7. تفعيل اشتراكات الأطفال لجدول active_subscriptions وتفريغ المقاعد
+        $this->createActiveSubscriptions($req, $contract, $route);
 
         // 8. إرسال إشعار القبول مع حمايته من إلغاء الـ Transaction
         try {
@@ -281,7 +294,7 @@ class SubscriptionRequestService
     // 4. إنشاء سجلات الاشتراكات النشطة (مطابق لجدول active_subscriptions)
     // ============================================================
 
-    private function createActiveSubscriptions(SubscriptionRequest $req, Contract $contract): void
+    private function createActiveSubscriptions(SubscriptionRequest $req, Contract $contract, ?\App\Models\Shared\Route $route = null): void
     {
         $pickupTime  = $req->pickup_time ?? '07:00:00';
         $dropoffTime = $req->dropoff_time ?? '14:00:00';
@@ -295,12 +308,13 @@ class SubscriptionRequestService
             $pickupLng  = $child->pivot->home_lng ?? $req->pickup_lng ?? null;
             $pickupLbl  = $child->pivot->home_label ?? $req->pickup_label ?? 'الموقع السكني';
 
-            $dropoffLat = $child->pivot->school_lat ?? $req->school->latitude ?? $req->dropoff_lat ?? null;
-            $dropoffLng = $child->pivot->school_lng ?? $req->school->longitude ?? $req->dropoff_lng ?? null;
+            $dropoffLat = $child->pivot->school_lat ?? $req->school->lat ?? $req->school->latitude ?? $req->dropoff_lat ?? null;
+            $dropoffLng = $child->pivot->school_lng ?? $req->school->lng ?? $req->school->longitude ?? $req->dropoff_lng ?? null;
             $dropoffLbl = $child->pivot->school_label ?? $req->school->name ?? $req->dropoff_label ?? 'المدرسة';
 
             ActiveSubscription::create([
                 'contract_id'   => $contract->id,
+                'route_id'      => $route?->id,
                 'status'        => 'active',                 // القيمة المطلوبة في قاعدة البيانات
                 'child_id'      => $child->id,
                 'driver_id'     => $req->driver_id,
@@ -490,7 +504,7 @@ class SubscriptionRequestService
     {
         $driver = Driver::where('user_id', $userId)->first();
         if (!$driver) {
-            throw new Exception('لم يتم العثور على ملف السائق الخاص بك.');
+            throw new Exception('لم يتم العثور على ملف السائق الخاص بك.', 403);
         }
 
         $query = SubscriptionRequest::where('driver_id', $driver->id)
