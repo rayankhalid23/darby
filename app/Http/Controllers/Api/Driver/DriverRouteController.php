@@ -323,12 +323,22 @@ class DriverRouteController extends Controller
     public function recommendations($subscriptionId): JsonResponse
     {
         try {
-            $user = Auth::user();
+            $user   = Auth::user();
             $driver = $user?->driver;
 
             $sub = ActiveSubscription::where('id', $subscriptionId)
                 ->where('driver_id', $driver->id)
+                ->with('contract')          // ← مطلوب لقراءة timing في الخدمة
                 ->firstOrFail();
+
+            // ✅ التحقق من أن الاشتراك لم يُسند لمسار مسبقاً
+            if ($sub->route_id !== null) {
+                return $this->errorResponse(
+                    'هذا الاشتراك تم إسناده لمسار بالفعل.',
+                    'ALREADY_ASSIGNED',
+                    400
+                );
+            }
 
             $recommendations = $this->recommendationService->getRecommendationsForSubscription($sub);
 

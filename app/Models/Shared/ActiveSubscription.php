@@ -19,7 +19,6 @@ class ActiveSubscription extends Model
         'driver_id',
         'route_id',
         'parent_id',
-        'school_id',
         'pickup_lat',
         'pickup_lng',
         'pickup_label',

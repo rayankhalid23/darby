@@ -212,13 +212,20 @@ class RouteRecommendationService
             $reasons = [];
             $warnings = [];
 
-            $subTripType = strtolower($sub->pickup_time ? 'morning' : 'morning');
-            if (strtolower($route->route_type) === $subTripType) {
+            // ✅ قراءة الفترة الفعلية من العقد المرتبط بالاشتراك (بدلاً من تثبيتها على morning)
+            $subTimingRaw = $sub->contract?->timing ?? 'morning';
+            $subTripType  = in_array(strtolower($subTimingRaw), ['morning', 'صباح', 'both'])
+                ? 'morning'
+                : 'afternoon';
+
+            // ✅ بدلاً من حذف المسار المختلف، نخصم نقاطاً فيظهر كـ other_routes مع تحذير
+            $isSameTiming = (strtolower($route->route_type) === $subTripType);
+            if (!$isSameTiming) {
+                $score -= 30;
+                $warnings[] = 'فترة المسار مختلفة عن فترة الاشتراك';
+            } else {
                 $score += 20;
                 $reasons[] = 'نفس الفترة الزمنية للرحلة';
-            } else {
-                $warnings[] = 'اختلاف الفترة الزمنية بين الاشتراك والمسار';
-                continue;
             }
 
             if ($metrics['available_seats'] > 0) {

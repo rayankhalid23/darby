@@ -19,62 +19,122 @@ class DashboardController extends Controller
 
     /**
      * GET /api/admin/dashboard/stats
-     * يُرجع إحصائيات الداشبورد الأربعة الرئيسية
+     * يُرجع إحصائيات الداشبورد الرئيسية السبعة:
+     * 1. إجمالي المستخدمون
+     * 2. إجمالي السائقين المفعلين
+     * 3. إجمالي أولياء الأمور
+     * 4. إجمالي الأطفال المشتركون في رحلات
+     * 5. إجمالي الاشتراكات اليومية
+     * 6. إجمالي الاشتراكات الشهرية
+     * 7. إجمالي السائقون الذين لديهم رحلات حالياً
      */
     public function stats(): JsonResponse
     {
-        // إجمالي مستخدمي المنصة (الكل: أولياء أمور + سائقين + إداريين)
-        $totalUsers = User::count();
+        try {
+            // 1. إجمالي مستخدمي المنصة (أولياء أمور + سائقين + إداريين)
+            $totalUsers = User::count();
 
-        // السائقين المستقلين المفعلين (الحساب مقبول ومفعّل)
-        $activeDrivers = Driver::whereHas('user', fn($q) => $q->where('is_active', true))
-            ->where('status', 'approved')
-            ->count();
+            // 2. السائقين المستقلين المفعلين (حساب السائق مقبول ومفعل)
+            $activeDrivers = Driver::whereHas('user', fn($q) => $q->where('is_active', true))
+                ->whereIn('status', ['Approved', 'approved', 'Active', 'active'])
+                ->count();
 
-        // الاشتراكات الشهرية النشطة حالياً
-        $activeSubscriptions = ActiveSubscription::where('status', 'active')->count();
+            // 3. إجمالي أولياء الأمور
+            $totalParents = \App\Models\Parent\ParentModel::count();
 
-        // الرحلات الحية الجارية الآن
-        $activeTrips = Trip::where('status', 'in_progress')->count();
+            // 4. إجمالي الأطفال المشتركون في رحلات (الذين لديهم اشتراكات نشطة)
+            $subscribedChildren = ActiveSubscription::where('status', 'active')
+                ->whereNotNull('child_id')
+                ->distinct('child_id')
+                ->count('child_id');
 
-        // إحصائيات إضافية للتغيير النسبي
-        $lastWeekUsers = User::where('created_at', '>=', now()->subWeek())->count();
-        $lastWeekDrivers = Driver::whereHas('user', fn($q) => $q->where('created_at', '>=', now()->subWeek()))->count();
+            // 5. إجمالي الاشتراكات اليومية النشطة
+            $dailySubscriptions = ActiveSubscription::where('status', 'active')
+                ->whereHas('contract', fn($q) => $q->whereRaw('LOWER(subscription_type) = ?', ['daily']))
+                ->count();
 
-        $userChangePercent = $totalUsers > 0
-            ? round(($lastWeekUsers / max($totalUsers, 1)) * 100, 1)
-            : 0;
+            // 6. إجمالي الاشتراكات الشهرية النشطة
+            $monthlySubscriptions = ActiveSubscription::where('status', 'active')
+                ->whereHas('contract', fn($q) => $q->whereRaw('LOWER(subscription_type) = ?', ['monthly']))
+                ->count();
 
-        return response()->json([
-            'success' => true,
-            'data'    => [
-                'total_users' => [
-                    'value'   => number_format($totalUsers),
-                    'raw'     => $totalUsers,
-                    'change'  => "+{$userChangePercent}% الأسبوع الماضي",
-                    'trend'   => 'up',
+            // 7. إجمالي السائقين الذين عندهم رحلات جارية حالياً
+            $driversWithActiveTrips = Trip::where('status', 'in_progress')
+                ->whereNotNull('driver_id')
+                ->distinct('driver_id')
+                ->count('driver_id');
+
+            // إحصائيات إضافية للتغيير النسبي
+            $lastWeekUsers = User::where('created_at', '>=', now()->subWeek())->count();
+            $lastWeekDrivers = Driver::whereHas('user', fn($q) => $q->where('created_at', '>=', now()->subWeek()))->count();
+
+            $userChangePercent = $totalUsers > 0
+                ? round(($lastWeekUsers / max($totalUsers, 1)) * 100, 1)
+                : 0;
+
+            return response()->json([
+                'success' => true,
+                'message' => 'تم جلب الإحصائيات الشاملة بنجاح.',
+                'data'    => [
+                    'total_users' => [
+                        'label'   => 'إجمالي المستخدمين',
+                        'value'   => number_format($totalUsers),
+                        'raw'     => $totalUsers,
+                        'change'  => "+{$userChangePercent}% الأسبوع الماضي",
+                        'trend'   => 'up',
+                    ],
+                    'active_drivers' => [
+                        'label'   => 'إجمالي السائقين المفعلين',
+                        'value'   => number_format($activeDrivers),
+                        'raw'     => $activeDrivers,
+                        'change'  => $lastWeekDrivers > 0 ? "+{$lastWeekDrivers} سائقين جدد" : 'لا جديد هذا الأسبوع',
+                        'trend'   => $lastWeekDrivers > 0 ? 'up' : 'neutral',
+                    ],
+                    'total_parents' => [
+                        'label'   => 'إجمالي أولياء الأمور',
+                        'value'   => number_format($totalParents),
+                        'raw'     => $totalParents,
+                        'change'  => 'مسجلين في المنصة',
+                        'trend'   => 'info',
+                    ],
+                    'subscribed_children' => [
+                        'label'   => 'إجمالي الأطفال المشتركين في الرحلات',
+                        'value'   => number_format($subscribedChildren),
+                        'raw'     => $subscribedChildren,
+                        'change'  => 'اشتراكات نشطة',
+                        'trend'   => 'info',
+                    ],
+                    'daily_subscriptions' => [
+                        'label'   => 'إجمالي الاشتراكات اليومية',
+                        'value'   => number_format($dailySubscriptions),
+                        'raw'     => $dailySubscriptions,
+                        'change'  => 'اشتراكات يومية نشطة',
+                        'trend'   => 'info',
+                    ],
+                    'monthly_subscriptions' => [
+                        'label'   => 'إجمالي الاشتراكات الشهرية',
+                        'value'   => number_format($monthlySubscriptions),
+                        'raw'     => $monthlySubscriptions,
+                        'change'  => 'اشتراكات شهرية نشطة',
+                        'trend'   => 'info',
+                    ],
+                    'drivers_with_active_trips' => [
+                        'label'   => 'إجمالي السائقين الذين لديهم رحلات حالياً',
+                        'value'   => number_format($driversWithActiveTrips),
+                        'raw'     => $driversWithActiveTrips,
+                        'change'  => 'رحلات حية جارية',
+                        'trend'   => 'live',
+                    ],
                 ],
-                'active_drivers' => [
-                    'value'   => number_format($activeDrivers),
-                    'raw'     => $activeDrivers,
-                    'change'  => $lastWeekDrivers > 0 ? "+{$lastWeekDrivers} سائقين جدد" : 'لا جديد هذا الأسبوع',
-                    'trend'   => $lastWeekDrivers > 0 ? 'up' : 'neutral',
-                ],
-                'active_subscriptions' => [
-                    'value'   => number_format($activeSubscriptions),
-                    'raw'     => $activeSubscriptions,
-                    'change'  => 'نشطة حالياً',
-                    'trend'   => 'info',
-                ],
-                'active_trips' => [
-                    'value'   => $activeTrips > 0 ? "{$activeTrips} رحلات" : 'لا رحلات',
-                    'raw'     => $activeTrips,
-                    'change'  => 'متابعة مباشرة في طرابلس',
-                    'trend'   => 'live',
-                ],
-            ],
-            'generated_at' => now()->toISOString(),
-        ]);
+                'generated_at' => now()->toISOString(),
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'حدث خطأ أثناء جلب الإحصائيات: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     // =========================================================================
