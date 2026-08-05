@@ -5,6 +5,7 @@ namespace App\Services\Trip;
 use App\Models\Shared\Route;
 use App\Models\Shared\Trip;
 use App\Models\Shared\ActiveSubscription;
+use App\Services\Shared\OsrmRoutingService;
 use Carbon\Carbon;
 use Exception;
 
@@ -185,7 +186,154 @@ class RouteRecommendationService
     }
 
     /**
-     * حساب وتوليد التوصيات الهندسية لأفضل مسار يناسب اشتراك معين
+     * 1️⃣ معامل الازدحام بناءً على وقت المرور
+     * μ = 1.15 (06:30-07:15) | 1.30 (07:15-08:00) | 1.00 (غيرها)
+     */
+    private function getTrafficMultiplier(string $timeHHMM): float
+    {
+        try {
+            $minutes = (int) substr($timeHHMM, 0, 2) * 60 + (int) substr($timeHHMM, 3, 2);
+        } catch (\Throwable) {
+            return 1.00;
+        }
+        if ($minutes >= 390 && $minutes < 435) return 1.15; // 06:30 – 07:15
+        if ($minutes >= 435 && $minutes < 480) return 1.30; // 07:15 – 08:00
+        return 1.00;
+    }
+
+    /**
+     * 2️⃣ تحويل HH:MM إلى دقائق منذ منتصف الليل
+     */
+    private function toMinutes(string $timeHHMM): int
+    {
+        $parts = explode(':', $timeHHMM);
+        return ((int)($parts[0] ?? 0)) * 60 + ((int)($parts[1] ?? 0));
+    }
+
+    /**
+     * 3️⃣ تحويل الدقائق إلى HH:MM
+     */
+    private function fromMinutes(int $minutes): string
+    {
+        $minutes = max(0, $minutes);
+        return sprintf('%02d:%02d', intdiv($minutes, 60), $minutes % 60);
+    }
+
+    /**
+     * 4️⃣ احسب ETA التراكمية لكل عقدة
+     */
+    private function calculateEtas(array $nodes, int $departureMinutes, OsrmRoutingService $osrm): array
+    {
+        $currentTime = $departureMinutes;
+
+        foreach ($nodes as $i => &$node) {
+            if ($i === 0) {
+                $node['eta_minutes'] = $currentTime + ($node['service_time'] ?? 3);
+            } else {
+                $prev = $nodes[$i - 1];
+                $eta  = $this->fromMinutes($currentTime);
+                $mu   = $this->getTrafficMultiplier($eta);
+
+                $matrix = $osrm->getDistanceMatrix(
+                    ['lat' => $prev['lat'], 'lng' => $prev['lng']],
+                    ['lat' => $node['lat'], 'lng' => $node['lng']]
+                );
+
+                $travelMin = (int) ceil(($matrix['duration'] * $mu) / 60);
+                $currentTime += $travelMin + ($node['service_time'] ?? 3);
+                $node['eta_minutes'] = $currentTime;
+            }
+            $node['eta'] = $this->fromMinutes($node['eta_minutes']);
+
+            if (($node['type'] ?? '') === 'dropoff') {
+                $bellMin   = $this->toMinutes($node['bell_time'] ?? '08:00');
+                $node['slack'] = ($bellMin - 15) - $node['eta_minutes'];
+            }
+            $currentTime = $node['eta_minutes'];
+        }
+        unset($node);
+        return $nodes;
+    }
+
+    /**
+     * 5️⃣ فحص القيود الصارمة (Hard Constraints)
+     */
+    private function validateHardConstraints(array $nodes, array $originalDropoffEtas): bool
+    {
+        foreach ($nodes as $node) {
+            if (($node['type'] ?? '') !== 'dropoff') continue;
+
+            $bellMin = $this->toMinutes($node['bell_time'] ?? '08:00');
+            $eta     = $node['eta_minutes'];
+
+            // قيد 5.1: نافذة الوصول للمدرسة [BellTime-60, BellTime-15]
+            if ($eta < ($bellMin - 60) || $eta > ($bellMin - 15)) {
+                return false;
+            }
+
+            // قيد 5.2: حماية تأخير الأطفال القدامى (≤ 15 دقيقة)
+            $childId = $node['child_id'] ?? null;
+            if ($childId && isset($originalDropoffEtas[$childId])) {
+                $delay = $eta - $originalDropoffEtas[$childId];
+                if ($delay > 15) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 6️⃣ دالة الهدف: متوسط الـ Slack Time (كلما زاد كان أفضل)
+     */
+    private function calculateObjectiveScore(array $nodes): float
+    {
+        $slacks = array_filter(array_column($nodes, 'slack'), fn($s) => $s !== null);
+        if (empty($slacks)) return 0.0;
+        return array_sum($slacks) / count($slacks);
+    }
+
+    /**
+     * 7️⃣ محاكاة إدراج طفل جديد في المسار (Insertion Heuristic)
+     * تُجرِّب كل التباديل وتختار الأفضل وفق دالة الهدف
+     */
+    private function simulateChildInsertion(
+        array $currentNodes,
+        array $newPickup,
+        array $newDropoff,
+        int   $departureMinutes,
+        OsrmRoutingService $osrm,
+        array $originalDropoffEtas
+    ): ?array {
+        $m = count($currentNodes);
+        $bestArrangement = null;
+        $bestScore       = PHP_INT_MIN;
+
+        for ($i = 0; $i <= $m; $i++) {
+            for ($j = $i + 1; $j <= $m + 1; $j++) {
+                $candidate = $currentNodes;
+                array_splice($candidate, $i, 0, [$newPickup]);
+                array_splice($candidate, $j, 0, [$newDropoff]);
+
+                $candidate = $this->calculateEtas($candidate, $departureMinutes, $osrm);
+
+                if (!$this->validateHardConstraints($candidate, $originalDropoffEtas)) {
+                    continue;
+                }
+
+                $score = $this->calculateObjectiveScore($candidate);
+                if ($score > $bestScore) {
+                    $bestScore       = $score;
+                    $bestArrangement = $candidate;
+                }
+            }
+        }
+
+        return $bestArrangement;
+    }
+
+    /**
+     * ✅ الدالة الرئيسية: توصيات المسار بخوارزمية VRPTW
      */
     public function getRecommendationsForSubscription(ActiveSubscription $sub): array
     {
@@ -200,89 +348,184 @@ class RouteRecommendationService
             return [
                 'recommended_route' => null,
                 'message'           => 'لا يوجد مسار مناسب حالياً. يمكنك إنشاء مسار جديد.',
-                'other_routes'      => []
+                'other_routes'      => [],
+                'rejected_routes'   => [],
             ];
         }
 
-        $scoredRoutes = [];
+        $osrm = new OsrmRoutingService();
+
+        // بناء نقطتي الطفل الجديد
+        $newPickup = [
+            'node_id'      => 'NEW_PICKUP',
+            'child_id'     => $sub->child_id,
+            'type'         => 'pickup',
+            'lat'          => (float) ($sub->pickup_lat  ?? 0),
+            'lng'          => (float) ($sub->pickup_lng  ?? 0),
+            'service_time' => 3,
+            'bell_time'    => $sub->school?->start_time ?? '07:45',
+            'status'       => 'pending',
+        ];
+
+        $newDropoff = [
+            'node_id'      => 'NEW_DROPOFF',
+            'child_id'     => $sub->child_id,
+            'type'         => 'dropoff',
+            'lat'          => (float) ($sub->dropoff_lat ?? $sub->school?->lat ?? 0),
+            'lng'          => (float) ($sub->dropoff_lng ?? $sub->school?->lng ?? 0),
+            'service_time' => 2,
+            'bell_time'    => $sub->school?->start_time ?? '07:45',
+            'status'       => 'pending',
+        ];
+
+        $feasible  = [];
+        $rejected  = [];
+        $others    = [];
 
         foreach ($routes as $route) {
             $metrics = $this->calculateRouteMetrics($route);
-            $score = 50;
-            $reasons = [];
-            $warnings = [];
 
-            // ✅ قراءة الفترة الفعلية من العقد المرتبط بالاشتراك (بدلاً من تثبيتها على morning)
+            // فحص الفترة
             $subTimingRaw = $sub->contract?->timing ?? 'morning';
             $subTripType  = in_array(strtolower($subTimingRaw), ['morning', 'صباح', 'both'])
-                ? 'morning'
-                : 'afternoon';
+                ? 'morning' : 'afternoon';
 
-            // ✅ بدلاً من حذف المسار المختلف، نخصم نقاطاً فيظهر كـ other_routes مع تحذير
             $isSameTiming = (strtolower($route->route_type) === $subTripType);
+
             if (!$isSameTiming) {
-                $score -= 30;
-                $warnings[] = 'فترة المسار مختلفة عن فترة الاشتراك';
+                $others[] = [
+                    'id'             => (int) $route->id,
+                    'name'           => $route->route_name,
+                    'score'          => null,
+                    'is_feasible'    => false,
+                    'rejection_reason' => 'فترة المسار مختلفة عن فترة الاشتراك',
+                ];
+                continue;
+            }
+
+            // فحص السعة المبدئية
+            if ($metrics['available_seats'] <= 0) {
+                $rejected[] = [
+                    'id'               => (int) $route->id,
+                    'name'             => $route->route_name,
+                    'is_feasible'      => false,
+                    'rejection_reason' => 'لا توجد مقاعد متاحة في هذا المسار',
+                ];
+                continue;
+            }
+
+            // بناء الـ nodes الحالية من optimized_points
+            $currentNodes = [];
+            $rawPoints    = $route->optimized_points ?? [];
+            if (is_string($rawPoints)) $rawPoints = json_decode($rawPoints, true) ?? [];
+
+            $originalDropoffEtas = [];
+            foreach ($rawPoints as $pt) {
+                $node = [
+                    'node_id'      => $pt['node_id']      ?? uniqid('N_'),
+                    'child_id'     => $pt['child_id']     ?? null,
+                    'type'         => $pt['type']         ?? 'pickup',
+                    'lat'          => (float) ($pt['lat'] ?? 0),
+                    'lng'          => (float) ($pt['lng'] ?? 0),
+                    'service_time' => (int) ($pt['service_time'] ?? 3),
+                    'bell_time'    => $pt['bell_time']    ?? '07:45',
+                    'status'       => $pt['status']       ?? 'pending',
+                    'eta_minutes'  => 0,
+                    'eta'          => '00:00',
+                    'slack'        => null,
+                ];
+                $currentNodes[] = $node;
+            }
+
+            $startTime      = $route->start_time ?? '07:00:00';
+            $departureMins  = $this->toMinutes(substr($startTime, 0, 5));
+
+            // حساب الـ ETA الأصلية لحماية الأطفال القدامى
+            if (!empty($currentNodes)) {
+                $original = $this->calculateEtas($currentNodes, $departureMins, $osrm);
+                foreach ($original as $n) {
+                    if ($n['type'] === 'dropoff' && $n['child_id']) {
+                        $originalDropoffEtas[$n['child_id']] = $n['eta_minutes'];
+                    }
+                }
+            }
+
+            // تجاهل إذا الإحداثيات صفرية
+            if ($newPickup['lat'] == 0 || $newPickup['lng'] == 0) {
+                // Fallback: استخدام النقاط المبسطة
+                $feasible[] = [
+                    'id'             => (int) $route->id,
+                    'name'           => $route->route_name,
+                    'score'          => 70.0,
+                    'is_feasible'    => true,
+                    'simulated_nodes'=> [],
+                    'reason'         => ['لم يتم توفير إحداثيات الطفل — تم القبول مبدئياً'],
+                    'warnings'       => [],
+                    'metrics'        => $metrics,
+                ];
+                continue;
+            }
+
+            // تشغيل محاكاة VRPTW
+            $bestNodes = $this->simulateChildInsertion(
+                $currentNodes,
+                $newPickup,
+                $newDropoff,
+                $departureMins,
+                $osrm,
+                $originalDropoffEtas
+            );
+
+            if ($bestNodes !== null) {
+                $score = $this->calculateObjectiveScore($bestNodes);
+                $feasible[] = [
+                    'id'              => (int) $route->id,
+                    'name'            => $route->route_name,
+                    'score'           => round($score, 2),
+                    'is_feasible'     => true,
+                    'simulated_nodes' => $bestNodes,
+                    'reason'          => [
+                        'تم التحقق من نوافذ الوصول للمدارس',
+                        'يوجد مقعد متاح في المركبة',
+                        'تضمين الطفل الجديد لا يتأخر بأي طفل آخر',
+                    ],
+                    'warnings'        => [],
+                    'metrics'         => $metrics,
+                ];
             } else {
-                $score += 20;
-                $reasons[] = 'نفس الفترة الزمنية للرحلة';
+                $rejected[] = [
+                    'id'               => (int) $route->id,
+                    'name'             => $route->route_name,
+                    'is_feasible'      => false,
+                    'rejection_reason' => 'تعارض زمني: إضافة الطفل تتجاوز نوافذ الوصول المسموحة لأحد الأطفال الحاليين',
+                ];
             }
-
-            if ($metrics['available_seats'] > 0) {
-                $score += 15;
-                $reasons[] = 'يوجد مقعد متاح في المركبة';
-            } else {
-                $score -= 30;
-                $warnings[] = 'المقاعد المتبقية قليلة أو ممتلئة';
-            }
-
-            $sameSchoolCount = $route->activeSubscriptions->where('school_id', $sub->school_id)->count();
-            if ($sameSchoolCount > 0) {
-                $score += 15;
-                $reasons[] = 'يحتوي على أطفال يدرسون بنفس المدرسة';
-            }
-
-            $reasons[] = 'ضمن النطاق الجغرافي للمسار';
-            $score = min(99, max(40, $score));
-
-            $scoredRoutes[] = [
-                'id'       => (int) $route->id,
-                'name'     => $route->route_name,
-                'score'    => $score,
-                'reasons'  => $reasons,
-                'warnings' => $warnings,
-                'metrics'  => $metrics
-            ];
         }
 
-        usort($scoredRoutes, fn($a, $b) => $b['score'] <=> $a['score']);
+        // ترتيب تنازلي بالـ score
+        usort($feasible, fn($a, $b) => $b['score'] <=> $a['score']);
 
-        if (empty($scoredRoutes)) {
-            return [
-                'recommended_route' => null,
-                'message'           => 'لا يوجد مسار مطابق لهذه الفترة.',
-                'other_routes'      => []
-            ];
-        }
-
-        $best = array_shift($scoredRoutes);
-
-        $otherRoutes = array_map(function ($r) {
-            return [
-                'id'      => $r['id'],
-                'name'    => $r['name'],
-                'warning' => !empty($r['warnings']) ? implode(', ', $r['warnings']) : 'قد يسبب زيادة في زمن المسار'
-            ];
-        }, $scoredRoutes);
+        $best  = !empty($feasible) ? array_shift($feasible) : null;
 
         return [
-            'recommended_route' => [
-                'id'     => $best['id'],
-                'name'   => $best['name'],
-                'score'  => $best['score'],
-                'reason' => $best['reasons']
-            ],
-            'other_routes' => $otherRoutes
+            'recommended_route' => $best ? [
+                'id'              => $best['id'],
+                'name'            => $best['name'],
+                'score'           => $best['score'],
+                'reason'          => $best['reason'],
+                'warnings'        => $best['warnings'],
+                'simulated_nodes' => $best['simulated_nodes'],
+                'metrics'         => $best['metrics'],
+            ] : null,
+            'other_routes'    => array_map(fn($r) => [
+                'id'    => $r['id'],
+                'name'  => $r['name'],
+                'score' => $r['score'],
+            ], $feasible),
+            'rejected_routes' => array_merge($rejected, $others),
+            'message'         => $best
+                ? 'تم إيجاد مسار مناسب وفق خوارزمية VRPTW'
+                : 'لا يوجد مسار متوافق. جميع المسارات تتجاوز القيود الزمنية أو السعة.',
         ];
     }
 }

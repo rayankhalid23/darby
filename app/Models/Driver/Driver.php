@@ -33,6 +33,10 @@ class Driver extends Model implements Wallet
         'status',
         'current_lat', 
         'current_lng', 
+        'morning_go',
+        'morning_return',
+        'afternoon_go',
+        'afternoon_return',
         'last_ping_at'
     ];
 
@@ -47,6 +51,10 @@ class Driver extends Model implements Wallet
             'current_lng'    => 'float',
             'last_ping_at'   => 'datetime',
             'license_expiry' => 'date',
+            'morning_go'       => 'boolean',
+            'morning_return'   => 'boolean',
+            'afternoon_go'     => 'boolean',
+            'afternoon_return' => 'boolean',
             'shift'          => DriverShift::class, // تحويل تلقائي لقراءة الـ value والـ label للـ Enum
         ];
     }
@@ -148,6 +156,34 @@ public function vehicle(): \Illuminate\Database\Eloquent\Relations\HasOne
     public function routes()
     {
         return $this->hasMany(\App\Models\Shared\Route::class, 'driver_id');
+    }
+
+    // جلب مقاعد السائق المنفصلة لكل فترة واتجاه
+    public function seatSlots(): HasMany
+    {
+        return $this->hasMany(\App\Models\Driver\DriverSeatSlot::class, 'driver_id');
+    }
+
+    /**
+     * جلب المقاعد المتاحة لـ slot معين
+     */
+    public function getAvailableSeatsForSlot(string $slot): int
+    {
+        $seatSlot = $this->seatSlots->firstWhere('slot', $slot);
+        return $seatSlot ? $seatSlot->available_seats : 0;
+    }
+
+    /**
+     * جلب الـ slots المفعّلة لهذا السائق
+     */
+    public function getActiveSlots(): array
+    {
+        $slots = [];
+        if ($this->morning_go)      $slots[] = 'morning_go';
+        if ($this->morning_return)  $slots[] = 'morning_return';
+        if ($this->afternoon_go)    $slots[] = 'afternoon_go';
+        if ($this->afternoon_return) $slots[] = 'afternoon_return';
+        return $slots;
     }
 
     // جلب تقييمات السائق من أولياء الأمور

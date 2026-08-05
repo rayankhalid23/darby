@@ -11,10 +11,8 @@ class DriverPreferenceResource extends JsonResource
 
     public function toArray($request): array
     {
-        // الحصول على المناطق مع بياناتها (يجب التأكد من وجود العلاقة zones)
-        $zones = $this->zones; 
-    
-        // تجميع المناطق حسب اسم البلدية الفرعية
+        $zones = $this->zones;
+
         $groupedZones = $zones->groupBy('subMunicipality.name')->map(function ($zonesGroup) {
             $subMuni = $zonesGroup->first()->subMunicipality;
             return [
@@ -23,12 +21,30 @@ class DriverPreferenceResource extends JsonResource
                 'zones' => $zonesGroup->map(fn($z) => ['id' => $z->id, 'name' => $z->name])
             ];
         });
-    
+
+        // مقاعد كل فترة/اتجاه
+        $seatSlotsData = [];
+        if ($this->relationLoaded('seatSlots')) {
+            foreach ($this->seatSlots as $slot) {
+                $seatSlotsData[$slot->slot] = [
+                    'total_seats'     => $slot->total_seats,
+                    'reserved_seats'  => $slot->reserved_seats,
+                    'available_seats' => $slot->available_seats,
+                ];
+            }
+        }
+
         return [
-            'driver_id' => $this->id,
-            'shift'     => $this->shift,
+            'driver_id'         => $this->id,
+            'shift_slots'       => [
+                'morning_go'      => (bool) $this->morning_go,
+                'morning_return'  => (bool) $this->morning_return,
+                'afternoon_go'    => (bool) $this->afternoon_go,
+                'afternoon_return'=> (bool) $this->afternoon_return,
+            ],
             'subscription_type' => $this->subscription_type,
-            'coverage' => $groupedZones // هنا تظهر الهيكلية الجديدة
+            'seat_slots'        => $seatSlotsData,
+            'coverage'          => $groupedZones,
         ];
     }
-}
+}

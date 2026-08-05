@@ -22,26 +22,31 @@ class UpdateDriverPreferencesRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'shift'             => ['required', Rule::enum(DriverShift::class)],
-            'subscription_type' => ['required', 'string', Rule::in(['daily', 'monthly', 'both'])], // 👈 فحص نوع الاشتراك الجديد
+            'morning_go'        => ['required', 'boolean'],
+            'morning_return'    => ['required', 'boolean'],
+            'afternoon_go'      => ['required', 'boolean'],
+            'afternoon_return'  => ['required', 'boolean'],
+            'subscription_type' => ['required', 'string', Rule::in(['daily', 'monthly', 'both'])],
             'zones'             => ['required', 'array', 'min:1'],
             'zones.*'           => ['required', 'integer', 'exists:zones,id'],
         ];
     }
 
     /**
-     * رسائل الخطأ المخصصة باللغة العربية لـ Front-end
+     * تحقق إضافي: يجب اختيار فترة عمل واحدة على الأقل
      */
-    public function messages(): array
+    public function withValidator($validator): void
     {
-        return [
-            'shift.required'             => 'يرجى اختيار الفترة الزمنية للعمل.',
-            'shift.enum'                 => 'الفترة الزمنية المحددة غير صالحة في النظام.',
-            'subscription_type.required' => 'يرجى تحديد نوع الاشتراك المدعوم لرحلاتك.',
-            'subscription_type.in'       => 'نوع الاشتراك المحدد غير مدعوم (يجب أن يكون daily، monthly، أو both).',
-            'zones.required'             => 'يجب عليك اختيار منطقة عمل واحدة على الأقل.',
-            'zones.array'                => 'تنسيق المناطق الجغرافية غير صحيح.',
-            'zones.*.exists'             => 'تنبيه: إحدى المناطق التي قمت باختيارها غير مسجلة بالنظام.',
-        ];
+        $validator->after(function ($v) {
+            $data = $this->validated();
+            if (
+                empty($data['morning_go']) &&
+                empty($data['morning_return']) &&
+                empty($data['afternoon_go']) &&
+                empty($data['afternoon_return'])
+            ) {
+                $v->errors()->add('shift_slots', 'يجب اختيار فترة عمل واحدة على الأقل (صباحي ذهاب أو إياب أو مسائي ذهاب أو إياب).');
+            }
+        });
     }
 }

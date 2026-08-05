@@ -67,9 +67,24 @@ class DriverFinancialEndpointsTest extends TestCase
             'is_trusted' => 1,
         ]);
 
-        // 3. Contract
+        // 3. SubscriptionRequest (مطلوب كـ FK للعقد — نعطّل FK مؤقتاً في بيئة الاختبار)
+        DB::statement('SET FOREIGN_KEY_CHECKS=0');
+        $subscriptionRequestId = DB::table('requests')->insertGetId([
+            'parent_id'         => $parentModel->id,
+            'driver_id'         => $this->driver->id,
+            'school_id'         => 9999,
+            'timing'            => 'MORNING',
+            'direction'         => 'both',
+            'status'            => 'accepted',
+            'subscription_type' => 'monthly',
+            'children_count'    => 1,
+            'created_at'        => now(),
+        ]);
+        DB::statement('SET FOREIGN_KEY_CHECKS=1');
+
+        // 4. Contract
         $this->contract = Contract::create([
-            'subscription_request_id' => 1,
+            'subscription_request_id' => $subscriptionRequestId,
             'parent_id'               => $this->parentUser->id,
             'driver_id'               => $this->driverUser->id,
             'contract_number'         => 'DRBY-FIN-' . rand(100000, 999999),

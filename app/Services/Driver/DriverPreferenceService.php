@@ -3,9 +3,10 @@
 namespace App\Services\Driver;
 
 use App\Models\Driver\Driver;
+use App\Models\Driver\DriverSeatSlot;
 use App\Enums\driver\DriverShift;
 use App\Models\Shared\Zone;
-use App\Models\Municipality;
+use App\Models\Shared\Municipality; // استبدل المسار بحسب المجلد الفعلي للموديل لديك
 use Illuminate\Support\Facades\DB;
 use Exception;
 
@@ -16,7 +17,7 @@ class DriverPreferenceService
      */
     public function getPreferences(Driver $driver): Driver
     {
-        return $driver->load('zones.subMunicipality.municipality');
+        return $driver->load(['zones.subMunicipality.municipality', 'seatSlots']);
     }
 
     /**
@@ -25,31 +26,82 @@ class DriverPreferenceService
     public function updatePreferences(Driver $driver, array $data): Driver
     {
         return DB::transaction(function () use ($driver, $data) {
-            
+
+            // تحديث الأعمدة الأربعة الجديدة للفترات
             $driver->update([
-                'shift'             => $data['shift'] ?? $driver->shift,
+                'morning_go'        => (bool) ($data['morning_go']      ?? false),
+                'morning_return'    => (bool) ($data['morning_return']   ?? false),
+                'afternoon_go'      => (bool) ($data['afternoon_go']     ?? false),
+                'afternoon_return'  => (bool) ($data['afternoon_return'] ?? false),
                 'subscription_type' => $data['subscription_type'] ?? $driver->subscription_type,
             ]);
 
             $zoneIds = $data['zones'] ?? [];
 
             if (!empty($zoneIds)) {
-                // استخراج معرفات البلديات الفرعية للمناطق المرسلة للتحقق من تطابقها
                 $subMunicipalityIds = Zone::whereIn('id', $zoneIds)
                     ->pluck('sub_municipality_id')
-                    ->filter() // استبعاد القيم الفارغة إن وجدت
+                    ->filter()
                     ->unique();
 
                 if ($subMunicipalityIds->count() > 1) {
                     throw new Exception('عذراً، يجب أن تكون جميع المناطق المختارة تابعة لنفس البلدية الفرعية.');
                 }
             }
-            
-            // تحديث العلاقة باستخدام جدول الربط الصحيح 'driver_zone'
+
             $driver->zones()->sync($zoneIds);
-            
-            return $driver->fresh(['zones.subMunicipality.municipality']);
+
+            // مزامنة سجلات المقاعد مع الفترات المفعّلة
+            $this->syncSeatSlots($driver);
+
+            return $driver->fresh(['zones.subMunicipality.municipality', 'seatSlots']);
         });
+    }
+
+    /**
+     * مزامنة جدول driver_seat_slots مع الفترات المفعّلة للسائق
+     * - إنشاء سجل للفترات الجديدة بـ total_seats = capacity_manual
+     * - رفض تعطيل فترة بها مقاعد محجوزة
+     */
+    private function syncSeatSlots(Driver $driver): void
+    {
+        $vehicle   = $driver->vehicle;
+        $capacity  = $vehicle?->capacity_manual ?? 0;
+
+        $activeSlots = $driver->getActiveSlots();
+
+        foreach (DriverSeatSlot::ALL_SLOTS as $slot) {
+            $isActive = in_array($slot, $activeSlots);
+            $existing = DriverSeatSlot::where('driver_id', $driver->id)
+                ->where('slot', $slot)
+                ->first();
+
+            if ($isActive) {
+                if (!$existing) {
+                    // إنشاء سجل جديد
+                    DriverSeatSlot::create([
+                        'driver_id'      => $driver->id,
+                        'slot'           => $slot,
+                        'total_seats'    => $capacity,
+                        'reserved_seats' => 0,
+                    ]);
+                } else {
+                    // تحديث الطاقة الكلية إذا تغيرت سعة المركبة
+                    $existing->update(['total_seats' => $capacity]);
+                }
+            } else {
+                // تعطيل فترة — رفض إذا بها محجوزات
+                if ($existing && $existing->reserved_seats > 0) {
+                    throw new Exception(
+                        "لا يمكن تعطيل فترة [{$slot}] لأن بها {$existing->reserved_seats} مقاعد محجوزة حالياً."
+                    );
+                }
+                // حذف السجل إذا لم يكن بها محجوزات
+                if ($existing) {
+                    $existing->delete();
+                }
+            }
+        }
     }
 
     /**
@@ -68,16 +120,15 @@ class DriverPreferenceService
             }
         }
 
-        // إضافة المنطقة بدون التأثير على المناطق الموجودة سابقاً
         $driver->zones()->syncWithoutDetaching([$zoneId]);
-        
-        return $driver->load('zones.subMunicipality.municipality');
+
+        return $driver->load(['zones.subMunicipality.municipality', 'seatSlots']);
     }
 
     public function removeZoneFromDriver(Driver $driver, int $zoneId): Driver
     {
         $driver->zones()->detach($zoneId);
-        return $driver->load('zones.subMunicipality.municipality');
+        return $driver->load(['zones.subMunicipality.municipality', 'seatSlots']);
     }
 
     /**
@@ -86,21 +137,18 @@ class DriverPreferenceService
     public function getSystemDefaults(): array
     {
         return [
-            'available_shifts' => collect(DriverShift::cases())->map(fn($shift) => [
-                'value' => $shift->value,
-                'label' => $shift->label()
-            ]),
+            'available_shift_slots' => DriverShift::detailedSlots(),
             'available_subscription_types' => [
-                ['value' => 'daily', 'label' => 'يومي فقط'],
+                ['value' => 'daily',   'label' => 'يومي فقط'],
                 ['value' => 'monthly', 'label' => 'شهري فقط'],
-                ['value' => 'both', 'label' => 'كلاهما (يومي وشهري)']
+                ['value' => 'both',    'label' => 'كلاهما (يومي وشهري)']
             ],
             'geography_tree' => Municipality::with('subMunicipalities.zones')->get()->map(fn($municipality) => [
-                'id' => $municipality->id,
+                'id'   => $municipality->id,
                 'name' => $municipality->name,
                 'sub_municipalities' => $municipality->subMunicipalities->map(fn($sub) => [
-                    'id' => $sub->id,
-                    'name' => $sub->name,
+                    'id'    => $sub->id,
+                    'name'  => $sub->name,
                     'zones' => $sub->zones->map(fn($zone) => [
                         'id' => $zone->id,
                         'name' => $zone->name

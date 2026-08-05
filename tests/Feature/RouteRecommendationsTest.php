@@ -196,7 +196,6 @@ class RouteRecommendationsTest extends TestCase
     // =========================================================
     public function test_returns_best_recommendation_when_active_route_exists(): void
     {
-        // إنشاء مسار صباحي نشط للسائق (MORNING = نفس توقيت العقد)
         $route = RouteModel::create([
             'driver_id'          => $this->driver->id,
             'vehicle_id'         => $this->vehicleId,
@@ -213,26 +212,18 @@ class RouteRecommendationsTest extends TestCase
         $response->assertStatus(200);
         $response->assertJsonPath('status', 'success');
 
-        // يجب أن يُرجع التوصية الأفضل بالهيكل الصحيح
-        $response->assertJsonStructure([
-            'status',
-            'recommended_route' => ['id', 'name', 'score', 'reason'],
-            'other_routes',
-        ]);
+        // الخوارزمية الجديدة (VRPTW) تُرجع recommended_route أو null
+        // بما أن الاشتراك ليس لديه إحداثيات تفصيلية يظهر Fallback (score=70)
+        $recommended = $response->json('recommended_route');
+        $this->assertNotNull($recommended);
+        $this->assertEquals($route->id, $recommended['id']);
 
-        // التحقق من أن المسار المقترح هو المسار الصباحي
-        $response->assertJsonPath('recommended_route.id', $route->id);
-        $response->assertJsonPath('recommended_route.name', 'مسار الاختبار الصباحي');
-
-        // score يجب أن يكون بين 40 و 99
+        // score في الخوارزمية الجديدة هو متوسط Slack Time أو Fallback (70.0)
         $score = $response->json('recommended_route.score');
-        $this->assertGreaterThanOrEqual(40, $score);
-        $this->assertLessThanOrEqual(99, $score);
+        $this->assertIsNumeric($score);
 
-        // reason يجب أن يكون array يحتوي على "نفس الفترة الزمنية للرحلة"
-        $reasons = $response->json('recommended_route.reason');
-        $this->assertIsArray($reasons);
-        $this->assertContains('نفس الفترة الزمنية للرحلة', $reasons);
+        // تحقق من وجود مفتاح rejected_routes في الاستجابة
+        $response->assertJsonStructure(['status', 'recommended_route', 'other_routes', 'rejected_routes', 'message']);
     }
 
     // =========================================================
@@ -315,15 +306,16 @@ class RouteRecommendationsTest extends TestCase
         $response->assertStatus(200);
         $response->assertJsonPath('status', 'success');
 
-        // المسار المسائي الوحيد يظهر كـ recommended_route (score=40 الحد الأدنى)
-        // لأنه الخيار الوحيد المتاح رغم اختلاف الفترة
-        $recommended = $response->json('recommended_route');
-        $this->assertNotNull($recommended);
-        $this->assertEquals($eveningRoute->id, $recommended['id']);
-        $this->assertEquals(40, $recommended['score']); // الحد الأدنى بسبب خصم الفترة
-        // التحقق أن التحذير موجود في reasons/warnings (يُرجع عبر reason في الإخراج)
-        // لأنه الوحيد يذهب لـ recommended_route وليس other_routes
-        $this->assertIsArray($recommended['reason']);
+        // في الخوارزمية الجديدة: المساء يذهب لـ rejected_routes لاختلاف الفترة
+        $rejectedRoutes = $response->json('rejected_routes');
+        $this->assertIsArray($rejectedRoutes);
+        $this->assertNotEmpty($rejectedRoutes);
+
+        $rejectedIds = array_column($rejectedRoutes, 'id');
+        $this->assertContains($eveningRoute->id, $rejectedIds);
+
+        // recommended_route يكون null لأنه لا يوجد مسار صباحي
+        $response->assertJsonPath('recommended_route', null);
     }
 
     // =========================================================
@@ -357,14 +349,16 @@ class RouteRecommendationsTest extends TestCase
         $response->assertStatus(200);
         $response->assertJsonPath('status', 'success');
 
-        // الصباحي هو المقترح الأفضل (score أعلى)
+        // الصباحي هو المقترح الأفضل
         $response->assertJsonPath('recommended_route.id', $morningRoute->id);
         $response->assertJsonPath('recommended_route.name', 'مسار صباحي ممتاز');
 
-        // المسائي يظهر في other_routes (بعد التعديل)
-        $otherRoutes = $response->json('other_routes');
-        $this->assertNotEmpty($otherRoutes);
-        $this->assertEquals($eveningRoute->id, $otherRoutes[0]['id']);
+        // المسائي يظهر في rejected_routes (فترة مختلفة)
+        $rejectedRoutes = $response->json('rejected_routes');
+        $this->assertIsArray($rejectedRoutes);
+        $this->assertNotEmpty($rejectedRoutes);
+        $rejectedIds = array_column($rejectedRoutes, 'id');
+        $this->assertContains($eveningRoute->id, $rejectedIds);
     }
 
     // =========================================================

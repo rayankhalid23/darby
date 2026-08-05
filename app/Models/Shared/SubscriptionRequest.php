@@ -15,9 +15,10 @@ use Illuminate\Database\Eloquent\Builder;
 
 class SubscriptionRequest extends Model
 {
+
     protected $table = 'requests';
     public $timestamps = false;
-    
+
 
     // الثوابت لتجنب الخطأ في كتابة النصوص
     const DIRECTION_GO     = 'go';
@@ -33,6 +34,9 @@ class SubscriptionRequest extends Model
     const STATUS_ACCEPTED  = 'accepted';
     const STATUS_REJECTED  = 'rejected';
     const STATUS_CANCELLED = 'cancelled';
+
+    const ACCEPTANCE_MODE_ALL        = 'all';
+    const ACCEPTANCE_MODE_INDIVIDUAL = 'individual';
 
     protected $fillable = [
         'parent_id',
@@ -52,6 +56,7 @@ class SubscriptionRequest extends Model
         'rejection_reason',
         'notes',
         'children_count',
+        'children_acceptance_mode',
     ];
 
     protected $casts = [

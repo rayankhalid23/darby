@@ -68,10 +68,16 @@ class SubscriptionRequestService
             throw new Exception('هذا الحساب غير مسجل كولي أمر في النظام.');
         }
 
-        $driver = Driver::with('user')->find($driverId);
+        $driver = Driver::with(['user', 'seatSlots'])->find($driverId);
         if (!$driver) {
             throw new Exception("السائق المحدد غير موجود في النظام.");
         }
+
+        // ✅ الفلتر 1: التحقق من تطابق الفترة/الاتجاه مع تفضيلات السائق
+        $this->validateDriverShiftCompatibility($driver, $data['timing'] ?? 'MORNING', $data['direction'] ?? 'both');
+
+        // ✅ الفلتر 2: التحقق من توفر المقاعد لكل فترة/اتجاه مطلوبة
+        $this->validateSeatAvailability($driver, $data['timing'] ?? 'MORNING', $data['direction'] ?? 'both', count($data['children'] ?? []));
 
         return DB::transaction(function () use ($data, $parent, $driver) {
             $startDate = $data['start_date'] ?? null;
@@ -98,7 +104,8 @@ class SubscriptionRequestService
                 'max_waiting_time'  => $data['max_waiting_time'] ?? 15,
                 'status'            => SubscriptionRequest::STATUS_PENDING,
                 'notes'             => $data['notes'] ?? null,
-                'children_count'    => count($data['children']),
+                'children_count'          => count($data['children']),
+                'children_acceptance_mode' => $data['children_acceptance_mode'] ?? 'all',
             ]);
 
             foreach ($data['children'] as $childData) {
@@ -129,6 +136,84 @@ class SubscriptionRequestService
 
             return $subscriptionRequest->load(['children', 'driver.user', 'parent.user', 'school']);
         });
+    }
+
+    // ============================================================
+    // تحقق الفلتر 1: تطابق الفترة/الاتجاه مع تفضيلات السائق
+    // ============================================================
+
+    private function validateDriverShiftCompatibility(Driver $driver, string $timing, string $direction): void
+    {
+        $timingUp = strtoupper($timing);
+        $dirLow   = strtolower($direction);
+
+        // تحديد الـ slots المطلوبة حسب الطلب
+        $requiredSlots = [];
+
+        if (in_array($timingUp, ['MORNING', 'BOTH'])) {
+            if (in_array($dirLow, ['go', 'both']))    $requiredSlots[] = 'morning_go';
+            if (in_array($dirLow, ['return', 'both'])) $requiredSlots[] = 'morning_return';
+        }
+        if (in_array($timingUp, ['EVENING', 'AFTERNOON', 'BOTH'])) {
+            if (in_array($dirLow, ['go', 'both']))    $requiredSlots[] = 'afternoon_go';
+            if (in_array($dirLow, ['return', 'both'])) $requiredSlots[] = 'afternoon_return';
+        }
+
+        $slotLabels = [
+            'morning_go'      => 'صباحي - ذهاب',
+            'morning_return'  => 'صباحي - إياب',
+            'afternoon_go'    => 'مسائي - ذهاب',
+            'afternoon_return' => 'مسائي - إياب',
+        ];
+
+        foreach ($requiredSlots as $slot) {
+            if (!$driver->$slot) {
+                throw new Exception(
+                    "السائق لا يعمل في فترة [{$slotLabels[$slot]}]. يرجى اختيار سائق يغطي هذه الفترة."
+                );
+            }
+        }
+    }
+
+    // ============================================================
+    // تحقق الفلتر 2: توفر المقاعد لكل slot مطلوبة
+    // ============================================================
+
+    private function validateSeatAvailability(Driver $driver, string $timing, string $direction, int $childrenCount): void
+    {
+        $timingUp = strtoupper($timing);
+        $dirLow   = strtolower($direction);
+
+        $requiredSlots = [];
+
+        if (in_array($timingUp, ['MORNING', 'BOTH'])) {
+            if (in_array($dirLow, ['go', 'both']))    $requiredSlots[] = 'morning_go';
+            if (in_array($dirLow, ['return', 'both'])) $requiredSlots[] = 'morning_return';
+        }
+        if (in_array($timingUp, ['EVENING', 'AFTERNOON', 'BOTH'])) {
+            if (in_array($dirLow, ['go', 'both']))    $requiredSlots[] = 'afternoon_go';
+            if (in_array($dirLow, ['return', 'both'])) $requiredSlots[] = 'afternoon_return';
+        }
+
+        $slotLabels = [
+            'morning_go'      => 'صباحي - ذهاب',
+            'morning_return'  => 'صباحي - إياب',
+            'afternoon_go'    => 'مسائي - ذهاب',
+            'afternoon_return' => 'مسائي - إياب',
+        ];
+
+        $driver->loadMissing('seatSlots');
+
+        foreach ($requiredSlots as $slot) {
+            $seatSlot  = $driver->seatSlots->firstWhere('slot', $slot);
+            $available = $seatSlot ? $seatSlot->available_seats : 0;
+
+            if ($available < $childrenCount) {
+                throw new Exception(
+                    "لا توجد مقاعد كافية في فترة [{$slotLabels[$slot]}]. المتاح: {$available} مقعد، المطلوب: {$childrenCount}."
+                );
+            }
+        }
     }
 
     // ============================================================
