@@ -65,6 +65,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('{tripId}/start', [DriverTripController::class, 'start']);
         Route::post('start', [DriverTripController::class, 'start']);
         Route::get('{tripId}/live', [DriverTripController::class, 'live']);
+        Route::get('{tripId}/stops', [DriverTripController::class, 'tripStops']);
         Route::post('{tripId}/location', [DriverTripController::class, 'updateLocation']);
         Route::post('{tripId}/pickup', [DriverTripController::class, 'pickup']);
         Route::post('{tripId}/absent', [DriverTripController::class, 'absent']);
@@ -73,6 +74,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('{tripId}/verify-qr/{childId}', [DriverTripController::class, 'verifyQr']);
         Route::post('{tripId}/children/{tripChildId}/status', [DriverTripController::class, 'updateChildTripStatus']);
         Route::post('register-absence', [DriverTripController::class, 'registerAbsence']);
+        Route::post('{tripId}/report-breakdown', [DriverTripController::class, 'reportBreakdown']);
+        Route::post('{tripId}/resume', [DriverTripController::class, 'resumeTrip']);
         Route::post('{tripId}/complete', [DriverTripController::class, 'complete']);
     });
 
@@ -83,7 +86,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // تحديث البيانات الشخصية والمظهر
     Route::match(['post', 'put'], 'preferences', [DriverPreferenceController::class, 'update'])
     ->name('api.driver.preferences.update');
-    Route::put('profile', [ProfileController::class, 'update']);
+    Route::match(['post', 'put'], 'profile', [ProfileController::class, 'update']);
+    Route::match(['post', 'put'], 'profile/update', [ProfileController::class, 'update']);
     Route::get('profile/email-change/status', [ProfileController::class, 'checkEmailChangeStatus']);
     Route::post('profile/email-change/cancel', [ProfileController::class, 'cancelEmailChange']);
     Route::post('profile/email-change/resend', [ProfileController::class, 'resendEmailChange']);

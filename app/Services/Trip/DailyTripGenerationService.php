@@ -2,6 +2,7 @@
 
 namespace App\Services\Trip;
 
+use App\Models\Driver\DriverAbsence;
 use App\Models\Driver\DriverSeatSlot;
 use App\Models\Parent\Child;
 use App\Models\Shared\AbsenceLog;
@@ -29,6 +30,14 @@ class DailyTripGenerationService
     {
         $date = $date ?? Carbon::today();
         $dateString = $date->toDateString();
+
+        $isDriverAbsent = DriverAbsence::where('driver_id', $route->driver_id)
+            ->whereDate('absence_date', $dateString)
+            ->exists();
+
+        if ($isDriverAbsent) {
+            return null;
+        }
 
         $trip = Trip::where('driver_id', $route->driver_id)
             ->where('route_id', $route->id)
@@ -94,8 +103,8 @@ class DailyTripGenerationService
             $windowStart = $startDateTime->copy()->subMinutes(30);
 
             if ($now->greaterThanOrEqualTo($windowStart) && $now->lessThanOrEqualTo($startDateTime)) {
-                $this->generateForRoute($route, $today);
-                $generated++;
+                $trip = $this->generateForRoute($route, $today);
+                $trip ? $generated++ : $skipped++;
             } else {
                 $skipped++;
             }

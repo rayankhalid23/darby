@@ -51,7 +51,7 @@ class ContractObserver
                 'driver_id'   => $driverId,
                 'vehicle_id'  => $vehicleId,
                 'contract_id' => $contract->id,
-                'route_name'  => "{$rt['label']} - {$contract->contract_number}",
+                'route_name'  => Route::generateGenericRouteName($rt['type'], $contract->direction),
                 'route_type'  => $rt['type'],
                 'start_time'  => $rt['time'],
                 'status'      => 'Active',

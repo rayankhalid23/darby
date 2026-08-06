@@ -130,6 +130,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/balance', [WalletController::class, 'balance']);
         Route::get('/payment-methods', [WalletController::class, 'paymentMethods']);
         Route::post('/recharge', [WalletController::class, 'recharge']);
+        Route::post('/hold-trip', [WalletController::class, 'holdTripAmount']);
     });
 
     // مسارات الفواتير
@@ -150,6 +151,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/trips/{tripId}', [ParentTripController::class, 'getTripDetails']);
     Route::get('/trips/{tripId}/track', [ParentTripController::class, 'getLiveTracking']);
     Route::get('/trips/{tripId}/timeline', [ParentTripController::class, 'getTripTimeline']);
+    Route::post('/trips/{tripId}/dispute', [WalletController::class, 'openDispute']);
     Route::get('/trips/{tripId}/children/{childId}/status', [ParentTripController::class, 'getChildTripStatus']);
     Route::get('/trips/{tripId}/children/{childId}/progress', [ParentTripController::class, 'getChildTripProgress']);
 

@@ -17,6 +17,7 @@ class Trip extends Model
         'trip_type',
         'shift_slot',
         'status',
+        'suspension_reason',
         'scheduled_at',
         'started_at',
         'completed_at',

@@ -110,6 +110,15 @@ Route::prefix('driver-reviews')->group(function () {
         Route::post('/withdrawals/{id}/process', [\App\Http\Controllers\Api\Admin\FinancialController::class, 'processWithdrawal']);
         Route::get('/recharges', [\App\Http\Controllers\Api\Admin\FinancialController::class, 'rechargeRequests']);
         Route::post('/recharges/{id}/process', [\App\Http\Controllers\Api\Admin\FinancialController::class, 'processRecharge']);
+
+        // 🚀 معمارية القيد المزدوج والخزينة المركزية الجديدة
+        Route::get('/solvency-check', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'solvencyCheck']);
+        Route::post('/release-escrows', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'releaseEscrows']);
+        Route::get('/ledger', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'ledgerLogs']);
+        Route::post('/disputes/{disputeId}/resolve', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'resolveDispute']);
+        Route::post('/contracts/{contractId}/settle-monthly', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'settleMonthly']);
+        Route::post('/contracts/{contractId}/terminate-mid-month', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'terminateMidMonth']);
+        Route::post('/trips/{tripId}/cancel-with-matrix', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'cancelTripWithMatrix']);
     });
 
     // مسارات الفواتير للأدمن (قراءة فقط)
