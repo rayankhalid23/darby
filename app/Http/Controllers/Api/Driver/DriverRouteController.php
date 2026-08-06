@@ -215,6 +215,20 @@ class DriverRouteController extends Controller
                 })->values();
 
             $metrics['subscriptions'] = $subscriptionsData;
+            $metrics['shift_slot'] = $route->shift_slot;
+            $metrics['stops'] = \App\Models\Shared\RouteStop::where('route_id', $route->id)
+                ->orderBy('sequence_order')
+                ->get()
+                ->map(fn($s) => [
+                    'id'             => (int) $s->id,
+                    'stop_type'      => $s->stop_type,
+                    'child_id'       => $s->child_id ? (int) $s->child_id : null,
+                    'school_id'      => $s->school_id ? (int) $s->school_id : null,
+                    'label'          => $s->label,
+                    'latitude'       => (float) $s->lat,
+                    'longitude'      => (float) $s->lng,
+                    'sequence_order' => (int) $s->sequence_order,
+                ])->values();
 
             return response()->json([
                 'status' => 'success',

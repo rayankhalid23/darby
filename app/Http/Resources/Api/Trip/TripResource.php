@@ -47,10 +47,11 @@ class TripResource extends JsonResource
     private function translateStatus(string $status): string
     {
         return match ($status) {
-            'started'   => 'جاري التشغيل حالياً',
-            'completed' => 'مكتملة ومنتهية',
-            'cancelled' => 'ملغاة',
-            default     => 'معلقة',
+            'in_progress'          => 'جاري التشغيل حالياً',
+            'completed'            => 'مكتملة ومنتهية',
+            'suspended_breakdown'  => 'متوقفة مؤقتاً (عطل)',
+            'pending'              => 'معلقة',
+            default                => 'معلقة',
         };
     }
 }

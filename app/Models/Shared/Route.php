@@ -18,6 +18,7 @@ class Route extends Model
         'contract_id',
         'route_name',
         'route_type',
+        'shift_slot',
         'start_time',
         'optimized_points',
         'total_distance',
@@ -53,5 +54,10 @@ class Route extends Model
     public function activeSubscriptions(): HasMany
     {
         return $this->hasMany(ActiveSubscription::class, 'route_id');
+    }
+
+    public function stops(): HasMany
+    {
+        return $this->hasMany(RouteStop::class, 'route_id')->orderBy('sequence_order');
     }
 }

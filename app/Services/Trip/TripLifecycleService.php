@@ -17,6 +17,22 @@ use App\Notifications\CustomDatabaseNotification;
 use Carbon\Carbon;
 use Exception;
 
+class TripLifecycleException extends Exception
+{
+    protected string $errorCode;
+
+    public function __construct(string $message, string $errorCode = 'TRIP_LIFECYCLE_ERROR', int $code = 422)
+    {
+        parent::__construct($message, $code);
+        $this->errorCode = $errorCode;
+    }
+
+    public function getErrorCode(): string
+    {
+        return $this->errorCode;
+    }
+}
+
 class TripLifecycleService
 {
     protected OsrmRoutingService $osrmService;
@@ -34,8 +50,9 @@ class TripLifecycleService
      */
    /**
      * بدء رحلة جديدة للسائق مع التحقق من حالات التضارب
+     * $driverLat/$driverLng: الموقع الحي للسائق لحظة الضغط على "بدء الرحلة" (Live Lead-In)
      */
-    public function startTrip(int $driverId, string $tripType)
+    public function startTrip(int $driverId, string $tripType, ?float $driverLat = null, ?float $driverLng = null)
     {
         \Illuminate\Support\Facades\Log::info("Attempting to start trip for driver: $driverId");
         $today = Carbon::today()->toDateString();
@@ -51,44 +68,90 @@ class TripLifecycleService
 
         // [استثناء 2]: منع التضارب إذا كانت هناك رحلة بدأت بالفعل ولم تُغلق
         $activeTrip = Trip::where('driver_id', $driverId)
-            ->where('status', 'started')
+            ->where('status', 'in_progress')
             ->first();
             
         if ($activeTrip) {
             return $activeTrip; // إرجاع الرحلة المفتوحة حالياً لتجنب الازدواجية
         }
 
-        return DB::transaction(function () use ($driverId, $tripType) {
-    
+        return DB::transaction(function () use ($driverId, $tripType, $driverLat, $driverLng) {
+
     // 🛡️ حماية وتوحيد النص القادم ليتوافق تماماً مع الـ Enum في قاعدة البيانات ('Morning', 'Afternoon')
     $incomingType = strtolower($tripType);
-    $dbTripType = (in_array($incomingType, ['morning', 'صباحية', 'صباح', 'morning']) || str_contains($incomingType, 'صباح')) 
-        ? 'Morning' 
+    $dbTripType = (in_array($incomingType, ['morning', 'صباحية', 'صباح', 'morning']) || str_contains($incomingType, 'صباح'))
+        ? 'Morning'
         : 'Afternoon';
 
     // البحث عن المسار باستخدام القيمة الموحدة
     $route = \App\Models\Shared\Route::where('driver_id', $driverId)
-        ->where('route_type', $dbTripType) 
+        ->where('route_type', $dbTripType)
         ->where('status', 'Active')
         ->first();
 
     $trip = Trip::create([
         'driver_id'           => $driverId,
         'trip_type'           => $dbTripType, // هنا نضمن تخزين القيمة الصحيحة تماماً الإنجليزية وبحرف كبير
-        'status'              => 'started',
+        'shift_slot'          => $route?->shift_slot,
+        'status'              => 'in_progress',
         'route_id'            => $route?->id ?? 0,
         'scheduled_start_time'=> Carbon::now(),
         'actual_start_time'   => Carbon::now(),
         'scheduled_at'        => Carbon::now(),
+        'start_lat'           => $driverLat,
+        'start_lng'           => $driverLng,
         'trip_date'           => Carbon::today()->toDateString(),
     ]);
 
     // حساب المسار والتواقيت المبدئية عند الانطلاق فوراً
     $this->calculateInitialRoute($trip->id);
 
-    return $trip->fresh(); 
+    // حساب "الوصلة الأولى" (Lead-In) والـ ETAs الحية لكل محطات trip_stops إذا توفر موقع السائق الحي
+    if ($driverLat !== null && $driverLng !== null) {
+        try {
+            $this->computeLiveEtas($trip, $driverLat, $driverLng);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("فشل حساب ETAs الحية عند بدء الرحلة ID: {$trip->id} - " . $e->getMessage());
+        }
+    }
+
+    return $trip->fresh();
 });
 
+    }
+
+    /**
+     * يحسب الوصلة الأولى (Lead-In) من موقع السائق الحي إلى أول محطة، ثم يتابع حساب
+     * الـ ETA التراكمي لبقية محطات trip_stops بالترتيب، ويحفظها على كل محطة.
+     */
+    public function computeLiveEtas(Trip $trip, float $driverLat, float $driverLng): void
+    {
+        $stops = \App\Models\Shared\TripStop::where('trip_id', $trip->id)
+            ->where('sequence_order', '>', 0)
+            ->orderBy('sequence_order')
+            ->get();
+
+        if ($stops->isEmpty()) {
+            return;
+        }
+
+        $currentLat = $driverLat;
+        $currentLng = $driverLng;
+        $currentMinutes = Carbon::now()->hour * 60 + Carbon::now()->minute;
+
+        foreach ($stops as $stop) {
+            $distanceKm = \App\Support\GeoEstimator::haversineKm($currentLat, $currentLng, (float) $stop->lat, (float) $stop->lng);
+            $travelMinutes = \App\Support\GeoEstimator::estimateMinutes($distanceKm);
+
+            $currentMinutes += $travelMinutes;
+
+            $stop->eta_minutes = $currentMinutes;
+            $stop->eta = sprintf('%02d:%02d:00', intdiv($currentMinutes, 60) % 24, $currentMinutes % 60);
+            $stop->save();
+
+            $currentLat = (float) $stop->lat;
+            $currentLng = (float) $stop->lng;
+        }
     }
 
     /**
@@ -268,7 +331,7 @@ class TripLifecycleService
      */
     protected function recalculateActiveTripsForChild(int $childId): void
     {
-        $activeTrip = Trip::where('status', 'started')
+        $activeTrip = Trip::where('status', 'in_progress')
             ->whereHas('driver.activeSubscriptions', function ($query) use ($childId) {
                 $query->where('child_id', $childId);
             })->first();
@@ -277,8 +340,38 @@ class TripLifecycleService
             $this->calculateInitialRoute($activeTrip->id);
         }
     }
+
     /**
-     * الدالة 12: completeTrip (إنهاء الرحلة وتصفير الكاش لحفظ ذاكرة السيرفر)
+     * 🛡️ صمام أمان الأطفال (Zero Forgotten Children Guard):
+     * يمنع إنهاء الرحلة إذا وُجد أي طفل بمحطة منزل في حالة غير نهائية (خصوصاً boarded — لا يزال داخل الحافلة).
+     *
+     * @throws TripLifecycleException بكود 422 وerror_code = FORGOTTEN_CHILDREN_ON_BUS
+     */
+    public function assertNoForgottenChildren(Trip $trip): void
+    {
+        $forgottenStops = \App\Models\Shared\TripStop::where('trip_id', $trip->id)
+            ->where('stop_type', \App\Models\Shared\TripStop::TYPE_HOME)
+            ->whereIn('status', \App\Models\Shared\TripStop::NON_FINAL_STATUSES)
+            ->with('child')
+            ->get();
+
+        if ($forgottenStops->isNotEmpty()) {
+            $names = $forgottenStops
+                ->map(fn($s) => $s->child->full_name ?? $s->child->name ?? ('طفل #' . $s->child_id))
+                ->implode('، ');
+
+            throw new TripLifecycleException(
+                "لا يمكن إنهاء الرحلة: يوجد أطفال لم تُحسم حالتهم بعد ({$names}). يجب تأكيد نزولهم أو تسجيل غيابهم أولاً.",
+                'FORGOTTEN_CHILDREN_ON_BUS',
+                422
+            );
+        }
+    }
+
+    /**
+     * الدالة 12: completeTrip (إنهاء الرحلة مع فحص صمام أمان الأطفال، وتصفير الكاش لحفظ ذاكرة السيرفر)
+     *
+     * @throws TripLifecycleException إذا وُجد طفل بحالة غير نهائية (انظر assertNoForgottenChildren)
      */
     public function completeTrip(int $tripId): array
     {
@@ -288,37 +381,14 @@ class TripLifecycleService
             return ['status' => 'already_completed', 'message' => 'الرحلة مغلقة بالفعل.'];
         }
 
-        // [استثناء أمان]: التحقق من وجود أطفال معلقين في الرحلة لم يتم معالجة حالتهم
-        $today = Carbon::today()->toDateString();
-        $pendingChildren = ActiveSubscription::where('driver_id', $trip->driver_id)
-            ->whereNotExists(function ($query) use ($today) {
-                $query->select(DB::raw(1))
-                    ->from('absence_logs')
-                    ->whereColumn('absence_logs.child_id', 'active_subscriptions.child_id')
-                    ->whereDate('absence_logs.absence_date', $today);
-            })
-            ->whereNotExists(function ($query) use ($trip) {
-                $query->select(DB::raw(1))
-                    ->from('trip_events')
-                    ->whereColumn('trip_events.child_id', 'active_subscriptions.child_id')
-                    ->where('trip_events.trip_id', $trip->id)
-                    ->whereIn('trip_events.action_type', ['picked_up', 'skipped']);
-            })
-            ->count();
-
-        // إذا كان هناك أطفال معلقين، نرجع تحذيراً للسائق (يمكنك جعلها Exception حسب رغبتك في UX)
-        if ($pendingChildren > 0) {
-            return [
-                'status' => 'warning',
-                'message' => "يوجد عدد ({$pendingChildren}) من الأطفال لم يتم تأكيد ركوبهم أو تخطيهم بعد. هل أنت متأكد من الإنهاء؟"
-            ];
-        }
+        // 🛡️ صمام أمان الأطفال — يرمي TripLifecycleException (422) عند وجود طفل بحالة boarded/pending
+        $this->assertNoForgottenChildren($trip);
 
         return DB::transaction(function () use ($trip) {
             // 1. تحديث حالة الرحلة في قاعدة البيانات
             $trip->update([
                 'status' => 'completed',
-                'actual_end_time' => Carbon::now()
+                'completed_at' => Carbon::now(),
             ]);
 
             // 2. تصفير وتنظيف الـ Cache الخاص بهذه الرحلة تماماً للحفاظ على موارد الخادم
@@ -341,8 +411,10 @@ class TripLifecycleService
                 ->unique();
 
             $usersToNotify = User::whereIn('id', $parentUserIds)->get();
-            
-            $destination = $trip->trip_type === 'morning' ? 'المدرسة' : 'المنزل';
+
+            $isGoTrip = \App\Models\Driver\DriverSeatSlot::isGoSlot($trip->shift_slot ?? '')
+                || strtolower($trip->trip_type ?? '') === 'morning';
+            $destination = $isGoTrip ? 'المدرسة' : 'المنزل';
             Notification::send($usersToNotify, new CustomDatabaseNotification([
                 'title' => 'وصلت الحافلة بسلام 🏁',
                 'message' => "أنهى السائق الرحلة بنجاح، ووصل جميع الأطفال إلى {$destination} بسلامة الله.",

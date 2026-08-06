@@ -25,7 +25,7 @@ class TripTrackingService
         $trip = Trip::findOrFail($tripId);
 
         // 1. الاستشعار التلقائي للبدء (Auto-Start)
-        if ($trip->status === 'planned' && $speed > 10) {
+        if ($trip->status === 'pending' && $speed > 10) {
             $this->handleAutoStart($trip);
         }
 
@@ -69,9 +69,9 @@ class TripTrackingService
         $startTime = $firstTracking ? $firstTracking->recorded_at : Carbon::now();
 
         $trip->update([
-            'status' => 'started',
+            'status' => 'in_progress',
             'started_at' => $startTime,
-            'actual_start_ti' => $startTime
+            'actual_start_time' => $startTime
         ]);
 
         // إخطار الأهالي المعنيين فقط

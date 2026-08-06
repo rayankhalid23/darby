@@ -22,6 +22,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // الرحلات النشطة الآن للرادار الحي
         Route::get('/active-trips', [DashboardController::class, 'activeTrips'])->name('api.admin.dashboard.active-trips');
     });
+
+    // تشغيل يدوي لتوليد الرحلات اليومية (Daily Trips) دون انتظار الـ Cron — للتشغيل والاختبار
+    Route::post('/trips/generate-daily', [\App\Http\Controllers\Api\Admin\TripOpsController::class, 'generateDaily'])
+        ->name('api.admin.trips.generate-daily');
     
     // --- مجموعة روابط إدارة المشرفين ---
     Route::prefix('admins')->group(function () {

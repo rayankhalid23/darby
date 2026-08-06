@@ -16,10 +16,14 @@ use Exception;
 class DriverSubscriptionController extends Controller
 {
     protected SubscriptionRequestService $subscriptionService;
+    protected \App\Services\Trip\RouteFeasibilityService $feasibilityService;
 
-    public function __construct(SubscriptionRequestService $subscriptionService)
-    {
+    public function __construct(
+        SubscriptionRequestService $subscriptionService,
+        \App\Services\Trip\RouteFeasibilityService $feasibilityService
+    ) {
         $this->subscriptionService = $subscriptionService;
+        $this->feasibilityService = $feasibilityService;
     }
 
     /**
@@ -439,6 +443,49 @@ class DriverSubscriptionController extends Controller
             'success' => true,
             'data'    => $tripDetails
         ], 200);
+    }
+
+    /**
+     * فحص إمكانية إضافة أطفال طلب اشتراك معلق إلى المسار الحالي دون حفظ أي شيء (Feasibility Check)
+     * GET /api/driver/requests/{id}/feasibility-check
+     */
+    public function feasibilityCheck($id): JsonResponse
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'غير مصرح بالوصول.'], 401);
+        }
+
+        $driver = $user->driver;
+        if (!$driver) {
+            return response()->json(['success' => false, 'message' => 'بيانات السائق غير موجودة.'], 403);
+        }
+
+        $subscriptionRequest = SubscriptionRequest::where('id', $id)
+            ->where('driver_id', $driver->id)
+            ->with('children')
+            ->first();
+
+        if (!$subscriptionRequest) {
+            return response()->json([
+                'success' => false,
+                'message' => 'الطلب غير موجود أو غير مخصص لهذا السائق.'
+            ], 404);
+        }
+
+        try {
+            $result = $this->feasibilityService->checkForRequest($subscriptionRequest);
+
+            return response()->json([
+                'success' => true,
+                'data'    => $result
+            ], 200);
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'حدث خطأ أثناء فحص إمكانية إضافة الطلب: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

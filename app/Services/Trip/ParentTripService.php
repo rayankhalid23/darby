@@ -43,7 +43,7 @@ class ParentTripService
         $driverIds = $subscriptions->pluck('driver_id')->unique()->toArray();
 
         $activeTrips = Trip::whereIn('driver_id', $driverIds)
-            ->where('status', 'started')
+            ->where('status', 'in_progress')
             ->whereDate('trip_date', Carbon::today()->toDateString())
             ->with(['driver.user', 'driver.vehicles'])
             ->get();
@@ -587,7 +587,7 @@ class ParentTripService
         $activeTrip = null;
         if ($sub) {
             $trip = Trip::where('driver_id', $sub->driver_id)
-                ->where('status', 'started')
+                ->where('status', 'in_progress')
                 ->whereDate('trip_date', Carbon::today()->toDateString())
                 ->first();
 
@@ -671,7 +671,7 @@ class ParentTripService
             ->where('action_type', 'dropped_off')
             ->first();
 
-        $isStarted = !empty($trip->actual_start_time) || !empty($trip->started_at) || in_array($trip->status, ['started', 'in_progress', 'completed']);
+        $isStarted = !empty($trip->actual_start_time) || !empty($trip->started_at) || in_array($trip->status, ['in_progress', 'completed']);
         $startTime = $trip->actual_start_time ? Carbon::parse($trip->actual_start_time)->format('Y-m-d H:i:s') : ($trip->started_at ? Carbon::parse($trip->started_at)->format('Y-m-d H:i:s') : null);
 
         $isPickedUp = !empty($pickupEvent) || !empty($dropoffEvent);
@@ -751,7 +751,7 @@ class ParentTripService
         $driverIds = $subscriptions->pluck('driver_id')->unique()->toArray();
 
         $activeTrips = Trip::whereIn('driver_id', $driverIds)
-            ->where('status', 'started')
+            ->where('status', 'in_progress')
             ->whereDate('trip_date', Carbon::today()->toDateString())
             ->get();
 

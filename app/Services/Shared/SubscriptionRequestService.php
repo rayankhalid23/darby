@@ -16,10 +16,14 @@ use Exception;
 class SubscriptionRequestService
 {
     protected ContractService $contractService;
+    protected \App\Services\Trip\MasterRouteStopSyncService $masterRouteStopSyncService;
 
-    public function __construct(ContractService $contractService)
-    {
+    public function __construct(
+        ContractService $contractService,
+        \App\Services\Trip\MasterRouteStopSyncService $masterRouteStopSyncService
+    ) {
         $this->contractService = $contractService;
+        $this->masterRouteStopSyncService = $masterRouteStopSyncService;
     }
 
     /**
@@ -144,27 +148,9 @@ class SubscriptionRequestService
 
     private function validateDriverShiftCompatibility(Driver $driver, string $timing, string $direction): void
     {
-        $timingUp = strtoupper($timing);
-        $dirLow   = strtolower($direction);
-
         // تحديد الـ slots المطلوبة حسب الطلب
-        $requiredSlots = [];
-
-        if (in_array($timingUp, ['MORNING', 'BOTH'])) {
-            if (in_array($dirLow, ['go', 'both']))    $requiredSlots[] = 'morning_go';
-            if (in_array($dirLow, ['return', 'both'])) $requiredSlots[] = 'morning_return';
-        }
-        if (in_array($timingUp, ['EVENING', 'AFTERNOON', 'BOTH'])) {
-            if (in_array($dirLow, ['go', 'both']))    $requiredSlots[] = 'afternoon_go';
-            if (in_array($dirLow, ['return', 'both'])) $requiredSlots[] = 'afternoon_return';
-        }
-
-        $slotLabels = [
-            'morning_go'      => 'صباحي - ذهاب',
-            'morning_return'  => 'صباحي - إياب',
-            'afternoon_go'    => 'مسائي - ذهاب',
-            'afternoon_return' => 'مسائي - إياب',
-        ];
+        $requiredSlots = \App\Models\Driver\DriverSeatSlot::resolveSlots($timing, $direction);
+        $slotLabels    = \App\Models\Driver\DriverSeatSlot::slotLabels();
 
         foreach ($requiredSlots as $slot) {
             if (!$driver->$slot) {
@@ -181,26 +167,8 @@ class SubscriptionRequestService
 
     private function validateSeatAvailability(Driver $driver, string $timing, string $direction, int $childrenCount): void
     {
-        $timingUp = strtoupper($timing);
-        $dirLow   = strtolower($direction);
-
-        $requiredSlots = [];
-
-        if (in_array($timingUp, ['MORNING', 'BOTH'])) {
-            if (in_array($dirLow, ['go', 'both']))    $requiredSlots[] = 'morning_go';
-            if (in_array($dirLow, ['return', 'both'])) $requiredSlots[] = 'morning_return';
-        }
-        if (in_array($timingUp, ['EVENING', 'AFTERNOON', 'BOTH'])) {
-            if (in_array($dirLow, ['go', 'both']))    $requiredSlots[] = 'afternoon_go';
-            if (in_array($dirLow, ['return', 'both'])) $requiredSlots[] = 'afternoon_return';
-        }
-
-        $slotLabels = [
-            'morning_go'      => 'صباحي - ذهاب',
-            'morning_return'  => 'صباحي - إياب',
-            'afternoon_go'    => 'مسائي - ذهاب',
-            'afternoon_return' => 'مسائي - إياب',
-        ];
+        $requiredSlots = \App\Models\Driver\DriverSeatSlot::resolveSlots($timing, $direction);
+        $slotLabels    = \App\Models\Driver\DriverSeatSlot::slotLabels();
 
         $driver->loadMissing('seatSlots');
 
@@ -330,6 +298,14 @@ class SubscriptionRequestService
         // 7. تفعيل اشتراكات الأطفال لجدول active_subscriptions وتفريغ المقاعد
         $this->createActiveSubscriptions($req, $contract, $route);
 
+        // 7.5 مزامنة المسار الرئيسي (Master Route) لكل فترة/اتجاه مطلوبة (route_stops)
+        try {
+            $slots = \App\Models\Driver\DriverSeatSlot::resolveSlots($req->timing ?? 'MORNING', $req->direction ?? 'both');
+            $this->masterRouteStopSyncService->syncOnAcceptance($req, $contract, $route, $slots);
+        } catch (\Throwable $e) {
+            Log::warning("فشل مزامنة المسار الرئيسي (route_stops) للطلب ID: {$req->id} - " . $e->getMessage());
+        }
+
         // 8. إرسال إشعار القبول مع حمايته من إلغاء الـ Transaction
         try {
             if ($parent && $parent->user) {
@@ -436,6 +412,14 @@ class SubscriptionRequestService
         $activeSub->update([
             'status' => $status
         ]);
+
+        if (in_array($status, ['cancelled', 'completed'])) {
+            try {
+                $this->masterRouteStopSyncService->removeChildFromDriverRoutes($activeSub);
+            } catch (\Throwable $e) {
+                Log::warning("فشل تحديث المسار الرئيسي بعد تغيير حالة الاشتراك النشط ID: {$activeSub->id} - " . $e->getMessage());
+            }
+        }
 
         return $activeSub->load(['contract', 'child', 'driver.user']);
     }

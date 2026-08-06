@@ -42,6 +42,47 @@ class DriverSeatSlot extends Model
     }
 
     /**
+     * يحول (timing, direction) إلى قائمة الـ shift slots المطلوبة، بترتيب ثابت
+     * (morning_go, morning_return, afternoon_go, afternoon_return) — أول عنصر هو الـ slot الأساسي (Primary).
+     */
+    public static function resolveSlots(string $timing, string $direction): array
+    {
+        $timingUp = strtoupper($timing);
+        $dirLow   = strtolower($direction);
+
+        $requiredSlots = [];
+
+        if (in_array($timingUp, ['MORNING', 'BOTH'])) {
+            if (in_array($dirLow, ['go', 'both']))     $requiredSlots[] = self::MORNING_GO;
+            if (in_array($dirLow, ['return', 'both']))  $requiredSlots[] = self::MORNING_RETURN;
+        }
+        if (in_array($timingUp, ['EVENING', 'AFTERNOON', 'BOTH'])) {
+            if (in_array($dirLow, ['go', 'both']))     $requiredSlots[] = self::AFTERNOON_GO;
+            if (in_array($dirLow, ['return', 'both']))  $requiredSlots[] = self::AFTERNOON_RETURN;
+        }
+
+        return $requiredSlots;
+    }
+
+    public static function slotLabels(): array
+    {
+        return [
+            self::MORNING_GO       => 'صباحي - ذهاب',
+            self::MORNING_RETURN   => 'صباحي - إياب',
+            self::AFTERNOON_GO     => 'مسائي - ذهاب',
+            self::AFTERNOON_RETURN => 'مسائي - إياب',
+        ];
+    }
+
+    /**
+     * هل هذا الـ slot من نوع "ذهاب" (منازل -> مدرسة) أم "إياب" (مدرسة -> منازل)؟
+     */
+    public static function isGoSlot(string $slot): bool
+    {
+        return in_array($slot, [self::MORNING_GO, self::AFTERNOON_GO], true);
+    }
+
+    /**
      * الخاصية المحسوبة للمقاعد المتاحة (تضمن عدم إرجاع قيم سالبة)
      */
     public function getAvailableSeatsAttribute(): int

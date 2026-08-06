@@ -81,8 +81,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('api.driver.profile.show');
     
     // تحديث البيانات الشخصية والمظهر
-    Route::post('profile/update', [ProfileController::class, 'update'])
-        ->name('api.driver.profile.update');
+    Route::match(['post', 'put'], 'preferences', [DriverPreferenceController::class, 'update'])
+    ->name('api.driver.preferences.update');
     Route::put('profile', [ProfileController::class, 'update']);
     Route::get('profile/email-change/status', [ProfileController::class, 'checkEmailChangeStatus']);
     Route::post('profile/email-change/cancel', [ProfileController::class, 'cancelEmailChange']);

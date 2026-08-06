@@ -59,7 +59,7 @@ class RouteRecommendationService
 
         // فحص قفل المسار (Route Lock) عند وجود رحلة نشطة أو بدأت اليوم
         $activeTrip = Trip::where('route_id', $route->id)
-            ->whereIn('status', ['started', 'InProgress', 'Planned'])
+            ->whereIn('status', ['pending', 'in_progress'])
             ->whereDate('trip_date', Carbon::today()->toDateString())
             ->first();
 
@@ -176,7 +176,7 @@ class RouteRecommendationService
     public function validateRouteNotRunning(Route $route): void
     {
         $hasActiveTrip = Trip::where('route_id', $route->id)
-            ->whereIn('status', ['started', 'InProgress', 'Planned'])
+            ->whereIn('status', ['pending', 'in_progress'])
             ->whereDate('trip_date', Carbon::today()->toDateString())
             ->exists();
 
