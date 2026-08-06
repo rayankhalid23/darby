@@ -253,54 +253,74 @@ class SubscriptionRequestService
         // 4. توليد العقد
         $contract = $this->contractService->generateContract($req);
 
-        // 5. منطق حساب المسار الذكي عبر OSRM
-        $distanceKm = 0;
-        $durationMinutes = 0;
-        $routeData = null;
+        // 5. تحديد الـ slot الأساسي (الفترة/الاتجاه) بناءً على تفضيلات السائق الثابتة
+        $slots = \App\Models\Driver\DriverSeatSlot::resolveSlots($req->timing ?? 'MORNING', $req->direction ?? 'both');
+        $primarySlot = $slots[0] ?? null;
 
-        try {
-            $osrm = new \App\Services\Shared\OsrmRoutingService();
+        // 6. البحث عن مسار رئيسي (Master Route) نشط بالفعل لنفس السائق لنفس الفترة/الاتجاه
+        //    حتى لا يُنشأ مسار جديد مع كل طلب اشتراك مقبول، بل يُضاف الطفل إلى المسار الثابت الموجود.
+        $route = $primarySlot
+            ? \App\Models\Shared\Route::where('driver_id', $req->driver_id)
+                ->where('shift_slot', $primarySlot)
+                ->where('status', 'Active')
+                ->first()
+            : null;
 
-            $driverPos = ['lat' => (float)($req->driver->current_lat ?? 0), 'lng' => (float)($req->driver->current_lng ?? 0)];
-            $childPos  = ['lat' => (float)($req->children->first()->pivot->home_lat ?? $req->pickup_lat ?? 0), 'lng' => (float)($req->children->first()->pivot->home_lng ?? $req->pickup_lng ?? 0)];
-            $schoolPos = ['lat' => (float)($req->school->lat ?? $req->school->latitude ?? $req->dropoff_lat ?? 0), 'lng' => (float)($req->school->lng ?? $req->school->longitude ?? $req->dropoff_lng ?? 0)];
-
-            $routeData = $osrm->calculateRoute([$driverPos, $childPos, $schoolPos]);
-
-            if ($routeData) {
-                $distanceInMeters = $routeData['routes'][0]['distance'] ?? 0;
-                $durationInSeconds = $routeData['routes'][0]['duration'] ?? 0;
-
-                $distanceKm = round($distanceInMeters / 1000, 2);
-                $durationMinutes = (int) ceil($durationInSeconds / 60);
+        if ($route) {
+            // مسار موجود بالفعل لهذا السائق/الفترة: نعيد استخدامه فقط ونحدّث المركبة إن تغيّرت
+            if ($route->vehicle_id !== $vehicle->id) {
+                $route->vehicle_id = $vehicle->id;
+                $route->save();
             }
-        } catch (\Exception $e) {
-            Log::warning("فشل حساب المسار عبر OSRM للطلب ID: {$req->id} - " . $e->getMessage());
+        } else {
+            // لا يوجد مسار سابق لهذا السائق/الفترة: ننشئه لأول مرة فقط
+            $distanceKm = 0;
+            $durationMinutes = 0;
+            $routeData = null;
+
+            try {
+                $osrm = new \App\Services\Shared\OsrmRoutingService();
+
+                $driverPos = ['lat' => (float)($req->driver->current_lat ?? 0), 'lng' => (float)($req->driver->current_lng ?? 0)];
+                $childPos  = ['lat' => (float)($req->children->first()->pivot->home_lat ?? $req->pickup_lat ?? 0), 'lng' => (float)($req->children->first()->pivot->home_lng ?? $req->pickup_lng ?? 0)];
+                $schoolPos = ['lat' => (float)($req->school->lat ?? $req->school->latitude ?? $req->dropoff_lat ?? 0), 'lng' => (float)($req->school->lng ?? $req->school->longitude ?? $req->dropoff_lng ?? 0)];
+
+                $routeData = $osrm->calculateRoute([$driverPos, $childPos, $schoolPos]);
+
+                if ($routeData) {
+                    $distanceInMeters = $routeData['routes'][0]['distance'] ?? 0;
+                    $durationInSeconds = $routeData['routes'][0]['duration'] ?? 0;
+
+                    $distanceKm = round($distanceInMeters / 1000, 2);
+                    $durationMinutes = (int) ceil($durationInSeconds / 60);
+                }
+            } catch (\Exception $e) {
+                Log::warning("فشل حساب المسار عبر OSRM للطلب ID: {$req->id} - " . $e->getMessage());
+            }
+
+            $timingUpper = strtoupper($req->timing ?? 'MORNING');
+            $routeType = ($timingUpper === 'EVENING' || $timingUpper === 'AFTERNOON') ? 'Afternoon' : 'Morning';
+
+            $route = \App\Models\Shared\Route::create([
+                'contract_id'        => $contract->id,
+                'driver_id'          => $req->driver_id,
+                'vehicle_id'         => $vehicle->id,
+                'route_name'         => \App\Models\Shared\Route::generateGenericRouteName($req->timing, $req->direction),
+                'route_type'         => $routeType,
+                'shift_slot'         => $primarySlot,
+                'start_time'         => $req->pickup_time ?? '07:00:00',
+                'optimized_points'   => $routeData ? json_encode($routeData) : null,
+                'total_distance'     => $distanceKm,
+                'estimated_duration' => $durationMinutes,
+                'status'             => 'Active'
+            ]);
         }
-
-        $timingUpper = strtoupper($req->timing ?? 'MORNING');
-        $routeType = ($timingUpper === 'EVENING' || $timingUpper === 'AFTERNOON') ? 'Afternoon' : 'Morning';
-
-        // 6. إنشاء سجل المسار
-        $route = \App\Models\Shared\Route::create([
-            'contract_id'        => $contract->id,
-            'driver_id'          => $req->driver_id,
-            'vehicle_id'         => $vehicle->id,
-            'route_name'         => 'مسار ' . ($parent?->user?->full_name ?? 'العميل') . ' - ' . $req->timing,
-            'route_type'         => $routeType,
-            'start_time'         => $req->pickup_time ?? '07:00:00',
-            'optimized_points'   => $routeData ? json_encode($routeData) : null,
-            'total_distance'     => $distanceKm,
-            'estimated_duration' => $durationMinutes,
-            'status'             => 'Active'
-        ]);
 
         // 7. تفعيل اشتراكات الأطفال لجدول active_subscriptions وتفريغ المقاعد
         $this->createActiveSubscriptions($req, $contract, $route);
 
         // 7.5 مزامنة المسار الرئيسي (Master Route) لكل فترة/اتجاه مطلوبة (route_stops)
         try {
-            $slots = \App\Models\Driver\DriverSeatSlot::resolveSlots($req->timing ?? 'MORNING', $req->direction ?? 'both');
             $this->masterRouteStopSyncService->syncOnAcceptance($req, $contract, $route, $slots);
         } catch (\Throwable $e) {
             Log::warning("فشل مزامنة المسار الرئيسي (route_stops) للطلب ID: {$req->id} - " . $e->getMessage());
