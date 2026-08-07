@@ -16,14 +16,13 @@ class ContractResource extends JsonResource
         return [
             'id'                      => $this->id,
             'subscription_request_id' => $this->subscription_request_id,
-            'price'                   => (float) $this->price,
+            'price'                   => (float) ($this->total_price ?? 0),
             'pickup_time'             => $this->pickup_time,
             'dropoff_time'            => $this->dropoff_time,
             'max_waiting_time'        => $this->max_waiting_time,
-            
-            // جلب نصوص الشروط بدلاً من أرقامها فقط
-            'clauses'                 => Clause::whereIn('id', $this->selected_clauses ?? [])
-                                                ->get(['id', 'clause_text', 'category']),
+
+            // نصوص الشروط مخزَّنة مباشرة كمصفوفة نصية على العقد نفسه (عمود clauses)
+            'clauses'                 => $this->clauses ?? [],
             
             // جلب بيانات الأطفال ومدارسهم المرتبطة بالطلب
             'children'                => $this->relationLoaded('subscriptionRequest') ? 
@@ -41,17 +40,16 @@ class ContractResource extends JsonResource
             'created_at'              => $this->created_at?->format('Y-m-d H:i:s'),
             'updated_at'              => $this->updated_at?->format('Y-m-d H:i:s'),
 
-            'parent' => $this->relationLoaded('parent') ? [
-                'id'    => $this->parent->id,
-                'name'  => $this->parent->full_name,    // تم التعديل إلى full_name
-                'phone' => $this->parent->phone_number,
-                
+            'parent' => $this->relationLoaded('parentUser') && $this->parentUser ? [
+                'id'    => $this->parentUser->id,
+                'name'  => $this->parentUser->full_name,
+                'phone' => $this->parentUser->phone_number,
             ] : null,
 
-            'driver' => $this->relationLoaded('driver') ? [
-                'id'    => $this->driver->id,
-                'name'  => $this->driver->full_name,    // تم التعديل إلى full_name
-                'phone' => $this->driver->phone_number,
+            'driver' => $this->relationLoaded('driverUser') && $this->driverUser ? [
+                'id'    => $this->driverUser->id,
+                'name'  => $this->driverUser->full_name,
+                'phone' => $this->driverUser->phone_number,
             ] : null,
         ];
     }
@@ -62,9 +60,11 @@ class ContractResource extends JsonResource
     private function translateStatus(string $status): string
     {
         return match ($status) {
+            'draft'                   => 'مسودة',
             'pending_parent_approval' => 'بانتظار موافقة وتوقيع ولي الأمر',
-            'activated'               => 'مفعّل وساري العمل به',
+            'active', 'activated'     => 'مفعّل وساري العمل به',
             'rejected'                => 'تم رفض العقد من قِبل ولي الأمر',
+            'terminated'              => 'تم إنهاء العقد',
             default                   => 'حالة غير معروفة',
         };
     }

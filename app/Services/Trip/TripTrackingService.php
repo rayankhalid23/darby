@@ -12,15 +12,18 @@ use App\Notifications\CustomDatabaseNotification;
 use App\Notifications\TripStartedNotification; // تأكد من وجود هذا الـ Notification
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Carbon\Carbon;
+use Kreait\Firebase\Factory;
+use Throwable;
 
 class TripTrackingService
 {
     /**
      * استقبال إحداثيات السائق وتخزينها ذكياً
      */
-    public function updateDriverLocation(int $tripId, float $lat, float $lng, float $speed = 0): array
+    public function updateDriverLocation(int $tripId, float $lat, float $lng, float $speed = 0, ?float $heading = null): array
     {
         $trip = Trip::findOrFail($tripId);
 
@@ -30,7 +33,7 @@ class TripTrackingService
         }
 
         $driverId = $trip->driver_id;
-        
+
         // تحديث الموقع اللحظي للسائق
         Driver::where('id', $driverId)->update([
             'current_lat' => $lat,
@@ -53,10 +56,42 @@ class TripTrackingService
             Cache::put($cacheKey, ['lat' => $lat, 'lng' => $lng], now()->addHours(6));
         }
 
+        // 3. مزامنة الموقع اللحظي مع Firestore (trips_tracking/{tripId}) ليقرأها تطبيق ولي الأمر مباشرة
+        $this->pushLocationToFirestore($tripId, $lat, $lng, $heading, $trip->status === 'in_progress');
+
         return [
             'status' => 'success',
             'proximity' => $this->checkProximityAndArrival($trip, $lat, $lng)
         ];
+    }
+
+    /**
+     * كتابة/تحديث موقع الرحلة اللحظي في Firestore بنفس صيغة الـ Document المتفق عليها مع الفرونت
+     * (Collection: trips_tracking, Document ID = trip_id) — لا يوقف تدفق تحديث الموقع إذا فشل.
+     */
+    protected function pushLocationToFirestore(int $tripId, float $lat, float $lng, ?float $heading, bool $isOnline): void
+    {
+        $serviceAccountPath = config('firebase.credentials.file', storage_path('app/firebase/firebase-service-account.json'));
+
+        if (!file_exists($serviceAccountPath)) {
+            return;
+        }
+
+        try {
+            $factory = (new Factory)->withServiceAccount($serviceAccountPath);
+            $database = $factory->createFirestore()->database();
+
+            $database->collection('trips_tracking')->document((string) $tripId)->set([
+                'trip_id'      => $tripId,
+                'driver_lat'   => $lat,
+                'driver_lng'   => $lng,
+                'heading'      => (float) ($heading ?? 0.0),
+                'is_online'    => $isOnline,
+                'last_updated' => now()->toIso8601String(),
+            ]);
+        } catch (Throwable $e) {
+            Log::warning("فشل مزامنة موقع الرحلة رقم {$tripId} مع Firestore - " . $e->getMessage());
+        }
     }
 
     /**

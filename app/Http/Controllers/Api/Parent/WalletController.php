@@ -90,7 +90,18 @@ class WalletController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'تم حجز مبلغ الرحلة بنجاح في أمانات المحفظة.',
-            'data'    => $hold,
+            'data'    => [
+                'id'           => $hold->id,
+                'trip_id'      => $hold->trip_id,
+                'parent_id'    => $hold->parent_id,
+                'driver_id'    => $hold->driver_id,
+                'amount'       => round($hold->amount / 100, 2), // بالدينار، مطابقة لوحدة باقي واجهات المحفظة
+                'hold_status'  => $hold->hold_status,
+                'held_at'      => $hold->held_at,
+                'captured_at'  => $hold->captured_at,
+                'available_at' => $hold->available_at,
+                'disputed_at'  => $hold->disputed_at,
+            ],
         ], 201);
     }
 

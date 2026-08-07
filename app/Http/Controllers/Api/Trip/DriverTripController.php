@@ -452,8 +452,9 @@ class DriverTripController extends Controller
         $lat = $request->latitude ?? $request->lat;
         $lng = $request->longitude ?? $request->lng;
         $speed = $request->speed ?? 0;
+        $heading = $request->heading;
 
-        $this->trackingService->updateDriverLocation($tripId, $lat, $lng, $speed);
+        $this->trackingService->updateDriverLocation($tripId, $lat, $lng, $speed, $heading !== null ? (float) $heading : null);
         return response()->json(['status' => 'success'], 200);
     }
 

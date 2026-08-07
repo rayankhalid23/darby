@@ -86,7 +86,7 @@ class ContractService
     public function acceptContract(int $contractId): Contract
     {
         return DB::transaction(function () use ($contractId) {
-            $contract = Contract::with(['parent.user', 'driver.user'])->findOrFail($contractId);
+            $contract = Contract::with(['parentUser', 'driverUser'])->findOrFail($contractId);
 
             if ($contract->status === 'active') {
                 $contract->update(['signed_at' => now()]);
@@ -111,23 +111,23 @@ class ContractService
                 Log::error("فشل توليد الفاتورة للعقد {$contract->contract_number}: " . $e->getMessage());
             }
 
-            if ($contract->parent && $contract->parent->user) {
-                $contract->parent->user->notify(new CustomDatabaseNotification([
+            if ($contract->parentUser) {
+                $contract->parentUser->notify(new CustomDatabaseNotification([
                     'title'   => 'تم توقيع العقد',
                     'message' => "تم توقيع العقد رقم {$contract->contract_number} بنجاح وبدء الاشتراك.",
                     'type'    => 'contract_signed',
                 ]));
             }
 
-            if ($contract->driver && $contract->driver->user) {
-                $contract->driver->user->notify(new CustomDatabaseNotification([
+            if ($contract->driverUser) {
+                $contract->driverUser->notify(new CustomDatabaseNotification([
                     'title'   => 'تم توقيع العقد',
                     'message' => "قام ولي الأمر بتوقيع العقد رقم {$contract->contract_number}.",
                     'type'    => 'contract_signed',
                 ]));
             }
 
-            return $contract->fresh()->load(['parent.user', 'driver.user', 'activeSubscriptions']);
+            return $contract->fresh()->load(['parentUser', 'driverUser', 'activeSubscriptions']);
         });
     }
 
@@ -137,7 +137,7 @@ class ContractService
     public function rejectContract(int $contractId): Contract
     {
         return DB::transaction(function () use ($contractId) {
-            $contract = Contract::findOrFail($contractId);
+            $contract = Contract::with(['parentUser'])->findOrFail($contractId);
 
             if ($contract->status === 'active') {
                 throw new Exception('لا يمكن رفض عقد مُفعّل بالفعل.', 400);
@@ -148,15 +148,15 @@ class ContractService
             ActiveSubscription::where('contract_id', $contract->id)
                 ->update(['status' => 'cancelled']);
 
-            if ($contract->parent && $contract->parent->user) {
-                $contract->parent->user->notify(new CustomDatabaseNotification([
+            if ($contract->parentUser) {
+                $contract->parentUser->notify(new CustomDatabaseNotification([
                     'title'   => 'تم رفض العقد',
                     'message' => "تم رفض العقد رقم {$contract->contract_number}.",
                     'type'    => 'contract_rejected',
                 ]));
             }
 
-            return $contract->fresh();
+            return $contract->fresh()->load(['parentUser', 'driverUser']);
         });
     }
 

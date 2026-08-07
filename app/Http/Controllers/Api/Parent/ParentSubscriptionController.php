@@ -230,17 +230,7 @@ class ParentSubscriptionController extends Controller
                         'pickupTime' => $item->pickup_time ?? '07:00 AM',
                         'dropoffTime' => $item->dropoff_time ?? '02:00 PM',
                     ],
-                    'billing' => [
-                        'subscriptionType' => optional($item->driver)->subscription_type ?? 'monthly',
-                        'totalPrice' => (float) (optional($item->contract)->total_price ?? $item->total_price ?? 89),
-                        'childPrice' => (float) (optional($item->contract)->child_price ?? 89),
-                        'currency' => 'SAR',
-                        'startsAt' => optional($item->contract)->start_date ? optional($item->contract)->start_date->toDateString() : null,
-                        'endsAt' => optional($item->contract)->end_date ? optional($item->contract)->end_date->toDateString() : null,
-                        'remainingDays' => 14,
-                        'autoRenew' => true,
-                        'paymentMethod' => 'card',
-                    ],
+                    'billing' => $this->formatBilling($item),
                     'requestId' => $item->id,
                     'cancelReason' => null,
                     'cancelledAt' => null,
@@ -357,17 +347,7 @@ class ParentSubscriptionController extends Controller
                     'pickupTime' => $item->pickup_time ?? '07:00 AM',
                     'dropoffTime' => $item->dropoff_time ?? '02:00 PM',
                 ],
-                'billing' => [
-                    'subscriptionType' => optional($item->driver)->subscription_type ?? 'monthly',
-                    'totalPrice' => (float) (optional($item->contract)->total_price ?? $item->total_price ?? 89),
-                    'childPrice' => (float) (optional($item->contract)->child_price ?? 89),
-                    'currency' => 'SAR',
-                    'startsAt' => optional($item->contract)->start_date ? optional($item->contract)->start_date->toDateString() : null,
-                    'endsAt' => optional($item->contract)->end_date ? optional($item->contract)->end_date->toDateString() : null,
-                    'remainingDays' => 14,
-                    'autoRenew' => true,
-                    'paymentMethod' => 'card',
-                ],
+                'billing' => $this->formatBilling($item),
                 'requestId' => $item->id,
                 'cancelReason' => null,
                 'cancelledAt' => null,
@@ -394,6 +374,100 @@ class ParentSubscriptionController extends Controller
                 'message' => 'حدث خطأ أثناء جلب تفاصيل الاشتراك.'
             ], 500);
         }
+    }
+
+    /**
+     * إلغاء اشتراك نشط (بعد قبول السائق) من قِبل ولي الأمر
+     * POST /api/parent/active-subscriptions/{id}/cancel
+     */
+    public function cancelActiveSubscription(Request $request, $id): JsonResponse
+    {
+        try {
+            $userId = $request->user()->id;
+            $parent = \App\Models\Parent\ParentModel::where('user_id', $userId)->first();
+
+            $activeSub = \App\Models\Shared\ActiveSubscription::where('id', $id)
+                ->where(function ($q) use ($userId, $parent) {
+                    $q->where('parent_id', $userId);
+                    if ($parent) {
+                        $q->orWhere('parent_id', $parent->id);
+                    }
+                })
+                ->first();
+
+            if (!$activeSub) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'الاشتراك النشط غير موجود أو لا تملك صلاحية إلغائه.',
+                ], 404);
+            }
+
+            if ($activeSub->status === 'cancelled') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'هذا الاشتراك ملغى بالفعل.',
+                ], 422);
+            }
+
+            $updated = $this->subscriptionService->updateActiveSubscriptionStatus($activeSub->id, 'cancelled');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'تم إلغاء الاشتراك بنجاح.',
+                'data'    => [
+                    'id'     => $updated->id,
+                    'status' => $updated->status,
+                ],
+            ], 200);
+
+        } catch (Exception $e) {
+            Log::error('Error in ParentSubscriptionController@cancelActiveSubscription', [
+                'message' => $e->getMessage(),
+                'file'    => $e->getFile(),
+                'line'    => $e->getLine(),
+                'user_id' => $request->user()->id ?? null,
+                'sub_id'  => $id,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'حدث خطأ أثناء إلغاء الاشتراك.',
+            ], 500);
+        }
+    }
+
+    /**
+     * تجهيز بلوك البيانات المالية (billing) لاشتراك نشط بقيم حقيقية محسوبة،
+     * بدل القيم الثابتة الوهمية (SAR، 89، 14 يوماً...) التي كانت مكتوبة يدوياً سابقاً.
+     */
+    private function formatBilling(\App\Models\Shared\ActiveSubscription $item): array
+    {
+        $contract = $item->contract;
+        $totalPrice = (float) ($contract->total_price ?? 0);
+
+        $childPrice = null;
+        if ($contract && $contract->subscription_request_id) {
+            $childPrice = DB::table('request_children')
+                ->where('request_id', $contract->subscription_request_id)
+                ->where('child_id', $item->child_id)
+                ->value('price_per_child');
+        }
+        $childPrice = $childPrice !== null ? (float) $childPrice : $totalPrice;
+
+        $endsAt = $contract?->end_date;
+        $remainingDays = $endsAt ? (int) now()->startOfDay()->diffInDays($endsAt->copy()->startOfDay(), false) : null;
+
+        return [
+            'subscriptionType' => $contract?->subscription_type ?? 'monthly',
+            'totalPrice'       => $totalPrice,
+            'childPrice'       => round($childPrice, 2),
+            'currency'         => 'د.ل',
+            'startsAt'         => $contract?->start_date?->toDateString(),
+            'endsAt'           => $endsAt?->toDateString(),
+            'remainingDays'    => $remainingDays,
+            'autoRenew'        => false,
+            'paymentMethod'    => 'wallet',
+        ];
     }
 
     public function checkSubscription(Request $request): JsonResponse
