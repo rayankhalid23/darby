@@ -6,13 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Auth\LoginRequest;
 use App\Http\Resources\Api\UserResource;
 use App\Http\Resources\Api\Parent\ParentResource; 
-use App\Http\Resources\Api\Driver\DriverResource; // ⬅️ [صح] تم استيراد ريسورس السائق هنا
+use App\Http\Resources\Api\Driver\DriverResource;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use App\Traits\AuthenticatableTrait;
+use Throwable;
 
 class LoginController extends Controller
 {
@@ -82,7 +83,7 @@ class LoginController extends Controller
             // 7. تحويل كائن المستخدم إلى الـ Resource المناسب لدوره
             $userResourceData = match ((int) $user->role_id) {
                 3 => new ParentResource($user), 
-                4 => new DriverResource($user), // ⬅️ [صح] تم تفعيل السطر ليعود ببيانات السائق كاملة
+                4 => new DriverResource($user),
                 default => new UserResource($user), 
             };
 
@@ -95,12 +96,27 @@ class LoginController extends Controller
                 'user' => $userResourceData 
             ], 200);
 
-        } catch (\Exception $e) {
-            Log::error("Login Critical Error: " . $e->getMessage());
+        } catch (Throwable $e) {
+            // تسجيل الخطأ بالتفصيل المُمِل في ملف storage/logs/laravel.log
+            Log::error('Login Controller Exception: ' . $e->getMessage(), [
+                'exception_class' => get_class($e),
+                'file'            => $e->getFile(),
+                'line'            => $e->getLine(),
+                'request_inputs'  => $request->only(['phone_number', 'device_name', 'platform']), // استثناء كلمة المرور للأمان
+                'ip_address'      => $request->ip(),
+                'user_agent'      => $request->userAgent(),
+                'trace'           => $e->getTraceAsString(),
+            ]);
+
             return response()->json([
-                'status' => false, 
+                'status'  => false, 
                 'message' => 'حدث عطل تقني أثناء تسجيل الدخول.',
-                'debug' => config('app.debug') ? $e->getMessage() : null
+                'debug'   => config('app.debug') ? [
+                    'message' => $e->getMessage(),
+                    'file'    => $e->getFile(),
+                    'line'    => $e->getLine(),
+                    'trace'   => explode("\n", $e->getTraceAsString())
+                ] : null
             ], 500);
         }
     }
