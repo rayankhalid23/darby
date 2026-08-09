@@ -28,10 +28,13 @@ class AdminController extends Controller
     /**
      * عرض قائمة المشرفين
      */
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
         try {
-            $admins = $this->adminService->getAllAdmins();
+            $admins = $this->adminService->getAllAdmins(
+                (int) $request->query('per_page', 10),
+                $request->query('search')
+            );
             return response()->json([
                 'status'  => true,
                 'message' => 'تم جلب قائمة المشرفين بنجاح.',
@@ -50,8 +53,8 @@ class AdminController extends Controller
     {
         try {
             $admin = $this->adminService->createAdmin(
-                $request->validated(), 
-                $request->file('avatar_url')
+                $request->validated(),
+                $request->file('avatar') ?? $request->file('avatar_url')
             );
 
             return response()->json([
@@ -71,8 +74,8 @@ class AdminController extends Controller
     public function show($id): JsonResponse
     {
         try {
-            $admin = Admin::with(['user', 'creator'])->find($id);
-            
+            $admin = Admin::with(['user', 'creator'])->whereHas('user')->find($id);
+
             if (!$admin) {
                 return response()->json(['status' => false, 'message' => 'عذراً، المشرف غير موجود.'], 404);
             }
@@ -132,9 +135,9 @@ class AdminController extends Controller
             }
 
             $updatedAdmin = $this->adminService->updateAdmin(
-                $admin, 
-                $data, 
-                $request->file('avatar')
+                $admin,
+                $data,
+                $request->file('avatar') ?? $request->file('avatar_url')
             );
 
             return response()->json([
@@ -148,6 +151,57 @@ class AdminController extends Controller
         } catch (Exception $e) {
             Log::error("Update Admin Error: " . $e->getMessage());
             return response()->json(['status' => false, 'message' => 'تعذر تحديث البيانات: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * حذف مشرف نهائياً من النظام
+     */
+    public function destroy(Request $request, $id): JsonResponse
+    {
+        try {
+            $admin = Admin::with('user')->whereHas('user')->find($id);
+
+            if (!$admin) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'عذراً، المشرف غير موجود.'
+                ], 404);
+            }
+
+            $currentUser = $request->user();
+
+            // منع المشرف من حذف حسابه الشخصي بنفسه
+            if ($currentUser && $currentUser->id === $admin->user_id) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'لا يمكنك حذف حسابك الشخصي من هنا.'
+                ], 403);
+            }
+
+            // حماية حساب مدير النظام الأساسي من الحذف
+            if ((int) $admin->user->role_id === 1) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'لا يمكن حذف حساب مدير النظام الأساسي.'
+                ], 403);
+            }
+
+            $deletedName = $admin->user->full_name;
+
+            $this->adminService->deleteAdmin($admin, $currentUser?->id ?? $admin->created_by);
+
+            return response()->json([
+                'status'  => true,
+                'message' => "تم حذف المشرف ({$deletedName}) نهائياً بنجاح."
+            ], 200);
+
+        } catch (Exception $e) {
+            Log::error("Delete Admin Error: " . $e->getMessage());
+            return response()->json([
+                'status'  => false,
+                'message' => 'تعذر حذف المشرف، يرجى المحاولة لاحقاً.'
+            ], 500);
         }
     }
 

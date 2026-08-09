@@ -28,7 +28,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/', [AdminController::class, 'index']);
         Route::post('/', [AdminController::class, 'store']);
         Route::get('/{id}', [AdminController::class, 'show']);
-        Route::post('/{id}', [AdminController::class, 'update']); 
+        Route::post('/{id}', [AdminController::class, 'update']);
+        Route::delete('/{id}', [AdminController::class, 'destroy']);
     });
 
     // --- 👥 مجموعة روابط التحكم في السائقين المحدثة والمطورة بالكامل لقابلية البيع ---

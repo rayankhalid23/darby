@@ -17,7 +17,8 @@ class UpdateAdminRequest extends FormRequest
 
     public function rules(): array
     {
-        $adminParam = $this->route('admin'); 
+        // اسم المتغير في المسار هو {id} وليس {admin}، لذلك نقرأ الاثنين معاً حمايةً من أي تغيير لاحق
+        $adminParam = $this->route('admin') ?? $this->route('id');
         $admin = $adminParam instanceof Admin ? $adminParam : Admin::find($adminParam);
         $userId = $admin ? $admin->user_id : null;
 

@@ -23,9 +23,25 @@ class AdminService
         $this->emailService = $emailService;
     }
 
-    public function getAllAdmins($perPage = 10)
+    /**
+     * جلب قائمة المشرفين مع دعم البحث والترقيم
+     * ملاحظة: جدول admins بلا أعمدة تواريخ لذلك نرتب تنازلياً حسب المعرف
+     */
+    public function getAllAdmins(int $perPage = 10, ?string $search = null)
     {
-        return Admin::with(['user', 'creator.user'])->latest()->paginate($perPage);
+        return Admin::with(['user', 'creator'])
+            // استبعاد المشرفين الذين حُذفت حساباتهم (soft deleted)
+            ->whereHas('user', function ($query) use ($search) {
+                if (!empty($search)) {
+                    $query->where(function ($q) use ($search) {
+                        $q->where('full_name', 'like', "%{$search}%")
+                          ->orWhere('email', 'like', "%{$search}%")
+                          ->orWhere('phone_number', 'like', "%{$search}%");
+                    });
+                }
+            })
+            ->orderByDesc('id')
+            ->paginate($perPage);
     }
 
     public function createAdmin(array $data, ?UploadedFile $avatar = null): Admin
@@ -77,25 +93,8 @@ class AdminService
 
                 // الاعتماد على array_key_exists لضمان التقاط القيم مثل 0 أو null بأمان
                 if (array_key_exists('full_name', $data))    $updateData['full_name'] = $data['full_name'];
-                if (array_key_exists('email', $data) && $data['email'] !== $user->email) {
-                    // 1. توليد توكن فريد ورابط موقع آمن للموافقة والرفض
-                    $token = Str::random(64);
-                    
-                    $approveUrl = URL::signedRoute('admin.email.approve', ['token' => $token]);
-                    $rejectUrl  = URL::signedRoute('admin.email.reject', ['token' => $token]);
-                
-                    // 2. تسجيل اللوج لإثبات العملية (بناءً على ملف الـ Log الخاص بك)
-                    Log::info("=== Admin Email Change Request ===");
-                
-                    // 3. إرسال البريد الإلكتروني مع الروابط الجديدة المولدة بدون أخطاء
-                    $this->emailService->sendEmailChangeNotification(
-                        $data['email'],
-                        $approveUrl,
-                        $rejectUrl
-                    );
-                
-                    // ملاحظة: لا نضيف الإيميل لـ $updateData هنا لكي لا يتغير حتى يضغط على رابط التأكيد في الإيميل
-                }
+                // ملاحظة: تغيير البريد الإلكتروني تتم معالجته بالكامل في AdminController
+                // عبر إرسال رابط تأكيد موقّع، لذلك لا يُحدَّث الإيميل هنا إطلاقاً.
                 if (array_key_exists('phone_number', $data)) $updateData['phone_number'] = $data['phone_number'];
                 if (array_key_exists('is_active', $data))    $updateData['is_active'] = $data['is_active'];
 
@@ -124,6 +123,42 @@ class AdminService
                 Log::error("Error updating admin ID {$admin->id}: " . $e->getMessage());
                 throw $e;
             }
+        });
+    }
+
+    /**
+     * 🗑️ حذف المشرف نهائياً مع تنظيف كل ما يتعلق به
+     *
+     * الخطوات: نقل ملكية المشرفين الذين أنشأهم (بسبب قيد RESTRICT على created_by)،
+     * ثم إلغاء توكنات الدخول، ثم حذف صورته من التخزين، وأخيراً حذف الحساب والسجل.
+     */
+    public function deleteAdmin(Admin $admin, int $performedByUserId): void
+    {
+        DB::transaction(function () use ($admin, $performedByUserId) {
+            $user = $admin->user;
+
+            // 1. نقل ملكية أي مشرفين أنشأهم هذا المشرف إلى منفّذ عملية الحذف
+            //    لأن العمود created_by محمي بقيد ON DELETE RESTRICT
+            Admin::where('created_by', $user->id)
+                ->where('id', '!=', $admin->id)
+                ->update(['created_by' => $performedByUserId]);
+
+            // 2. إلغاء كل جلسات الدخول النشطة لهذا المشرف فوراً
+            $user->tokens()->delete();
+
+            // 3. حذف الصورة الشخصية من التخزين إن وُجدت
+            if ($user->avatar_url) {
+                $path = str_replace('storage/', '', $user->avatar_url);
+                if (Storage::disk('public')->exists($path)) {
+                    Storage::disk('public')->delete($path);
+                }
+            }
+
+            // 4. حذف سجل المشرف ثم حذف حساب المستخدم نهائياً
+            $admin->delete();
+            $user->forceDelete();
+
+            Log::info("Admin ID {$admin->id} (user {$user->id}) deleted by user {$performedByUserId}");
         });
     }
 }

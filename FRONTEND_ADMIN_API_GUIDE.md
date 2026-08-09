@@ -276,28 +276,58 @@
 
 ## 👨‍💼 4. وحدة إدارة المشرفين (Admins Management Module)
 
+> 📘 **الدليل الكامل والمفصّل لهذه الوحدة في ملف مستقل:** `FRONTEND_SUPERVISORS_API_GUIDE.md`
+> (يشمل كل رسائل التحقق، وأمثلة Axios جاهزة، والبيانات الوهمية للاختبار).
+> ما يلي ملخّص سريع بنماذج حقيقية ملتقطة من السيرفر.
+
+**كائن المشرف الموحّد** (يرجع بنفس الشكل في كل العمليات):
+```json
+{
+  "id": 9,
+  "user_id": 22,
+  "full_name": "سارة توفيق العجيلي",
+  "email": "sara.supervisor@derbi.ly",
+  "phone_number": "0928669900",
+  "avatar_url": null,
+  "is_active": true,
+  "role_id": 2,
+  "role_name": "مشرف",
+  "created_by": 1,
+  "creator_name": "أحمد المدير",
+  "created_at": "2026-08-09 22:17:51",
+  "last_login_at": null
+}
+```
+
 ### 4.1 جلب قائمة المشرفين
 * **Method:** `GET`
 * **URL:** `/api/admin/admins`
+* **Query (اختياري):** `per_page` (افتراضي 10) — `page` — `search` (بحث في الاسم/البريد/الهاتف)
 * **Success Response (200 OK):**
 ```json
 {
   "status": true,
   "message": "تم جلب قائمة المشرفين بنجاح.",
   "data": {
-    "data": [
-      {
-        "id": 1,
-        "full_name": "الآدمن الرئيسي",
-        "email": "admin@darby.ly",
-        "phone_number": "0910000000",
-        "avatar_url": "http://domain.com/storage/avatars/admin.png",
-        "created_at": "2026-07-01 10:00:00"
-      }
-    ]
+    "data": [ { "...": "كائن المشرف الموحّد" } ],
+    "links": {
+      "first": "http://localhost/api/admin/admins?page=1",
+      "last": "http://localhost/api/admin/admins?page=3",
+      "prev": null,
+      "next": "http://localhost/api/admin/admins?page=2"
+    },
+    "meta": {
+      "current_page": 1,
+      "from": 1,
+      "last_page": 3,
+      "per_page": 3,
+      "to": 3,
+      "total": 9
+    }
   }
 }
 ```
+> 🔴 القائمة في `data.data` والترقيم في `data.meta`. الترتيب تنازلي (الأحدث أولاً).
 
 ### 4.2 إضافة مشرف جديد
 * **Method:** `POST`
@@ -305,24 +335,22 @@
 * **Body (Multipart / JSON):**
 ```json
 {
-  "full_name": "أحمد محمود",
+  "full_name": "أحمد محمود المبروك",
   "email": "ahmed.admin@darby.ly",
   "phone_number": "0911234567",
-  "password": "password123",
-  "password_confirmation": "password123"
+  "password": "password123"
 }
 ```
+* **قواعد الإدخال:** `full_name` اسم ثلاثي على الأقل — `phone_number` عشرة أرقام تبدأ بـ `09` —
+  `password` اختياري (إن تُرك فارغاً يولّده النظام ويرسله للمشرف على بريده) —
+  `avatar` اختياري (صورة حتى 2MB).
+* **لا ترسل** `password_confirmation` ولا `role_id` ولا `is_active` ولا `created_by` — السيرفر يضبطها تلقائياً.
 * **Success Response (201 Created):**
 ```json
 {
   "status": true,
   "message": "تم إضافة المشرف بنجاح.",
-  "data": {
-    "id": 2,
-    "full_name": "أحمد محمود",
-    "email": "ahmed.admin@darby.ly",
-    "phone_number": "0911234567"
-  }
+  "data": { "...": "كائن المشرف الموحّد" }
 }
 ```
 
@@ -334,24 +362,20 @@
 {
   "status": true,
   "message": "تم جلب بيانات المشرف.",
-  "data": {
-    "id": 2,
-    "full_name": "أحمد محمود",
-    "email": "ahmed.admin@darby.ly",
-    "phone_number": "0911234567"
-  }
+  "data": { "...": "كائن المشرف الموحّد" }
 }
 ```
+* **Not Found (404):** `{ "status": false, "message": "عذراً، المشرف غير موجود." }`
 
 ### 4.4 تعديل بيانات مشرف
 * **Method:** `POST`
 * **URL:** `/api/admin/admins/{id}`
+* **كل الحقول اختيارية** (تحديث جزئي): `full_name`, `email`, `phone_number`, `password`, `is_active`, `avatar`
 * **Body (JSON / FormData):**
 ```json
 {
   "full_name": "أحمد محمود المبروك",
-  "email": "ahmed.new@darby.ly",
-  "phone_number": "0911234567"
+  "is_active": false
 }
 ```
 * **Success Response (200 OK):**
@@ -359,13 +383,32 @@
 {
   "status": true,
   "message": "تم تحديث بيانات المشرف بنجاح.",
-  "data": {
-    "id": 2,
-    "full_name": "أحمد محمود المبروك",
-    "email": "ahmed.new@darby.ly"
-  }
+  "data": { "...": "كائن المشرف الموحّد" }
 }
 ```
+* **📧 عند تغيير البريد:** لا يتغير فوراً — يُرسل رابط تأكيد صالح 30 دقيقة، وتكون الرسالة:
+  `"تم تحديث البيانات المرفقة بنجاح. أرسلنا رابط تأكيد لبريدك الجديد، يرجى مراجعته لتفعيله بكبسة زر."`
+
+### 4.5 حذف مشرف
+* **Method:** `DELETE`
+* **URL:** `/api/admin/admins/{id}`
+* **Body:** لا يوجد
+* **Success Response (200 OK):**
+```json
+{
+  "status": true,
+  "message": "تم حذف المشرف (سارة توفيق العجيلي) نهائياً بنجاح."
+}
+```
+> ⚠️ الحذف **نهائي وغير قابل للتراجع**، ويلغي جلسات دخول المشرف ويحذف صورته.
+* **حالات المنع (403):**
+```json
+{ "status": false, "message": "لا يمكنك حذف حسابك الشخصي من هنا." }
+```
+```json
+{ "status": false, "message": "لا يمكن حذف حساب مدير النظام الأساسي." }
+```
+> 💡 أخفِ زر الحذف عن الصفوف التي `role_id === 1` أو `user_id === currentUser.id`.
 
 ---
 
