@@ -8,6 +8,17 @@ use App\Http\Controllers\Api\Admin\ZoneController;
 use App\Http\Controllers\Api\Admin\DriverReviewController as AdminDriverReviewController;
 use App\Http\Controllers\Api\Admin\ComplaintController as AdminComplaintController;
 use App\Http\Controllers\Api\Admin\DashboardController;
+use App\Http\Controllers\Api\Admin\AdminAvatarController;
+
+// =========================================================================
+// 🖼️ صور المشرفين (عامة بلا توكن)
+// =========================================================================
+// المتصفح يجلب الصورة في وسم <img> أو عبر XHR بدون أي هيدر Authorization،
+// لذلك يجب أن يكون المسار عاماً. ولأنه يمر عبر لارافيل فإنه يحصل على ترويسات
+// CORS الخاصة بـ api/* تلقائياً، بعكس ملفات /storage الثابتة.
+Route::get('/avatars/{filename}', [AdminAvatarController::class, 'show'])
+    ->name('api.admin.avatars.show');
+
 // =========================================================================
 // 🔒 المسارات المحمية (تتطلب تسجيل الدخول وحمل توكن Sanctum)
 // =========================================================================

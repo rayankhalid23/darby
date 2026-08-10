@@ -828,6 +828,60 @@ class AdminSupervisorManagementTest extends TestCase
     }
 
     // =====================================================================
+    // 🖼️ مسار صور المشرفين — GET /api/admin/avatars/{filename}
+    // =====================================================================
+
+    public function test_avatar_url_points_to_laravel_route_not_static_storage(): void
+    {
+        Storage::fake('public');
+        $supervisor = $this->makeSupervisor();
+
+        $response = $this->actingAs($this->adminUser)->post(
+            '/api/admin/admins/' . $supervisor->id,
+            ['avatar' => UploadedFile::fake()->image('pic.jpg')],
+            ['Accept' => 'application/json']
+        );
+
+        $response->assertStatus(200);
+
+        $avatarUrl = $response->json('data.avatar_url');
+        $this->assertNotNull($avatarUrl);
+
+        // يجب أن يمر عبر لارافيل ليحصل على ترويسات CORS، لا عبر /storage الثابت
+        $this->assertStringContainsString('/api/admin/avatars/', $avatarUrl);
+        $this->assertStringNotContainsString('/storage/', $avatarUrl);
+    }
+
+    public function test_avatar_is_served_publicly_with_cors_header(): void
+    {
+        Storage::fake('public');
+        $file = UploadedFile::fake()->image('served.jpg');
+        $path = $file->store('uploads/admins/avatars', 'public');
+
+        // بدون توكن إطلاقاً — المتصفح لا يرسل Authorization مع الصور
+        $response = $this->get('/api/admin/avatars/' . basename($path));
+
+        $response->assertStatus(200);
+        $response->assertHeader('Access-Control-Allow-Origin', '*');
+        $this->assertStringStartsWith('image/', $response->headers->get('Content-Type'));
+    }
+
+    public function test_avatar_route_returns_404_for_missing_file(): void
+    {
+        Storage::fake('public');
+
+        $this->get('/api/admin/avatars/doesnotexist.png')->assertStatus(404);
+    }
+
+    public function test_avatar_route_blocks_path_traversal_and_bad_extensions(): void
+    {
+        Storage::fake('public');
+
+        $this->get('/api/admin/avatars/' . urlencode('../../.env'))->assertStatus(404);
+        $this->get('/api/admin/avatars/shell.php')->assertStatus(404);
+    }
+
+    // =====================================================================
     // 🔄 اختبار تكاملي لدورة الحياة الكاملة
     // =====================================================================
 

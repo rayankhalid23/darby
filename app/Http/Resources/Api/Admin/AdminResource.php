@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api\Admin;
 
+use App\Http\Controllers\Api\Admin\AdminAvatarController;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Cache;
@@ -21,7 +22,8 @@ class AdminResource extends JsonResource
             'full_name'    => $this->user->full_name ?? null,
             'email'        => $this->user->email ?? null,
             'phone_number' => $this->user->phone_number ?? null,
-            'avatar_url'   => $this->user->avatar_url ? asset($this->user->avatar_url) : null,
+            // يمر عبر مسار لارافيل ليحصل على ترويسات CORS التي يحتاجها Flutter Web
+            'avatar_url'   => AdminAvatarController::urlFor($this->user->avatar_url ?? null),
             'is_active'    => (bool) ($this->user->is_active ?? false),
             'role_id'      => $this->user->role_id ?? null,
             'role_name'    => ((int) ($this->user->role_id ?? 0) === 1) ? 'مدير النظام' : 'مشرف',
