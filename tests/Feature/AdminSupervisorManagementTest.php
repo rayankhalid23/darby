@@ -6,9 +6,11 @@ use App\Models\Admin\Admin;
 use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
 
 /**
@@ -377,12 +379,242 @@ class AdminSupervisorManagementTest extends TestCase
         $response->assertJsonPath('status', true);
         $this->assertStringContainsString('أرسلنا رابط تأكيد', $response->json('message'));
 
+        // كائن email_verification الذي تعتمد عليه الواجهة لفتح نافذة الانتظار
+        $response->assertJsonStructure(['email_verification' => ['status', 'new_email', 'expires_at']]);
+        $response->assertJsonPath('email_verification.status', 'pending');
+        $response->assertJsonPath('email_verification.new_email', $newMail);
+
+        // الحقول المعلّقة داخل بيانات المشرف
+        $response->assertJsonPath('data.email_change_pending', true);
+        $response->assertJsonPath('data.pending_new_email', $newMail);
+        $response->assertJsonPath('data.email', $originalMail);
+
         // البريد القديم يبقى كما هو حتى يضغط المشرف على رابط التأكيد
         $this->assertDatabaseHas('users', [
             'id'    => $supervisor->user_id,
             'email' => $originalMail,
         ]);
         $this->assertDatabaseMissing('users', ['email' => $newMail]);
+    }
+
+    public function test_update_without_email_change_returns_null_email_verification(): void
+    {
+        $supervisor = $this->makeSupervisor();
+
+        $response = $this->actingAs($this->adminUser)
+            ->postJson('/api/admin/admins/' . $supervisor->id, [
+                'full_name' => 'اسم ثلاثي بلا بريد',
+            ]);
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('email_verification', null);
+        $response->assertJsonPath('data.email_change_pending', false);
+        $response->assertJsonPath('data.pending_new_email', null);
+    }
+
+    // =====================================================================
+    // 📧 دورة تأكيد تغيير البريد الإلكتروني (مطابقة لآلية ولي الأمر)
+    // =====================================================================
+
+    /**
+     * طلب تغيير بريد والتقاط رابطي القبول والرفض من الكاش
+     */
+    private function requestEmailChange(Admin $supervisor, ?string $newMail = null): array
+    {
+        $newMail ??= 'pending.' . uniqid() . '@darby.test';
+
+        $this->actingAs($this->adminUser)
+            ->postJson('/api/admin/admins/' . $supervisor->id, ['email' => $newMail])
+            ->assertStatus(200);
+
+        $pending = Cache::get("admin_email_change_{$supervisor->user_id}");
+        $this->assertNotNull($pending, 'لم يُسجَّل طلب تغيير البريد في الكاش');
+
+        return [
+            'new_email' => $newMail,
+            'token'     => $pending['token'],
+            'approve'   => URL::temporarySignedRoute('admin.email.approve', now()->addMinutes(30), ['token' => $pending['token']]),
+            'reject'    => URL::temporarySignedRoute('admin.email.reject', now()->addMinutes(30), ['token' => $pending['token']]),
+        ];
+    }
+
+    public function test_email_change_status_is_pending_after_request(): void
+    {
+        $supervisor = $this->makeSupervisor();
+        $req = $this->requestEmailChange($supervisor);
+
+        $response = $this->actingAs($this->adminUser)
+            ->getJson('/api/admin/admins/' . $supervisor->id . '/email-change/status');
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('status', true);
+        $response->assertJsonPath('data.status', 'pending');
+        $response->assertJsonPath('data.new_email', $req['new_email']);
+    }
+
+    public function test_email_change_status_is_expired_when_no_request_exists(): void
+    {
+        $supervisor = $this->makeSupervisor();
+
+        $this->actingAs($this->adminUser)
+            ->getJson('/api/admin/admins/' . $supervisor->id . '/email-change/status')
+            ->assertStatus(200)
+            ->assertJsonPath('data.status', 'expired')
+            ->assertJsonPath('data.new_email', null);
+    }
+
+    public function test_approving_link_actually_changes_the_email(): void
+    {
+        $supervisor = $this->makeSupervisor();
+        $req = $this->requestEmailChange($supervisor);
+
+        $approve = $this->getJson($req['approve']);
+        $approve->assertStatus(200);
+        $approve->assertJsonPath('status', true);
+        $approve->assertJsonPath('email_changed', true);
+        $approve->assertJsonPath('data.email', $req['new_email']);
+
+        // البريد تغيّر فعلياً وتم توثيقه
+        $this->assertDatabaseHas('users', [
+            'id'    => $supervisor->user_id,
+            'email' => $req['new_email'],
+        ]);
+        $this->assertNotNull(User::find($supervisor->user_id)->email_verified_at);
+
+        // الحالة صارت verified
+        $this->actingAs($this->adminUser)
+            ->getJson('/api/admin/admins/' . $supervisor->id . '/email-change/status')
+            ->assertJsonPath('data.status', 'verified');
+    }
+
+    public function test_approval_link_cannot_be_used_twice(): void
+    {
+        $supervisor = $this->makeSupervisor();
+        $req = $this->requestEmailChange($supervisor);
+
+        $this->getJson($req['approve'])->assertStatus(200);
+        $this->getJson($req['approve'])->assertStatus(400);
+    }
+
+    public function test_approval_link_rejects_tampered_signature(): void
+    {
+        $supervisor = $this->makeSupervisor();
+        $req = $this->requestEmailChange($supervisor);
+
+        $this->getJson($req['approve'] . 'TAMPERED')->assertStatus(403);
+
+        // البريد لم يتغير
+        $this->assertDatabaseMissing('users', ['email' => $req['new_email']]);
+    }
+
+    public function test_rejecting_link_keeps_old_email_and_sets_rejected_status(): void
+    {
+        $supervisor   = $this->makeSupervisor();
+        $originalMail = $supervisor->user->email;
+        $req = $this->requestEmailChange($supervisor);
+
+        $this->getJson($req['reject'])
+            ->assertStatus(200)
+            ->assertJsonPath('status', true);
+
+        $this->assertDatabaseHas('users', [
+            'id'    => $supervisor->user_id,
+            'email' => $originalMail,
+        ]);
+
+        $this->actingAs($this->adminUser)
+            ->getJson('/api/admin/admins/' . $supervisor->id . '/email-change/status')
+            ->assertJsonPath('data.status', 'rejected');
+    }
+
+    public function test_admin_can_cancel_pending_email_change(): void
+    {
+        $supervisor = $this->makeSupervisor();
+        $req = $this->requestEmailChange($supervisor);
+
+        $this->actingAs($this->adminUser)
+            ->postJson('/api/admin/admins/' . $supervisor->id . '/email-change/cancel')
+            ->assertStatus(200)
+            ->assertJsonPath('status', true);
+
+        // الطلب اختفى من الكاش ولم يعد الرابط يعمل
+        $this->assertNull(Cache::get("admin_email_change_{$supervisor->user_id}"));
+        $this->getJson($req['approve'])->assertStatus(400);
+    }
+
+    public function test_cancel_fails_when_there_is_no_pending_request(): void
+    {
+        $supervisor = $this->makeSupervisor();
+
+        $this->actingAs($this->adminUser)
+            ->postJson('/api/admin/admins/' . $supervisor->id . '/email-change/cancel')
+            ->assertStatus(400)
+            ->assertJsonPath('status', false);
+    }
+
+    public function test_admin_can_resend_verification_link(): void
+    {
+        $supervisor = $this->makeSupervisor();
+        $req = $this->requestEmailChange($supervisor);
+
+        $response = $this->actingAs($this->adminUser)
+            ->postJson('/api/admin/admins/' . $supervisor->id . '/email-change/resend');
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('status', true);
+        $response->assertJsonPath('email_verification.status', 'pending');
+        $response->assertJsonPath('email_verification.new_email', $req['new_email']);
+
+        // التوكن القديم أُبطل وصدر توكن جديد
+        $fresh = Cache::get("admin_email_change_{$supervisor->user_id}");
+        $this->assertNotEquals($req['token'], $fresh['token']);
+        $this->getJson($req['approve'])->assertStatus(400);
+    }
+
+    public function test_resend_fails_when_there_is_no_pending_request(): void
+    {
+        $supervisor = $this->makeSupervisor();
+
+        $this->actingAs($this->adminUser)
+            ->postJson('/api/admin/admins/' . $supervisor->id . '/email-change/resend')
+            ->assertStatus(400);
+    }
+
+    public function test_new_email_request_invalidates_the_previous_one(): void
+    {
+        $supervisor = $this->makeSupervisor();
+        $first  = $this->requestEmailChange($supervisor);
+        $second = $this->requestEmailChange($supervisor);
+
+        // الرابط الأول لم يعد صالحاً، والثاني يعمل
+        $this->getJson($first['approve'])->assertStatus(400);
+        $this->getJson($second['approve'])->assertStatus(200);
+
+        $this->assertDatabaseHas('users', [
+            'id'    => $supervisor->user_id,
+            'email' => $second['new_email'],
+        ]);
+    }
+
+    public function test_email_change_endpoints_require_authentication(): void
+    {
+        $supervisor = $this->makeSupervisor();
+
+        $this->getJson('/api/admin/admins/' . $supervisor->id . '/email-change/status')->assertStatus(401);
+        $this->postJson('/api/admin/admins/' . $supervisor->id . '/email-change/cancel')->assertStatus(401);
+        $this->postJson('/api/admin/admins/' . $supervisor->id . '/email-change/resend')->assertStatus(401);
+    }
+
+    public function test_email_change_endpoints_return_404_for_missing_supervisor(): void
+    {
+        $this->actingAs($this->adminUser)
+            ->getJson('/api/admin/admins/99999999/email-change/status')->assertStatus(404);
+
+        $this->actingAs($this->adminUser)
+            ->postJson('/api/admin/admins/99999999/email-change/cancel')->assertStatus(404);
+
+        $this->actingAs($this->adminUser)
+            ->postJson('/api/admin/admins/99999999/email-change/resend')->assertStatus(404);
     }
 
     public function test_update_allows_resending_same_email_without_unique_error(): void

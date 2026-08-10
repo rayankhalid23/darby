@@ -75,6 +75,7 @@ class UpdateAdminRequest extends FormRequest
             'avatar.image'       => 'الملف المرفق يجب أن يكون صورة.',
             'avatar.mimes'       => 'يجب أن تكون الصورة بصيغة jpeg, png, أو jpg.',
             'avatar.max'         => 'حجم الصورة يجب ألا يتجاوز 2 ميجابايت.',
+            'avatar.uploaded'    => 'تعذر رفع الصورة إلى الخادم. تأكد أن حجمها لا يتجاوز 2 ميجابايت ثم أعد المحاولة.',
         ];
     }
 

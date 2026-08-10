@@ -4,6 +4,7 @@ namespace App\Services\Admin;
 
 use App\Models\User;
 use App\Models\Admin\Admin;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Hash;
@@ -126,6 +127,172 @@ class AdminService
         });
     }
 
+    // =====================================================================
+    // 📧 منظومة تغيير البريد الإلكتروني بالتأكيد (مطابقة لآلية ولي الأمر)
+    //
+    // المبدأ: البريد لا يتغير فوراً. نحفظ الطلب في الكاش لمدة 30 دقيقة ونرسل
+    // رابطي قبول/رفض موقّعين للبريد الجديد. الواجهة تتابع الحالة عبر
+    // نقطة status، ويمكنها الإلغاء أو إعادة الإرسال.
+    //
+    // مفاتيح الكاش (كلها مرتبطة بـ user_id الخاص بالمشرف المُعدَّل):
+    //   admin_email_change_{userId}         => ['new_email' => ..., 'token' => ...]
+    //   admin_email_change_token_{token}    => userId   (للبحث العكسي من الرابط)
+    //   admin_email_change_status_{userId}  => pending|verified|rejected|expired
+    // =====================================================================
+
+    /** مدة صلاحية رابط التأكيد بالدقائق */
+    public const EMAIL_CHANGE_TTL = 30;
+
+    /**
+     * تسجيل طلب تغيير بريد جديد وإرسال رابطي التأكيد والرفض
+     */
+    public function requestEmailChange(User $user, string $newEmail): array
+    {
+        // إلغاء أي طلب معلق سابق لنفس المشرف حتى لا تتزاحم الروابط
+        $this->forgetEmailChange($user->id);
+
+        $token      = Str::random(64);
+        $expiresAt  = now()->addMinutes(self::EMAIL_CHANGE_TTL);
+        $approveUrl = URL::temporarySignedRoute('admin.email.approve', $expiresAt, ['token' => $token]);
+        $rejectUrl  = URL::temporarySignedRoute('admin.email.reject',  $expiresAt, ['token' => $token]);
+
+        Cache::put("admin_email_change_{$user->id}", [
+            'new_email' => $newEmail,
+            'token'     => $token,
+        ], $expiresAt);
+        Cache::put("admin_email_change_token_{$token}", $user->id, $expiresAt);
+        Cache::put("admin_email_change_status_{$user->id}", 'pending', $expiresAt);
+
+        Log::info("=== Admin Email Change Request === user {$user->id} -> {$newEmail}");
+
+        $this->emailService->sendEmailChangeLink($newEmail, $user->full_name, $approveUrl, $rejectUrl);
+
+        return [
+            'status'     => 'pending',
+            'new_email'  => $newEmail,
+            'expires_at' => $expiresAt->toDateTimeString(),
+        ];
+    }
+
+    /**
+     * تأكيد تغيير البريد عبر الرابط المرسل
+     */
+    public function approveEmailChange(string $token): User
+    {
+        $userId  = Cache::get("admin_email_change_token_{$token}");
+        $pending = $userId ? Cache::get("admin_email_change_{$userId}") : null;
+
+        if (!$userId || !$pending) {
+            throw new Exception('الرابط منتهي الصلاحية أو تم استخدامه مسبقاً.');
+        }
+
+        $newEmail = $pending['new_email'];
+
+        // إعادة التحقق من عدم استخدام البريد خلال فترة الانتظار
+        if (User::where('email', $newEmail)->where('id', '!=', $userId)->exists()) {
+            Cache::put("admin_email_change_status_{$userId}", 'rejected', now()->addMinutes(15));
+            $this->forgetEmailChange($userId, $token);
+            throw new Exception('تعذر التفعيل: البريد الإلكتروني أصبح مستخدماً لحساب آخر.');
+        }
+
+        $user = User::findOrFail($userId);
+
+        DB::transaction(function () use ($user, $newEmail, $userId, $token) {
+            $user->update([
+                'email'             => $newEmail,
+                'email_verified_at' => now(),
+            ]);
+
+            $this->forgetEmailChange($userId, $token);
+            Cache::put("admin_email_change_status_{$userId}", 'verified', now()->addMinutes(15));
+        });
+
+        Log::info("Admin email change approved for user {$userId} -> {$newEmail}");
+
+        return $user->refresh();
+    }
+
+    /**
+     * رفض طلب تغيير البريد عبر الرابط المرسل
+     */
+    public function rejectEmailChange(string $token): void
+    {
+        $userId = Cache::get("admin_email_change_token_{$token}");
+
+        if (!$userId) {
+            throw new Exception('الرابط منتهي الصلاحية أو تم استخدامه مسبقاً.');
+        }
+
+        $this->forgetEmailChange($userId, $token);
+        Cache::put("admin_email_change_status_{$userId}", 'rejected', now()->addMinutes(15));
+
+        Log::info("Admin email change rejected for user {$userId}");
+    }
+
+    /**
+     * حالة طلب تغيير البريد الحالي: pending | verified | rejected | expired
+     */
+    public function getEmailChangeStatus(int $userId): array
+    {
+        $pending = Cache::get("admin_email_change_{$userId}");
+        $status  = Cache::get("admin_email_change_status_{$userId}");
+
+        if (!$status) {
+            $status = $pending ? 'pending' : 'expired';
+        }
+
+        return [
+            'status'    => $status,
+            'new_email' => $pending['new_email'] ?? null,
+        ];
+    }
+
+    /**
+     * إلغاء طلب تغيير البريد من الواجهة
+     */
+    public function cancelEmailChange(int $userId): void
+    {
+        $pending = Cache::get("admin_email_change_{$userId}");
+
+        if (!$pending) {
+            throw new Exception('لا يوجد طلب معلق لتغيير البريد الإلكتروني.');
+        }
+
+        $this->forgetEmailChange($userId, $pending['token'] ?? null);
+        Cache::forget("admin_email_change_status_{$userId}");
+
+        Log::info("Admin email change cancelled for user {$userId}");
+    }
+
+    /**
+     * إعادة إرسال رابط التأكيد للبريد الجديد نفسه
+     */
+    public function resendEmailChange(User $user): array
+    {
+        $pending = Cache::get("admin_email_change_{$user->id}");
+
+        if (!$pending) {
+            throw new Exception('لا يوجد طلب معلق لتغيير البريد الإلكتروني لإعادة إرساله.');
+        }
+
+        return $this->requestEmailChange($user, $pending['new_email']);
+    }
+
+    /**
+     * تنظيف مفاتيح الكاش الخاصة بطلب تغيير البريد
+     */
+    private function forgetEmailChange(int $userId, ?string $token = null): void
+    {
+        $existing = Cache::get("admin_email_change_{$userId}");
+        $token  ??= $existing['token'] ?? null;
+
+        Cache::forget("admin_email_change_{$userId}");
+
+        if ($token) {
+            Cache::forget("admin_email_change_token_{$token}");
+        }
+    }
+
     /**
      * 🗑️ حذف المشرف نهائياً مع تنظيف كل ما يتعلق به
      *
@@ -154,7 +321,11 @@ class AdminService
                 }
             }
 
-            // 4. حذف سجل المشرف ثم حذف حساب المستخدم نهائياً
+            // 4. إلغاء أي طلب معلق لتغيير البريد الإلكتروني
+            $this->forgetEmailChange($user->id);
+            Cache::forget("admin_email_change_status_{$user->id}");
+
+            // 5. حذف سجل المشرف ثم حذف حساب المستخدم نهائياً
             $admin->delete();
             $user->forceDelete();
 

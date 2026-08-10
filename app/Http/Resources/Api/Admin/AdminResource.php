@@ -4,11 +4,17 @@ namespace App\Http\Resources\Api\Admin;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Cache;
 
 class AdminResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        // طلب تغيير بريد معلّق (إن وُجد) حتى تعرض الواجهة شارة "بانتظار التأكيد"
+        $pendingEmail = $this->user
+            ? (Cache::get("admin_email_change_{$this->user_id}")['new_email'] ?? null)
+            : null;
+
         return [
             'id'           => $this->id,
             'user_id'      => $this->user_id,
@@ -23,6 +29,10 @@ class AdminResource extends JsonResource
             'creator_name' => $this->creator->full_name ?? null,
             'created_at'   => optional($this->user)->created_at?->toDateTimeString(),
             'last_login_at'=> optional($this->user)->last_login_at?->toDateTimeString(),
+
+            // حالة تغيير البريد الإلكتروني المعلّق
+            'email_change_pending' => $pendingEmail !== null,
+            'pending_new_email'    => $pendingEmail,
         ];
     }
 }

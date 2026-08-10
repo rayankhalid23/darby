@@ -27,6 +27,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix('admins')->group(function () {
         Route::get('/', [AdminController::class, 'index']);
         Route::post('/', [AdminController::class, 'store']);
+
+        // --- 📧 متابعة طلب تغيير البريد الإلكتروني (توضع قبل مسارات {id} المفردة) ---
+        Route::get('/{id}/email-change/status',  [AdminController::class, 'emailChangeStatus']);
+        Route::post('/{id}/email-change/cancel', [AdminController::class, 'cancelEmailChange']);
+        Route::post('/{id}/email-change/resend', [AdminController::class, 'resendEmailChange']);
+
         Route::get('/{id}', [AdminController::class, 'show']);
         Route::post('/{id}', [AdminController::class, 'update']);
         Route::delete('/{id}', [AdminController::class, 'destroy']);

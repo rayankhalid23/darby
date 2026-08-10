@@ -56,8 +56,11 @@ Accept: application/json
 | 3 | إضافة مشرف جديد | `POST` | `/api/admin/admins` | 201 |
 | 4 | تعديل بيانات مشرف | `POST` | `/api/admin/admins/{id}` | 200 |
 | 5 | حذف مشرف | `DELETE` | `/api/admin/admins/{id}` | 200 |
-| 6 | تأكيد تغيير البريد | `GET` | `/api/admin/admin/email/approve/{token}` | 200 |
-| 7 | رفض تغيير البريد | `GET` | `/api/admin/admin/email/reject/{token}` | 200 |
+| 6 | حالة طلب تغيير البريد | `GET` | `/api/admin/admins/{id}/email-change/status` | 200 |
+| 7 | إلغاء طلب تغيير البريد | `POST` | `/api/admin/admins/{id}/email-change/cancel` | 200 |
+| 8 | إعادة إرسال رابط التأكيد | `POST` | `/api/admin/admins/{id}/email-change/resend` | 200 |
+| 9 | تأكيد تغيير البريد (من رابط البريد) | `GET` | `/api/admin/admin/email/approve/{token}` | 200 |
+| 10 | رفض تغيير البريد (من رابط البريد) | `GET` | `/api/admin/admin/email/reject/{token}` | 200 |
 
 ---
 
@@ -79,7 +82,9 @@ Accept: application/json
   "created_by": 1,
   "creator_name": "أحمد المدير",
   "created_at": "2026-08-09 22:17:51",
-  "last_login_at": null
+  "last_login_at": null,
+  "email_change_pending": false,
+  "pending_new_email": null
 }
 ```
 
@@ -98,6 +103,8 @@ Accept: application/json
 | `creator_name` | string\|null | اسم من أنشأ الحساب — جاهز للعرض |
 | `created_at` | string\|null | `Y-m-d H:i:s` |
 | `last_login_at` | string\|null | آخر دخول، أو `null` إن لم يسجّل الدخول بعد |
+| `email_change_pending` | boolean | `true` إذا كان هناك طلب تغيير بريد بانتظار التأكيد — اعرض شارة صفراء |
+| `pending_new_email` | string\|null | البريد الجديد المنتظر تأكيده |
 
 ---
 
@@ -402,26 +409,111 @@ POST /api/admin/admins/{id}
 
 ### 📧 حالة خاصة: تغيير البريد الإلكتروني
 
-عند إرسال `email` مختلف عن الحالي، **لا يتغير البريد فوراً**. يرسل السيرفر رابط تأكيد
-إلى البريد الجديد، وتكون الاستجابة `200` برسالة مختلفة:
+> هذه الآلية **مطابقة تماماً لآلية بروفايل ولي الأمر** — نفس الفكرة ونفس الحالات
+> (`pending` / `verified` / `rejected` / `expired`) ونفس أزرار "تم التعديل" و"إلغاء التعديل".
+
+عند إرسال `email` مختلف عن الحالي، **لا يتغير البريد فوراً**. يُسجَّل كطلب معلّق ويُرسل
+رابط تأكيد للبريد الجديد صالح **30 دقيقة**، ويأتي في الرد كائن `email_verification`:
 
 ```json
 {
   "status": true,
-  "message": "تم تحديث البيانات المرفقة بنجاح. أرسلنا رابط تأكيد لبريدك الجديد، يرجى مراجعته لتفعيله بكبسة زر.",
-  "data": { "...": "الحقول الأخرى محدّثة، لكن email لا يزال القديم" }
+  "message": "تم تحديث البيانات بنجاح. أرسلنا رابط تأكيد للبريد الجديد، يرجى فتحه لتفعيل التغيير.",
+  "data": {
+    "id": 6,
+    "email": "mariam.supervisor@derbi.ly",
+    "email_change_pending": true,
+    "pending_new_email": "newmail24526000@derbi.ly",
+    "...": "بقية حقول كائن المشرف"
+  },
+  "email_verification": {
+    "status": "pending",
+    "new_email": "newmail24526000@derbi.ly",
+    "expires_at": "2026-08-10 04:40:45"
+  }
 }
 ```
 
-**ما يجب على الواجهة فعله:**
-- افحص إن كانت الرسالة تحتوي على "أرسلنا رابط تأكيد" واعرض تنبيهاً أصفر للمستخدم.
-- **لا تفترض أن البريد تغيّر** — أعد قراءة `data.email` واعرضه كما هو.
-- الرابط صالح **30 دقيقة** فقط.
-- الروابط تُفتح من بريد المشرف مباشرة (لا تحتاج الواجهة لاستدعائها):
-  - قبول: `GET /api/admin/admin/email/approve/{token}` → `{"status": true, "message": "تم تفعيل وتحديث بريدك الإلكتروني بنجاح! 🎉"}`
-  - رفض: `GET /api/admin/admin/email/reject/{token}` → `{"status": true, "message": "تم إلغاء طلب تغيير البريد الإلكتروني بنجاح."}`
+أما إذا لم يتغيّر البريد فتكون القيمة `null`:
 
-> إرسال نفس البريد الحالي دون تغيير **لا يسبب أي خطأ** ولا يرسل رسالة تأكيد.
+```json
+{
+  "status": true,
+  "message": "تم تحديث بيانات المشرف بنجاح.",
+  "data": { "...": "كائن المشرف" },
+  "email_verification": null
+}
+```
+
+> ✅ **مهم:** كائن المشرف يبقى في `data` مباشرة (لم يُنقل إلى `data.profile` كما في البارنت)
+> حتى لا تنكسر شاشاتك الحالية. و `email_verification` مفتاح مستقل بجانب `data`.
+
+#### 🔍 فحص حالة الطلب
+
+```
+GET /api/admin/admins/{id}/email-change/status
+```
+```json
+{
+  "status": true,
+  "data": {
+    "status": "pending",
+    "new_email": "newmail24526000@derbi.ly"
+  }
+}
+```
+
+| القيمة | المعنى | ما تفعله الواجهة |
+|---|---|---|
+| `pending` | لم يُفتح الرابط بعد | أبقِ النافذة مفتوحة ونبّه المستخدم لفتح بريده |
+| `verified` | تم التأكيد والبريد تغيّر فعلاً | أغلق النافذة، أعد تحميل البيانات، اعرض رسالة نجاح |
+| `rejected` | رُفض الطلب من رابط الرفض | أغلق النافذة واعرض تنبيه الرفض |
+| `expired` | انتهت الصلاحية أو لا يوجد طلب أصلاً | أغلق النافذة واعرض تنبيه انتهاء الصلاحية |
+
+> عند `verified` و `rejected` تكون `new_email` = `null`.
+
+#### ❌ إلغاء الطلب
+
+```
+POST /api/admin/admins/{id}/email-change/cancel
+```
+```json
+{ "status": true, "message": "تم إلغاء طلب تغيير البريد الإلكتروني." }
+```
+لو لم يكن هناك طلب معلّق ترجع **400**:
+```json
+{ "status": false, "message": "لا يوجد طلب معلق لتغيير البريد الإلكتروني." }
+```
+
+#### 🔁 إعادة إرسال الرابط
+
+```
+POST /api/admin/admins/{id}/email-change/resend
+```
+```json
+{
+  "status": true,
+  "message": "تمت إعادة إرسال رابط التأكيد بنجاح.",
+  "email_verification": {
+    "status": "pending",
+    "new_email": "newmail24526000@derbi.ly",
+    "expires_at": "2026-08-10 05:10:45"
+  }
+}
+```
+> إعادة الإرسال **تُبطل الرابط القديم** وتصدر رابطاً جديداً بمهلة 30 دقيقة جديدة.
+
+#### 📬 الروابط داخل رسالة البريد (لا تستدعيها الواجهة)
+
+| الرابط | الرد |
+|---|---|
+| `GET /api/admin/admin/email/approve/{token}` | `{"status":true,"email_changed":true,"message":"تم تفعيل وتحديث بريدك الإلكتروني بنجاح! 🎉","data":{"email":"..."}}` |
+| `GET /api/admin/admin/email/reject/{token}` | `{"status":true,"message":"تم إلغاء طلب تغيير البريد الإلكتروني بنجاح."}` |
+
+- توقيع غير صالح أو منتهٍ → **403**
+- رابط مستخدم مسبقاً أو ملغى → **400**
+- إرسال نفس البريد الحالي **لا يسبب أي خطأ** ولا يرسل رسالة تأكيد.
+- طلب تغيير جديد **يُبطل الطلب السابق** تلقائياً.
 
 ### ❌ أخطاء التعديل
 
@@ -627,6 +719,22 @@ export const deleteSupervisor = async (id) => {
   return data.message;
 };
 
+// 6) متابعة تغيير البريد الإلكتروني
+export const getEmailChangeStatus = async (id) => {
+  const { data } = await api.get(`/api/admin/admins/${id}/email-change/status`);
+  return data.data; // { status, new_email }
+};
+
+export const cancelEmailChange = async (id) => {
+  const { data } = await api.post(`/api/admin/admins/${id}/email-change/cancel`);
+  return data.message;
+};
+
+export const resendEmailChange = async (id) => {
+  const { data } = await api.post(`/api/admin/admins/${id}/email-change/resend`);
+  return data.email_verification;
+};
+
 // معالجة موحّدة لأخطاء التحقق
 export const extractErrors = (error) => {
   const res = error.response;
@@ -643,8 +751,9 @@ export const extractErrors = (error) => {
 
 ## 12. حالة الاختبار
 
-جميع النقاط الخمس مغطاة باختبارات آلية في
-`tests/Feature/AdminSupervisorManagementTest.php` — **32 اختباراً، 195 تأكيداً، كلها ناجحة**.
+كل النقاط مغطاة باختبارات آلية في
+`tests/Feature/AdminSupervisorManagementTest.php` — **46 اختباراً، 361 تأكيداً، كلها ناجحة**،
+شاملةً رفع الصور ودورة تأكيد البريد كاملة.
 
 ```bash
 php artisan test --filter=AdminSupervisorManagementTest
