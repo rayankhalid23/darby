@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Admin\DriverReviewController as AdminDriverReviewCo
 use App\Http\Controllers\Api\Admin\ComplaintController as AdminComplaintController;
 use App\Http\Controllers\Api\Admin\DashboardController;
 use App\Http\Controllers\Api\Admin\AdminAvatarController;
+use App\Http\Controllers\Api\Admin\AdminProfileController;
 
 // =========================================================================
 // 🖼️ صور المشرفين (عامة بلا توكن)
@@ -34,6 +35,16 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/active-trips', [DashboardController::class, 'activeTrips'])->name('api.admin.dashboard.active-trips');
     });
     
+    // --- 👤 الملف الشخصي للمشرف / مدير النظام (الحساب الحالي) ---
+    Route::prefix('profile')->group(function () {
+        Route::get('/',  [AdminProfileController::class, 'show'])->name('api.admin.profile.show');
+        Route::post('/', [AdminProfileController::class, 'update'])->name('api.admin.profile.update');
+
+        Route::get('/email-change/status',  [AdminProfileController::class, 'emailChangeStatus']);
+        Route::post('/email-change/cancel', [AdminProfileController::class, 'cancelEmailChange']);
+        Route::post('/email-change/resend', [AdminProfileController::class, 'resendEmailChange']);
+    });
+
     // --- مجموعة روابط إدارة المشرفين ---
     Route::prefix('admins')->group(function () {
         Route::get('/', [AdminController::class, 'index']);
