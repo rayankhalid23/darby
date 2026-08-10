@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -62,7 +63,7 @@ class AdminProfileTest extends TestCase
     // 1️⃣ عرض البروفايل — GET /api/admin/profile
     // =====================================================================
 
-    #[PHPUnitFrameworkAttributesDataProvider('roleProvider')]
+    #[DataProvider('roleProvider')]
     public function test_can_view_own_profile(int $roleId): void
     {
         $admin = $this->makeAccount($roleId);
@@ -118,7 +119,7 @@ class AdminProfileTest extends TestCase
     // 2️⃣ تعديل البروفايل — POST /api/admin/profile
     // =====================================================================
 
-    #[PHPUnitFrameworkAttributesDataProvider('roleProvider')]
+    #[DataProvider('roleProvider')]
     public function test_can_update_own_name_and_phone(int $roleId): void
     {
         $admin    = $this->makeAccount($roleId);
@@ -241,7 +242,7 @@ class AdminProfileTest extends TestCase
     // 3️⃣ تغيير كلمة المرور
     // =====================================================================
 
-    #[PHPUnitFrameworkAttributesDataProvider('roleProvider')]
+    #[DataProvider('roleProvider')]
     public function test_can_change_own_password_with_correct_current_password(int $roleId): void
     {
         $admin   = $this->makeAccount($roleId);
@@ -307,7 +308,7 @@ class AdminProfileTest extends TestCase
     // 4️⃣ تغيير البريد الإلكتروني من البروفايل
     // =====================================================================
 
-    #[PHPUnitFrameworkAttributesDataProvider('roleProvider')]
+    #[DataProvider('roleProvider')]
     public function test_changing_own_email_does_not_apply_immediately(int $roleId): void
     {
         $admin    = $this->makeAccount($roleId);
