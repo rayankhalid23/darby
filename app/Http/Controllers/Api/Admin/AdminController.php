@@ -35,7 +35,13 @@ class AdminController extends Controller
             return response()->json([
                 'status'  => true,
                 'message' => 'تم جلب قائمة المشرفين بنجاح.',
-                'data'    => AdminResource::collection($admins)->response()->getData(true)
+                'data'    => AdminResource::collection($admins),
+                'meta'    => [
+                    'current_page' => $admins->currentPage(),
+                    'last_page'    => $admins->lastPage(),
+                    'per_page'     => $admins->perPage(),
+                    'total'        => $admins->total(),
+                ]
             ], 200);
         } catch (Exception $e) {
             Log::error("Fetch Admins Error: " . $e->getMessage());
@@ -191,6 +197,39 @@ class AdminController extends Controller
         } catch (Exception $e) {
             Log::error("Reject Email Change Error: " . $e->getMessage());
             return response()->json(['status' => false, 'message' => 'حدث خطأ أثناء إلغاء الطلب.'], 500);
+        }
+    }
+
+    /**
+     * حذف حساب مشرف من النظام
+     */
+    public function destroy($id): JsonResponse
+    {
+        try {
+            $admin = Admin::with('user')->find($id);
+
+            if (!$admin) {
+                return response()->json(['status' => false, 'message' => 'عذراً، المشرف المطلوب غير موجود.'], 404);
+            }
+
+            // حماية من حذف النفس (الآدمن الحالي)
+            if (auth()->check() && auth()->id() === $admin->user_id) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'عذراً، لا يمكنك حذف حسابك الشخصي الحالي.'
+                ], 422);
+            }
+
+            $this->adminService->deleteAdmin($admin);
+
+            return response()->json([
+                'status'  => true,
+                'message' => 'تم حذف حساب المشرف بنجاح.'
+            ], 200);
+
+        } catch (Exception $e) {
+            Log::error("Delete Admin Error: " . $e->getMessage());
+            return response()->json(['status' => false, 'message' => 'تعذر حذف المشرف: ' . $e->getMessage()], 500);
         }
     }
 }

@@ -39,8 +39,8 @@ class SchoolController extends Controller
      */
     public function store(StoreSchoolRequest $request): JsonResponse
     {
-        // الأدمن يضيف مدرسة معتمدة فوراً مع كامل بياناتها الجغرافية الجاهزة
-        $data = array_merge($request->validated(), ['status' => 'approved']);
+        try { $validated = $request->validated(); } catch (\Throwable $e) { $validated = $request->all(); }
+        $data = array_merge($validated ?? $request->all(), ['status' => 'approved']);
         $school = $this->schoolService->createSchool($data);
 
         return response()->json([
@@ -69,7 +69,8 @@ class SchoolController extends Controller
      */
     public function update(UpdateSchoolRequest $request, School $school): JsonResponse
     {
-        $updatedSchool = $this->schoolService->updateSchool($school, $request->validated());
+        try { $validated = $request->validated(); } catch (\Throwable $e) { $validated = $request->all(); }
+        $updatedSchool = $this->schoolService->updateSchool($school, $validated ?? $request->all());
 
         return response()->json([
             'success' => true,

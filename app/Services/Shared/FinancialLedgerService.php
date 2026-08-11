@@ -464,4 +464,73 @@ class FinancialLedgerService
             return $dispute->fresh();
         });
     }
+
+    /**
+     * معاينة حسابات الإلغاء المبكر للعقد دون تعديل البيانات
+     */
+    public function previewContractTermination(Contract $contract, string $terminatedBy, bool $isArbitraryByParent = false): array
+    {
+        $totalPrice  = (float) ($contract->total_price ?? 0);
+        $totalTrips  = max((int) ($contract->days_count ?? 20), 1);
+        $perTripCost = $totalPrice / $totalTrips;
+
+        $tripsCompleted = Trip::whereHas('route', fn($q) => $q->where('contract_id', $contract->id))
+            ->where('status', 'completed')
+            ->count();
+
+        $executedCost = round($tripsCompleted * $perTripCost, 2);
+        $remaining    = max(0, round($totalPrice - $executedCost, 2));
+
+        $cancellationFee = 0;
+        if ($isArbitraryByParent && $remaining > 0) {
+            $cancellationFee = round($remaining * 0.10, 2);
+        }
+
+        $refundToParent = max(0, round($remaining - $cancellationFee, 2));
+
+        return [
+            'contract_id'        => $contract->id,
+            'contract_number'    => $contract->contract_number ?? "CNT-{$contract->id}",
+            'total_price'        => $totalPrice,
+            'executed_cost'      => $executedCost,
+            'remaining_balance'  => $remaining,
+            'cancellation_fee'   => $cancellationFee,
+            'refunded_to_parent' => $refundToParent,
+        ];
+    }
+
+    /**
+     * معاينة مصفوفة الغرامات لإلغاء رحلة دون تعديل البيانات
+     */
+    public function previewTripCancellation(Trip $trip, string $cancelledBy): array
+    {
+        $route = $trip->route;
+        $contract = $route?->contract;
+        $tripPriceDinar = (float) ($contract?->total_price ? ($contract->total_price / max($contract->days_count, 1)) : 25.00);
+
+        $parentRefundDinar = 0;
+        $driverPayDinar = 0;
+        $platformFeeDinar = 0;
+        $driverPenaltyDinar = 0;
+
+        if ($cancelledBy === 'parent') {
+            $parentRefundDinar = $tripPriceDinar;
+        } elseif ($cancelledBy === 'no_show') {
+            $platformFeeDinar = round($tripPriceDinar * self::COMMISSION_RATE, 2);
+            $driverPayDinar = round($tripPriceDinar - $platformFeeDinar, 2);
+        } elseif ($cancelledBy === 'driver') {
+            $parentRefundDinar = $tripPriceDinar;
+            $driverPenaltyDinar = round($tripPriceDinar * 0.20, 2);
+        }
+
+        return [
+            'trip_id'               => $trip->id,
+            'cancelled_by'          => $cancelledBy,
+            'trip_price_dinar'      => round($tripPriceDinar, 2),
+            'parent_refund_dinar'   => round($parentRefundDinar, 2),
+            'driver_pay_dinar'      => round($driverPayDinar, 2),
+            'platform_amount_dinar' => round($platformFeeDinar, 2),
+            'penalty_dinar'         => round($driverPenaltyDinar, 2),
+        ];
+    }
 }

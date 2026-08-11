@@ -23,9 +23,10 @@ class DriverFilterRequest extends FormRequest
     public function rules(): array
     {
         return [
-            // الفلترة حسب الحالات الستة الموجودة في Enum قاعدة البيانات لديك بدقة
-            'status' => ['nullable', 'string', 'in:Pending,Approved,Suspended,Rejected,Offline,ON_TRIP'],
-            'search' => ['nullable', 'string', 'max:100'], // للبحث باسم السائق أو بريده أو هاتفه
+            // الفلترة حسب الحالات الست الموجودة في enum قاعدة البيانات — حساسة لحالة الأحرف
+            'status'   => ['nullable', 'string', 'in:Pending,Approved,Suspended,Rejected,Offline,ON_TRIP'],
+            'search'   => ['nullable', 'string', 'max:100'], // البحث باسم السائق أو بريده أو هاتفه
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'], // عدد النتائج لكل صفحة
         ];
     }
 
@@ -35,8 +36,11 @@ class DriverFilterRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'status.in' => 'الحالة المحددة للفلترة غير صحيحة ولا تطابق النظام.',
-            'search.max' => 'نص البحث طويل جداً، يرجى الاختصار.',
+            'status.in'       => 'الحالة المحددة للفلترة غير صحيحة، القيم المسموحة: Pending, Approved, Suspended, Rejected, Offline, ON_TRIP.',
+            'search.max'      => 'نص البحث طويل جداً، يرجى الاختصار.',
+            'per_page.integer' => 'عدد النتائج يجب أن يكون رقماً صحيحاً.',
+            'per_page.min'    => 'عدد النتائج يجب أن يكون 1 على الأقل.',
+            'per_page.max'    => 'عدد النتائج لا يمكن أن يتجاوز 100.',
         ];
     }
 

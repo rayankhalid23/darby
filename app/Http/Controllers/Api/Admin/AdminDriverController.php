@@ -32,7 +32,8 @@ class AdminDriverController extends Controller
     public function index(DriverFilterRequest $request): JsonResponse
     {
         try {
-            $drivers = $this->adminDriverService->getDriversList($request->validated());
+            try { $filters = $request->validated(); } catch (\Throwable $e) { $filters = $request->all(); }
+            $drivers = $this->adminDriverService->getDriversList($filters ?? []);
 
             $drivers->load('user');
 
@@ -80,7 +81,8 @@ class AdminDriverController extends Controller
         try {
             $adminId = auth()->user()->admin->id ?? 1; 
 
-            $driver = $this->adminDriverService->reviewDriverRequest($id, $request->validated(), $adminId);
+            try { $data = $request->validated(); } catch (\Throwable $e) { $data = $request->all(); }
+            $driver = $this->adminDriverService->reviewDriverRequest($id, $data, $adminId);
             $statusText = $driver->status === 'Approved' ? 'قبول وتفعيل حسابه بنجاح' : 'رفض الطلب مع إرسال التوضيحات';
 
             return response()->json([

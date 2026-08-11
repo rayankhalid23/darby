@@ -32,7 +32,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/', [AdminController::class, 'index']);
         Route::post('/', [AdminController::class, 'store']);
         Route::get('/{id}', [AdminController::class, 'show']);
+        Route::put('/{id}', [AdminController::class, 'update']);
         Route::post('/{id}', [AdminController::class, 'update']); 
+        Route::delete('/{id}', [AdminController::class, 'destroy']);
     });
 
     // --- 👥 مجموعة روابط التحكم في السائقين المحدثة والمطورة بالكامل لقابلية البيع ---
@@ -77,14 +79,36 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::delete('/{id}', [SchoolController::class, 'destroy']);
     });
 
-    // مسارات إدارة الجغرافيا والمناطق (صلاحيات كاملة للآدمن)
-Route::prefix('zones')->group(function () {
-    Route::get('/', [ZoneController::class, 'index']);       // عرض المناطق
-    Route::post('/', [ZoneController::class, 'store']);      // إضافة منطقة جديدة
-    Route::put('/{id}', [ZoneController::class, 'update']);  // تعديل اسم منطقة
-    Route::delete('/{id}', [ZoneController::class, 'destroy']); // حذف منطقة
-});
-Route::get('/zones-tree', [ZoneController::class, 'index']);
+    // =========================================================================
+    // 🗺️ مسارات إدارة الجغرافيا والمناطق والبلديات (Geographic Management)
+    // =========================================================================
+    Route::prefix('zones')->group(function () {
+        Route::get('/', [ZoneController::class, 'index']);          // عرض المناطق
+        Route::post('/', [ZoneController::class, 'store']);         // إضافة منطقة جديدة
+        Route::get('/{id}', [ZoneController::class, 'show']);       // عرض تفاصيل منطقة
+        Route::put('/{id}', [ZoneController::class, 'update']);     // تعديل منطقة
+        Route::post('/{id}', [ZoneController::class, 'update']);    // للتوافق مع POST multipart
+        Route::delete('/{id}', [ZoneController::class, 'destroy']);// حذف منطقة
+    });
+    Route::get('/zones-tree', [ZoneController::class, 'index']);    // الشجرة الجغرافية الكاملة
+
+    // مسارات البلديات الكبرى (Municipalities)
+    Route::prefix('municipalities')->group(function () {
+        Route::get('/', [ZoneController::class, 'indexMunicipalities']);
+        Route::post('/', [ZoneController::class, 'storeMunicipality']);
+        Route::put('/{id}', [ZoneController::class, 'updateMunicipality']);
+        Route::post('/{id}', [ZoneController::class, 'updateMunicipality']);
+        Route::delete('/{id}', [ZoneController::class, 'destroyMunicipality']);
+    });
+
+    // مسارات البلديات الفرعية / المحلات (Sub-Municipalities)
+    Route::prefix('sub-municipalities')->group(function () {
+        Route::get('/', [ZoneController::class, 'indexSubMunicipalities']);
+        Route::post('/', [ZoneController::class, 'storeSubMunicipality']);
+        Route::put('/{id}', [ZoneController::class, 'updateSubMunicipality']);
+        Route::post('/{id}', [ZoneController::class, 'updateSubMunicipality']);
+        Route::delete('/{id}', [ZoneController::class, 'destroySubMunicipality']);
+    });
 
   // --- 📊 مسارات إدارة تقييمات السائقين للأدمن (بالاسم الصريح الحاسم) ---
 Route::prefix('driver-reviews')->group(function () {
@@ -102,22 +126,45 @@ Route::prefix('driver-reviews')->group(function () {
         Route::post('/{id}/review', [\App\Http\Controllers\Api\Admin\ComplaintController::class, 'review']);
     });
 
-    // --- 💰 مسارات الإدارة المالية للأدمن ---
+    // --- 💰 مسارات الإدارة المالية الشاملة للأدمن ---
     Route::prefix('financial')->group(function () {
+        // 1. الداشبورد والملخص والسلامة المالية والسجلات
+        Route::get('/summary', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'summary']);
+        Route::get('/solvency-check', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'solvencyCheck']);
+        Route::get('/ledger', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'ledgerLogs']);
+        Route::get('/audit-logs', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'auditLogs']);
+
+        // 2. الفواتير
         Route::get('/invoices', [\App\Http\Controllers\Api\Admin\FinancialController::class, 'invoices']);
         Route::get('/invoices/{id}', [\App\Http\Controllers\Api\Admin\FinancialController::class, 'invoiceDetail']);
+
+        // 3. طلبات السحب
         Route::get('/withdrawals', [\App\Http\Controllers\Api\Admin\FinancialController::class, 'withdrawals']);
+        Route::get('/withdrawals/{id}', [\App\Http\Controllers\Api\Admin\FinancialController::class, 'withdrawalDetail']);
         Route::post('/withdrawals/{id}/process', [\App\Http\Controllers\Api\Admin\FinancialController::class, 'processWithdrawal']);
+
+        // 4. طلبات الشحن
         Route::get('/recharges', [\App\Http\Controllers\Api\Admin\FinancialController::class, 'rechargeRequests']);
+        Route::get('/recharges/{id}', [\App\Http\Controllers\Api\Admin\FinancialController::class, 'rechargeDetail']);
         Route::post('/recharges/{id}/process', [\App\Http\Controllers\Api\Admin\FinancialController::class, 'processRecharge']);
 
-        // 🚀 معمارية القيد المزدوج والخزينة المركزية الجديدة
-        Route::get('/solvency-check', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'solvencyCheck']);
+        // 5. الأمانات المعلقة وتفاصيل التحرير
+        Route::get('/escrows', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'escrowOverview']);
         Route::post('/release-escrows', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'releaseEscrows']);
-        Route::get('/ledger', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'ledgerLogs']);
+
+        // 6. النزاعات المالية
+        Route::get('/disputes', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'disputesList']);
+        Route::get('/disputes/{id}', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'disputeDetail']);
         Route::post('/disputes/{disputeId}/resolve', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'resolveDispute']);
+
+        // 7. تسويات العقود الإغلاقية والإلغاء المبكر والمعاينة
+        Route::get('/contracts/pending-settlements', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'pendingSettlements']);
         Route::post('/contracts/{contractId}/settle-monthly', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'settleMonthly']);
+        Route::get('/contracts/{contractId}/termination-preview', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'terminationPreview']);
         Route::post('/contracts/{contractId}/terminate-mid-month', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'terminateMidMonth']);
+
+        // 8. إلغاء الرحلات بمصفوفة الغرامات والمعاينة
+        Route::get('/trips/{tripId}/cancel-preview', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'cancellationPreview']);
         Route::post('/trips/{tripId}/cancel-with-matrix', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'cancelTripWithMatrix']);
     });
 
@@ -125,6 +172,24 @@ Route::prefix('driver-reviews')->group(function () {
     Route::prefix('invoices')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\Shared\InvoiceController::class, 'index']);
         Route::get('/{id}', [\App\Http\Controllers\Api\Shared\InvoiceController::class, 'show']);
+    });
+
+    // =========================================================================
+    // 📈 مسارات تقارير لوحة التحكم والإحصائيات التحليلية (Reports & Analytics)
+    // =========================================================================
+    Route::prefix('reports')->group(function () {
+        // 1. الإحصائيات السريعة ومؤشرات KPI
+        Route::get('/kpi-summary', [\App\Http\Controllers\Api\Admin\ReportController::class, 'kpiSummary'])->name('api.admin.reports.kpi');
+        // 2. التقارير المالية والإيرادات
+        Route::get('/financial', [\App\Http\Controllers\Api\Admin\ReportController::class, 'financialReport'])->name('api.admin.reports.financial');
+        // 3. تقارير التشغيل والرحلات والخريطة الحرارية للطلب
+        Route::get('/trips', [\App\Http\Controllers\Api\Admin\ReportController::class, 'tripsReport'])->name('api.admin.reports.trips');
+        // 4. تقارير توزيع أنواع الاشتراكات والاشتراكات المنتهية قريباً
+        Route::get('/subscriptions', [\App\Http\Controllers\Api\Admin\ReportController::class, 'subscriptionsReport'])->name('api.admin.reports.subscriptions');
+        // 5. تقارير أداء السائقين وحالة رخص القيادة ووثائق المركبات
+        Route::get('/drivers-performance', [\App\Http\Controllers\Api\Admin\ReportController::class, 'driversPerformanceReport'])->name('api.admin.reports.drivers-performance');
+        // 6. تصدير البيانات والتقارير (CSV / JSON)
+        Route::get('/export', [\App\Http\Controllers\Api\Admin\ReportController::class, 'exportReport'])->name('api.admin.reports.export');
     });
 
 });

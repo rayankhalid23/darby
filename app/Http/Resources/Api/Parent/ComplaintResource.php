@@ -29,7 +29,15 @@ class ComplaintResource extends JsonResource
                     'name' => $this->driver?->user?->full_name ?? 'غير معروف',
                 ];
             }),
-            
+
+            'submitted_by'   => $this->whenLoaded('submittedBy', function () {
+                if (!$this->submittedBy) return null;
+                return [
+                    'id'   => (int) $this->submittedBy->id,
+                    'name' => $this->submittedBy->user?->full_name ?? 'غير معروف',
+                ];
+            }),
+
             // ✅ تم التصحيح هنا باستخدام ?-> لحماية التطبيق
             'trip'           => $this->whenLoaded('trip', function () {
                 if (!$this->trip) return null;

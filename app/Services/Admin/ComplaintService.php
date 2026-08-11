@@ -30,9 +30,14 @@ class ComplaintService
                 $query->where(function ($q) {
                     $q->where('status', 'pending')
                       ->orWhere(function ($sub) {
-                          $sub->whereNull('action_taken')
-                              ->orWhere('action_taken', 'none')
-                              ->orWhere('action_taken', '');
+                          // 'dismissed' إجراء نهائي يُسجَّل بـ action_taken='none' أيضاً، لذا يُستثنى
+                          // صراحةً هنا وإلا ستبقى الشكاوى المرفوضة تظهر أبدياً ضمن "المعلّقة".
+                          $sub->whereNotIn('status', ['completed', 'resolved', 'closed', 'dismissed'])
+                              ->where(function ($aq) {
+                                  $aq->whereNull('action_taken')
+                                     ->orWhere('action_taken', 'none')
+                                     ->orWhere('action_taken', '');
+                              });
                       });
                 });
             } elseif ($statusFilter === 'completed' || $statusFilter === 'resolved' || $statusFilter === 'action_taken') {

@@ -24,20 +24,26 @@ class AdminDriverService
      */
     public function getDriversList(array $filters): LengthAwarePaginator
     {
+        // القيم الصحيحة للـ enum في قاعدة البيانات
+        $validStatuses = ['Pending', 'Approved', 'Suspended', 'Rejected', 'Offline', 'ON_TRIP'];
+
         // 1. بدء الاستعلام مع كسر حجب جدول المستخدمين (Users) المرتبطين بالسائقين
         $query = Driver::with(['user' => function($q) {
-            $q->withTrashed()->withoutGlobalScopes(); 
+            $q->withTrashed()->withoutGlobalScopes();
         }]);
 
-        // 2. 🚀 الإجبار الصارم: جلب الحالات المعلقة فقط وإلغاء أي فلاتر أخرى قادمة من الـ Controller
-        $query->whereIn('status', ['Pending', 'pending']);
+        // 2. ✅ فلترة الحالة: إذا أرسل الأدمن status يُطبَّق، وإلا يُجلب جميع السائقين
+        if (!empty($filters['status']) && in_array($filters['status'], $validStatuses, true)) {
+            $query->where('status', $filters['status']);
+        }
+        // ملاحظة: لا يوجد where افتراضي — الأدمن يرى الكل بدون فلتر
 
         // 3. فلترة البحث النصي (تُفعّل فقط إذا كتب الآدمن نصاً في خانة البحث)
         if (!empty($filters['search'])) {
             $search = $filters['search'];
             $query->whereHas('user', function ($q) use ($search) {
                 $q->withTrashed()->withoutGlobalScopes()
-                  ->where(function($sub) use ($search) {
+                  ->where(function ($sub) use ($search) {
                       $sub->where('full_name', 'like', "%{$search}%")
                           ->orWhere('email', 'like', "%{$search}%")
                           ->orWhere('phone_number', 'like', "%{$search}%");
@@ -45,8 +51,12 @@ class AdminDriverService
             });
         }
 
-        // 4. ترتيب تنازلي (الأحدث أولاً) مع الـ Pagination
-        return $query->orderBy('id', 'desc')->paginate(15);
+        // 4. ترتيب تنازلي (الأحدث أولاً) مع الـ Pagination — per_page يحدده الأدمن أو افتراضي 15
+        $perPage = isset($filters['per_page']) && is_numeric($filters['per_page'])
+            ? (int) min($filters['per_page'], 100)  // حد أقصى 100 لمنع استنزاف الذاكرة
+            : 15;
+
+        return $query->orderBy('id', 'desc')->paginate($perPage);
     }
    
 
@@ -227,20 +237,18 @@ class AdminDriverService
                     'action_at' => now()
                 ]);
 
-                // 🚀 هـ) إدخال إشعار القبول مباشرة في جدول الإشعارات الخاص بك
-                DB::table('notifications')->insert([
-                    'user_id'    => $driver->user_id,
-                    'type'       => 'SYSTEM', // متوافق تماماً مع Enum جدولك الخاص
-                    'title'      => '🎉 تم قبول تحديث بياناتك',
-                    'body'       => 'مرحباً بك كابتن، تمت الموافقة على تعديل بيانات ملفك الشخصي وتطبيقها بنجاح.',
-                    'metadata'   => json_encode([
-                        'status' => 'Approved',
-                        'type'   => 'profile_update_review'
-                    ]),
-                    'priority'   => 'High',
-                    'is_read'    => 0,
-                    'created_at' => now(),
-                ]);
+                // 🚀 هـ) إرسال إشعار القبول عبر الفايربيز وقاعدة البيانات
+                try {
+                    $driver->user->notify(new \App\Notifications\CustomDatabaseNotification([
+                        'type'      => 'driver_account_approved',
+                        'title'     => '🎉 تم قبول تحديث بياناتك',
+                        'message'   => 'مرحباً بك كابتن، تمت الموافقة على تعديل بيانات ملفك الشخصي وتطبيقها بنجاح.',
+                        'screen'    => 'DRIVER_PROFILE',
+                        'entity_id' => (string) $driver->id,
+                    ]));
+                } catch (\Throwable $e) {
+                    Log::warning("Failed sending approval notification: " . $e->getMessage());
+                }
 
             } else {
                 // أ) في حال الرفض: تحديث حالة الطلب وإثبات سبب الرفض
@@ -250,21 +258,18 @@ class AdminDriverService
                     'action_at'        => now()
                 ]);
 
-                // 🚀 ب) إدخال إشعار الرفض مباشرة في جدول الإشعارات الخاص بك مع توضيح السبب
-                DB::table('notifications')->insert([
-                    'user_id'    => $driver->user_id,
-                    'type'       => 'SYSTEM', // متوافق تماماً مع Enum جدولك الخاص
-                    'title'      => '📋 مراجعة تحديث البيانات',
-                    'body'       => "نأسف لإبلاغك برفض طلب تعديل البيانات المرفق بملفك الشخصي بسبب: {$rejectionReason}",
-                    'metadata'   => json_encode([
-                        'status'           => 'Rejected',
-                        'rejection_reason' => $rejectionReason,
-                        'type'             => 'profile_update_review'
-                    ]),
-                    'priority'   => 'High',
-                    'is_read'    => 0,
-                    'created_at' => now(),
-                ]);
+                // 🚀 ب) إرسال إشعار الرفض عبر الفايربيز وقاعدة البيانات
+                try {
+                    $driver->user->notify(new \App\Notifications\CustomDatabaseNotification([
+                        'type'      => 'driver_account_rejected',
+                        'title'     => '📋 مراجعة تحديث البيانات',
+                        'message'   => "نأسف لإبلاغك برفض طلب تعديل البيانات المرفق بملفك الشخصي بسبب: {$rejectionReason}",
+                        'screen'    => 'DRIVER_PROFILE',
+                        'entity_id' => (string) $driver->id,
+                    ]));
+                } catch (\Throwable $e) {
+                    Log::warning("Failed sending rejection notification: " . $e->getMessage());
+                }
             }
 
             return true;

@@ -126,4 +126,18 @@ class AdminService
             }
         });
     }
+
+    /**
+     * حذف حساب مشرف وإلغاء مستخدمه المرتبط
+     */
+    public function deleteAdmin(Admin $admin): void
+    {
+        DB::transaction(function () use ($admin) {
+            $user = $admin->user;
+            $admin->delete();
+            if ($user) {
+                $user->delete();
+            }
+        });
+    }
 }

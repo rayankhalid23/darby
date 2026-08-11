@@ -32,6 +32,7 @@ class StoreZoneRequest extends FormRequest
                 // قيد منع تكرار اسم المنطقة في قاعدة البيانات
                 Rule::unique('zones', 'name')->ignore($zoneId)
             ],
+            'sub_municipality_id' => ['nullable', 'exists:sub_municipalities,id'],
         ];
     }
 

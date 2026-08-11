@@ -2,7 +2,6 @@
 
 namespace App\Models\Shared;
 
-use App\Models\User;
 use App\Models\Driver\Driver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -29,9 +28,9 @@ class DriverReview extends Model
     ];
 
     public function parent(): BelongsTo
-{
-    return $this->belongsTo(ParentModel::class, 'parent_id');
-}
+    {
+        return $this->belongsTo(ParentModel::class, 'parent_id');
+    }
 
     public function driver(): BelongsTo
     {
