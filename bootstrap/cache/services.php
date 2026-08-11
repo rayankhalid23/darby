@@ -57,6 +57,7 @@
     53 => 'Termwind\\Laravel\\TermwindServiceProvider',
     54 => 'RyanChandler\\BladeCaptureDirective\\BladeCaptureDirectiveServiceProvider',
     55 => 'Spatie\\Permission\\PermissionServiceProvider',
+    56 => 'App\\Providers\\AppServiceProvider',
   ),
   'eager' => 
   array (
@@ -99,6 +100,7 @@
     36 => 'Termwind\\Laravel\\TermwindServiceProvider',
     37 => 'RyanChandler\\BladeCaptureDirective\\BladeCaptureDirectiveServiceProvider',
     38 => 'Spatie\\Permission\\PermissionServiceProvider',
+    39 => 'App\\Providers\\AppServiceProvider',
   ),
   'deferred' => 
   array (

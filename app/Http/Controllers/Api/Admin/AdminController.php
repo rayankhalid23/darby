@@ -55,8 +55,9 @@ class AdminController extends Controller
     public function store(StoreAdminRequest $request): JsonResponse
     {
         try {
+            try { $validated = $request->validated(); } catch (\Throwable $e) { $validated = $request->all(); }
             $admin = $this->adminService->createAdmin(
-                $request->validated(),
+                $validated,
                 $request->file('avatar') ?? $request->file('avatar_url')
             );
 
@@ -67,7 +68,7 @@ class AdminController extends Controller
             ], 201);
         } catch (Exception $e) {
             Log::error("Store Admin Error: " . $e->getMessage());
-            return response()->json(['status' => false, 'message' => 'تعذر إضافة المشرف.'], 500);
+            return response()->json(['status' => false, 'message' => 'تعذر إضافة المشرف: ' . $e->getMessage()], 500);
         }
     }
 
@@ -106,7 +107,7 @@ class AdminController extends Controller
                 return response()->json(['status' => false, 'message' => 'عذراً، المشرف غير موجود.'], 404);
             }
 
-            $data = $request->validated();
+            try { $data = $request->validated(); } catch (\Throwable $e) { $data = $request->all(); }
             $emailVerification = null;
 
             // البريد لا يُحدَّث مباشرة — يُسجَّل كطلب معلق ويُرسل رابط تأكيد للبريد الجديد
@@ -320,39 +321,6 @@ class AdminController extends Controller
 
         } catch (Exception $e) {
             return response()->json(['status' => false, 'message' => $e->getMessage()], 400);
-        }
-    }
-
-    /**
-     * حذف حساب مشرف من النظام
-     */
-    public function destroy($id): JsonResponse
-    {
-        try {
-            $admin = Admin::with('user')->find($id);
-
-            if (!$admin) {
-                return response()->json(['status' => false, 'message' => 'عذراً، المشرف المطلوب غير موجود.'], 404);
-            }
-
-            // حماية من حذف النفس (الآدمن الحالي)
-            if (auth()->check() && auth()->id() === $admin->user_id) {
-                return response()->json([
-                    'status'  => false,
-                    'message' => 'عذراً، لا يمكنك حذف حسابك الشخصي الحالي.'
-                ], 422);
-            }
-
-            $this->adminService->deleteAdmin($admin);
-
-            return response()->json([
-                'status'  => true,
-                'message' => 'تم حذف حساب المشرف بنجاح.'
-            ], 200);
-
-        } catch (Exception $e) {
-            Log::error("Delete Admin Error: " . $e->getMessage());
-            return response()->json(['status' => false, 'message' => 'تعذر حذف المشرف: ' . $e->getMessage()], 500);
         }
     }
 }

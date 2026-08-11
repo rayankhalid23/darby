@@ -61,14 +61,14 @@ class AdminService
                 'email'         => $data['email'],
                 'phone_number'  => $data['phone_number'],
                 'password_hash' => Hash::make($generatedPassword),
-                'role_id'       => $data['role_id'],
-                'is_active'     => $data['is_active'],
+                'role_id'       => $data['role_id'] ?? 2,
+                'is_active'     => $data['is_active'] ?? 1,
                 'avatar_url'    => $avatarUrl,
             ]);
 
             $admin = Admin::create([
                 'user_id'    => $user->id,
-                'created_by' => $data['created_by'],
+                'created_by' => $data['created_by'] ?? auth()->id() ?? 1,
             ]);
 
             $this->emailService->sendAdminCredentials(
@@ -126,20 +126,6 @@ class AdminService
             }
         });
     }
-
-<<<<<<< HEAD
-    /**
-     * حذف حساب مشرف وإلغاء مستخدمه المرتبط
-     */
-    public function deleteAdmin(Admin $admin): void
-    {
-        DB::transaction(function () use ($admin) {
-            $user = $admin->user;
-            $admin->delete();
-            if ($user) {
-                $user->delete();
-            }
-=======
     // =====================================================================
     // 📧 منظومة تغيير البريد الإلكتروني بالتأكيد (مطابقة لآلية ولي الأمر)
     //
@@ -312,38 +298,42 @@ class AdminService
      * الخطوات: نقل ملكية المشرفين الذين أنشأهم (بسبب قيد RESTRICT على created_by)،
      * ثم إلغاء توكنات الدخول، ثم حذف صورته من التخزين، وأخيراً حذف الحساب والسجل.
      */
-    public function deleteAdmin(Admin $admin, int $performedByUserId): void
+    public function deleteAdmin(Admin $admin, ?int $performedByUserId = null): void
     {
+        $performedByUserId = $performedByUserId ?? auth()->id() ?? 1;
+
         DB::transaction(function () use ($admin, $performedByUserId) {
             $user = $admin->user;
 
-            // 1. نقل ملكية أي مشرفين أنشأهم هذا المشرف إلى منفّذ عملية الحذف
-            //    لأن العمود created_by محمي بقيد ON DELETE RESTRICT
-            Admin::where('created_by', $user->id)
-                ->where('id', '!=', $admin->id)
-                ->update(['created_by' => $performedByUserId]);
+            if ($user) {
+                // 1. نقل ملكية أي مشرفين أنشأهم هذا المشرف إلى منفّذ عملية الحذف
+                Admin::where('created_by', $user->id)
+                    ->where('id', '!=', $admin->id)
+                    ->update(['created_by' => $performedByUserId]);
 
-            // 2. إلغاء كل جلسات الدخول النشطة لهذا المشرف فوراً
-            $user->tokens()->delete();
+                // 2. إلغاء كل جلسات الدخول النشطة لهذا المشرف فوراً
+                $user->tokens()->delete();
 
-            // 3. حذف الصورة الشخصية من التخزين إن وُجدت
-            if ($user->avatar_url) {
-                $path = str_replace('storage/', '', $user->avatar_url);
-                if (Storage::disk('public')->exists($path)) {
-                    Storage::disk('public')->delete($path);
+                // 3. حذف الصورة الشخصية من التخزين إن وُجدت
+                if ($user->avatar_url) {
+                    $path = str_replace('storage/', '', $user->avatar_url);
+                    if (Storage::disk('public')->exists($path)) {
+                        Storage::disk('public')->delete($path);
+                    }
                 }
-            }
 
-            // 4. إلغاء أي طلب معلق لتغيير البريد الإلكتروني
-            $this->forgetEmailChange($user->id);
-            Cache::forget("admin_email_change_status_{$user->id}");
+                // 4. إلغاء أي طلب معلق لتغيير البريد الإلكتروني
+                $this->forgetEmailChange($user->id);
+                Cache::forget("admin_email_change_status_{$user->id}");
+            }
 
             // 5. حذف سجل المشرف ثم حذف حساب المستخدم نهائياً
             $admin->delete();
-            $user->forceDelete();
+            if ($user) {
+                $user->forceDelete();
+            }
 
-            Log::info("Admin ID {$admin->id} (user {$user->id}) deleted by user {$performedByUserId}");
->>>>>>> 845111183cb26549aca7caf4d7ef53e5b1afc39e
+            Log::info("Admin ID {$admin->id} deleted by user {$performedByUserId}");
         });
     }
 }

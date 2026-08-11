@@ -63,12 +63,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/{id}/email-change/resend', [AdminController::class, 'resendEmailChange']);
 
         Route::get('/{id}', [AdminController::class, 'show']);
-<<<<<<< HEAD
         Route::put('/{id}', [AdminController::class, 'update']);
         Route::post('/{id}', [AdminController::class, 'update']); 
-=======
-        Route::post('/{id}', [AdminController::class, 'update']);
->>>>>>> 845111183cb26549aca7caf4d7ef53e5b1afc39e
         Route::delete('/{id}', [AdminController::class, 'destroy']);
     });
 
@@ -115,7 +111,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
     });
 
     // =========================================================================
-<<<<<<< HEAD
     // 🗺️ مسارات إدارة الجغرافيا والمناطق والبلديات (Geographic Management)
     // =========================================================================
     Route::prefix('zones')->group(function () {
@@ -132,6 +127,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix('municipalities')->group(function () {
         Route::get('/', [ZoneController::class, 'indexMunicipalities']);
         Route::post('/', [ZoneController::class, 'storeMunicipality']);
+        Route::get('/{id}', [ZoneController::class, 'showMunicipality']);
         Route::put('/{id}', [ZoneController::class, 'updateMunicipality']);
         Route::post('/{id}', [ZoneController::class, 'updateMunicipality']);
         Route::delete('/{id}', [ZoneController::class, 'destroyMunicipality']);
@@ -141,57 +137,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix('sub-municipalities')->group(function () {
         Route::get('/', [ZoneController::class, 'indexSubMunicipalities']);
         Route::post('/', [ZoneController::class, 'storeSubMunicipality']);
+        Route::get('/{id}', [ZoneController::class, 'showSubMunicipality']);
         Route::put('/{id}', [ZoneController::class, 'updateSubMunicipality']);
         Route::post('/{id}', [ZoneController::class, 'updateSubMunicipality']);
         Route::delete('/{id}', [ZoneController::class, 'destroySubMunicipality']);
     });
-=======
-    // 🗺️ إدارة الجغرافيا: بلدية ← محلة ← منطقة
-    // =========================================================================
-
-    // --- 🏛️ البلديات (المستوى الأول) ---
-    Route::prefix('municipalities')->group(function () {
-        Route::get('/',        [MunicipalityController::class, 'index']);
-        Route::post('/',       [MunicipalityController::class, 'store']);
-        Route::get('/{id}',    [MunicipalityController::class, 'show']);
-        Route::post('/{id}',   [MunicipalityController::class, 'update']);
-        Route::delete('/{id}', [MunicipalityController::class, 'destroy']);
-
-        // 🏘️ محلات البلدية
-        Route::get('/{municipalityId}/sub-municipalities',  [SubMunicipalityController::class, 'index']);
-        Route::post('/{municipalityId}/sub-municipalities', [SubMunicipalityController::class, 'store']);
-
-        // 📍 كل مناطق البلدية مسطّحة عبر محلاتها (عرض مريح للواجهة)
-        Route::get('/{municipalityId}/zones', [MunicipalityZoneController::class, 'indexByMunicipality']);
-    });
-
-    // --- 🏘️ المحلات (المستوى الثاني) ---
-    Route::prefix('sub-municipalities')->group(function () {
-        Route::get('/{id}',    [SubMunicipalityController::class, 'show']);
-        Route::post('/{id}',   [SubMunicipalityController::class, 'update']);
-        Route::delete('/{id}', [SubMunicipalityController::class, 'destroy']);
-
-        // 📍 مناطق المحلة
-        Route::get('/{subMunicipalityId}/zones',  [MunicipalityZoneController::class, 'index']);
-        Route::post('/{subMunicipalityId}/zones', [MunicipalityZoneController::class, 'store']);
-    });
-
-    // --- 📍 المناطق (المستوى الثالث) ---
-    Route::prefix('admin-zones')->group(function () {
-        Route::get('/{id}',    [MunicipalityZoneController::class, 'show']);
-        Route::post('/{id}',   [MunicipalityZoneController::class, 'update']);
-        Route::delete('/{id}', [MunicipalityZoneController::class, 'destroy']);
-    });
-
-    // --- ⚠️ المسارات القديمة: يعتمد عليها تطبيقا السائق وولي الأمر، تُترك كما هي ---
-Route::prefix('zones')->group(function () {
-    Route::get('/', [ZoneController::class, 'index']);       // عرض المناطق
-    Route::post('/', [ZoneController::class, 'store']);      // إضافة منطقة جديدة
-    Route::put('/{id}', [ZoneController::class, 'update']);  // تعديل اسم منطقة
-    Route::delete('/{id}', [ZoneController::class, 'destroy']); // حذف منطقة
-});
-Route::get('/zones-tree', [ZoneController::class, 'index']);
->>>>>>> 845111183cb26549aca7caf4d7ef53e5b1afc39e
 
   // --- 📊 مسارات إدارة تقييمات السائقين للأدمن (بالاسم الصريح الحاسم) ---
 Route::prefix('driver-reviews')->group(function () {
