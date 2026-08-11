@@ -17,7 +17,8 @@ class UpdateAdminRequest extends FormRequest
 
     public function rules(): array
     {
-        $adminParam = $this->route('admin'); 
+        // اسم المتغير في المسار هو {id} وليس {admin}، لذلك نقرأ الاثنين معاً حمايةً من أي تغيير لاحق
+        $adminParam = $this->route('admin') ?? $this->route('id');
         $admin = $adminParam instanceof Admin ? $adminParam : Admin::find($adminParam);
         $userId = $admin ? $admin->user_id : null;
 
@@ -74,6 +75,7 @@ class UpdateAdminRequest extends FormRequest
             'avatar.image'       => 'الملف المرفق يجب أن يكون صورة.',
             'avatar.mimes'       => 'يجب أن تكون الصورة بصيغة jpeg, png, أو jpg.',
             'avatar.max'         => 'حجم الصورة يجب ألا يتجاوز 2 ميجابايت.',
+            'avatar.uploaded'    => 'تعذر رفع الصورة إلى الخادم. تأكد أن حجمها لا يتجاوز 2 ميجابايت ثم أعد المحاولة.',
         ];
     }
 

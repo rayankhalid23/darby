@@ -17,8 +17,9 @@ class StoreAdminRequest extends FormRequest
     {
         $this->merge([
             'is_active'  => 1,
-            'role_id'    => 2, 
-            'created_by' => 1, 
+            'role_id'    => 2, // دور "مشرف" في جدول roles
+            // منشئ الحساب هو المستخدم صاحب التوكن الحالي، ونرجع للمدير الأساسي كقيمة احتياطية
+            'created_by' => $this->user()?->id ?? 1,
         ]);
     }
 
@@ -54,6 +55,13 @@ class StoreAdminRequest extends FormRequest
                 'string',
                 'min:6'
             ],
+            'avatar' => [
+                'sometimes',
+                'nullable',
+                'image',
+                'mimes:jpeg,png,jpg',
+                'max:2048'
+            ],
             'is_active'  => 'required|boolean',
             'role_id'    => 'required|integer',
             'created_by' => 'required|integer',
@@ -77,7 +85,12 @@ class StoreAdminRequest extends FormRequest
             'phone_number.regex'    => 'رقم الهاتف غير صحيح، يجب أن يبدأ بـ 09.',
             'phone_number.unique'   => 'رقم الهاتف هذا مستخدم لحساب آخر بالفعل.',
 
-            'password.min'          => 'كلمة المرور يجب ألا تقل عن 6 خانات.'
+            'password.min'          => 'كلمة المرور يجب ألا تقل عن 6 خانات.',
+
+            'avatar.image'          => 'الملف المرفق يجب أن يكون صورة.',
+            'avatar.mimes'          => 'يجب أن تكون الصورة بصيغة jpeg, png, أو jpg.',
+            'avatar.max'            => 'حجم الصورة يجب ألا يتجاوز 2 ميجابايت.',
+            'avatar.uploaded'       => 'تعذر رفع الصورة إلى الخادم. تأكد أن حجمها لا يتجاوز 2 ميجابايت ثم أعد المحاولة.',
         ];
     }
 

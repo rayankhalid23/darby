@@ -8,6 +8,21 @@ use App\Http\Controllers\Api\Admin\ZoneController;
 use App\Http\Controllers\Api\Admin\DriverReviewController as AdminDriverReviewController;
 use App\Http\Controllers\Api\Admin\ComplaintController as AdminComplaintController;
 use App\Http\Controllers\Api\Admin\DashboardController;
+use App\Http\Controllers\Api\Admin\AdminAvatarController;
+use App\Http\Controllers\Api\Admin\AdminProfileController;
+use App\Http\Controllers\Api\Admin\MunicipalityController;
+use App\Http\Controllers\Api\Admin\SubMunicipalityController;
+use App\Http\Controllers\Api\Admin\MunicipalityZoneController;
+
+// =========================================================================
+// 🖼️ صور المشرفين (عامة بلا توكن)
+// =========================================================================
+// المتصفح يجلب الصورة في وسم <img> أو عبر XHR بدون أي هيدر Authorization،
+// لذلك يجب أن يكون المسار عاماً. ولأنه يمر عبر لارافيل فإنه يحصل على ترويسات
+// CORS الخاصة بـ api/* تلقائياً، بعكس ملفات /storage الثابتة.
+Route::get('/avatars/{filename}', [AdminAvatarController::class, 'show'])
+    ->name('api.admin.avatars.show');
+
 // =========================================================================
 // 🔒 المسارات المحمية (تتطلب تسجيل الدخول وحمل توكن Sanctum)
 // =========================================================================
@@ -27,13 +42,33 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/trips/generate-daily', [\App\Http\Controllers\Api\Admin\TripOpsController::class, 'generateDaily'])
         ->name('api.admin.trips.generate-daily');
     
+    // --- 👤 الملف الشخصي للمشرف / مدير النظام (الحساب الحالي) ---
+    Route::prefix('profile')->group(function () {
+        Route::get('/',  [AdminProfileController::class, 'show'])->name('api.admin.profile.show');
+        Route::post('/', [AdminProfileController::class, 'update'])->name('api.admin.profile.update');
+
+        Route::get('/email-change/status',  [AdminProfileController::class, 'emailChangeStatus']);
+        Route::post('/email-change/cancel', [AdminProfileController::class, 'cancelEmailChange']);
+        Route::post('/email-change/resend', [AdminProfileController::class, 'resendEmailChange']);
+    });
+
     // --- مجموعة روابط إدارة المشرفين ---
     Route::prefix('admins')->group(function () {
         Route::get('/', [AdminController::class, 'index']);
         Route::post('/', [AdminController::class, 'store']);
+
+        // --- 📧 متابعة طلب تغيير البريد الإلكتروني (توضع قبل مسارات {id} المفردة) ---
+        Route::get('/{id}/email-change/status',  [AdminController::class, 'emailChangeStatus']);
+        Route::post('/{id}/email-change/cancel', [AdminController::class, 'cancelEmailChange']);
+        Route::post('/{id}/email-change/resend', [AdminController::class, 'resendEmailChange']);
+
         Route::get('/{id}', [AdminController::class, 'show']);
+<<<<<<< HEAD
         Route::put('/{id}', [AdminController::class, 'update']);
         Route::post('/{id}', [AdminController::class, 'update']); 
+=======
+        Route::post('/{id}', [AdminController::class, 'update']);
+>>>>>>> 845111183cb26549aca7caf4d7ef53e5b1afc39e
         Route::delete('/{id}', [AdminController::class, 'destroy']);
     });
 
@@ -80,6 +115,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     });
 
     // =========================================================================
+<<<<<<< HEAD
     // 🗺️ مسارات إدارة الجغرافيا والمناطق والبلديات (Geographic Management)
     // =========================================================================
     Route::prefix('zones')->group(function () {
@@ -109,6 +145,53 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/{id}', [ZoneController::class, 'updateSubMunicipality']);
         Route::delete('/{id}', [ZoneController::class, 'destroySubMunicipality']);
     });
+=======
+    // 🗺️ إدارة الجغرافيا: بلدية ← محلة ← منطقة
+    // =========================================================================
+
+    // --- 🏛️ البلديات (المستوى الأول) ---
+    Route::prefix('municipalities')->group(function () {
+        Route::get('/',        [MunicipalityController::class, 'index']);
+        Route::post('/',       [MunicipalityController::class, 'store']);
+        Route::get('/{id}',    [MunicipalityController::class, 'show']);
+        Route::post('/{id}',   [MunicipalityController::class, 'update']);
+        Route::delete('/{id}', [MunicipalityController::class, 'destroy']);
+
+        // 🏘️ محلات البلدية
+        Route::get('/{municipalityId}/sub-municipalities',  [SubMunicipalityController::class, 'index']);
+        Route::post('/{municipalityId}/sub-municipalities', [SubMunicipalityController::class, 'store']);
+
+        // 📍 كل مناطق البلدية مسطّحة عبر محلاتها (عرض مريح للواجهة)
+        Route::get('/{municipalityId}/zones', [MunicipalityZoneController::class, 'indexByMunicipality']);
+    });
+
+    // --- 🏘️ المحلات (المستوى الثاني) ---
+    Route::prefix('sub-municipalities')->group(function () {
+        Route::get('/{id}',    [SubMunicipalityController::class, 'show']);
+        Route::post('/{id}',   [SubMunicipalityController::class, 'update']);
+        Route::delete('/{id}', [SubMunicipalityController::class, 'destroy']);
+
+        // 📍 مناطق المحلة
+        Route::get('/{subMunicipalityId}/zones',  [MunicipalityZoneController::class, 'index']);
+        Route::post('/{subMunicipalityId}/zones', [MunicipalityZoneController::class, 'store']);
+    });
+
+    // --- 📍 المناطق (المستوى الثالث) ---
+    Route::prefix('admin-zones')->group(function () {
+        Route::get('/{id}',    [MunicipalityZoneController::class, 'show']);
+        Route::post('/{id}',   [MunicipalityZoneController::class, 'update']);
+        Route::delete('/{id}', [MunicipalityZoneController::class, 'destroy']);
+    });
+
+    // --- ⚠️ المسارات القديمة: يعتمد عليها تطبيقا السائق وولي الأمر، تُترك كما هي ---
+Route::prefix('zones')->group(function () {
+    Route::get('/', [ZoneController::class, 'index']);       // عرض المناطق
+    Route::post('/', [ZoneController::class, 'store']);      // إضافة منطقة جديدة
+    Route::put('/{id}', [ZoneController::class, 'update']);  // تعديل اسم منطقة
+    Route::delete('/{id}', [ZoneController::class, 'destroy']); // حذف منطقة
+});
+Route::get('/zones-tree', [ZoneController::class, 'index']);
+>>>>>>> 845111183cb26549aca7caf4d7ef53e5b1afc39e
 
   // --- 📊 مسارات إدارة تقييمات السائقين للأدمن (بالاسم الصريح الحاسم) ---
 Route::prefix('driver-reviews')->group(function () {

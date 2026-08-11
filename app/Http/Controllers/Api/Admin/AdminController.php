@@ -10,9 +10,6 @@ use App\Http\Requests\Api\Admin\UpdateAdminRequest;
 use App\Http\Resources\Api\Admin\AdminResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\URL;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Exception;
 
@@ -28,10 +25,13 @@ class AdminController extends Controller
     /**
      * عرض قائمة المشرفين
      */
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
         try {
-            $admins = $this->adminService->getAllAdmins();
+            $admins = $this->adminService->getAllAdmins(
+                (int) $request->query('per_page', 10),
+                $request->query('search')
+            );
             return response()->json([
                 'status'  => true,
                 'message' => 'تم جلب قائمة المشرفين بنجاح.',
@@ -56,8 +56,8 @@ class AdminController extends Controller
     {
         try {
             $admin = $this->adminService->createAdmin(
-                $request->validated(), 
-                $request->file('avatar_url')
+                $request->validated(),
+                $request->file('avatar') ?? $request->file('avatar_url')
             );
 
             return response()->json([
@@ -77,8 +77,8 @@ class AdminController extends Controller
     public function show($id): JsonResponse
     {
         try {
-            $admin = Admin::with(['user', 'creator'])->find($id);
-            
+            $admin = Admin::with(['user', 'creator'])->whereHas('user')->find($id);
+
             if (!$admin) {
                 return response()->json(['status' => false, 'message' => 'عذراً، المشرف غير موجود.'], 404);
             }
@@ -107,48 +107,32 @@ class AdminController extends Controller
             }
 
             $data = $request->validated();
-            $emailChanged = false;
+            $emailVerification = null;
 
-            if (!empty($data['email']) && $data['email'] !== $admin->user->email) {
-                $newEmail = $data['email'];
-                unset($data['email']); 
+            // البريد لا يُحدَّث مباشرة — يُسجَّل كطلب معلق ويُرسل رابط تأكيد للبريد الجديد
+            if (!empty($data['email']) && strtolower(trim($data['email'])) !== strtolower($admin->user->email)) {
+                $newEmail = trim($data['email']);
+                unset($data['email']);
 
-                $token = Str::random(40);
-
-                $approveUrl = URL::signedRoute('admin.email.approve', ['token' => $token]);
-                $rejectUrl  = URL::signedRoute('admin.email.reject', ['token' => $token]);
-
-                Cache::put("admin_email_change_{$token}", [
-                    'admin_user_id' => $admin->user_id,
-                    'new_email'     => $newEmail
-                ], now()->addMinutes(30));
-
-                Log::info("=== Admin Email Change Request ===");
-                Log::info("🟢 Approve Link: " . $approveUrl);
-                Log::info("🔴 Reject Link: " . $rejectUrl);
-
-                app(\App\Services\Shared\EmailService::class)->sendEmailChangeLink(
-                    $newEmail, 
-                    $admin->user->full_name, 
-                    $approveUrl, 
-                    $rejectUrl
-                );
-
-                $emailChanged = true;
+                $emailVerification = $this->adminService->requestEmailChange($admin->user, $newEmail);
+            } else {
+                unset($data['email']);
             }
 
             $updatedAdmin = $this->adminService->updateAdmin(
-                $admin, 
-                $data, 
-                $request->file('avatar')
+                $admin,
+                $data,
+                $request->file('avatar') ?? $request->file('avatar_url')
             );
 
             return response()->json([
                 'status'  => true,
-                'message' => $emailChanged 
-                    ? 'تم تحديث البيانات المرفقة بنجاح. أرسلنا رابط تأكيد لبريدك الجديد، يرجى مراجعته لتفعيله بكبسة زر.'
+                'message' => $emailVerification
+                    ? 'تم تحديث البيانات بنجاح. أرسلنا رابط تأكيد للبريد الجديد، يرجى فتحه لتفعيل التغيير.'
                     : 'تم تحديث بيانات المشرف بنجاح.',
-                'data'    => new AdminResource($updatedAdmin) // سيعمل بكفاءة مطلقة بعد تنظيف الريسورس
+                'data'    => new AdminResource($updatedAdmin),
+                // يظهر ككائن عند وجود طلب معلق، و null عند عدم وجوده
+                'email_verification' => $emailVerification,
             ], 200);
 
         } catch (Exception $e) {
@@ -157,33 +141,93 @@ class AdminController extends Controller
         }
     }
 
+    /**
+     * حذف مشرف نهائياً من النظام
+     */
+    public function destroy(Request $request, $id): JsonResponse
+    {
+        try {
+            $admin = Admin::with('user')->whereHas('user')->find($id);
+
+            if (!$admin) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'عذراً، المشرف غير موجود.'
+                ], 404);
+            }
+
+            $currentUser = $request->user();
+
+            // منع المشرف من حذف حسابه الشخصي بنفسه
+            if ($currentUser && $currentUser->id === $admin->user_id) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'لا يمكنك حذف حسابك الشخصي من هنا.'
+                ], 403);
+            }
+
+            // حماية حساب مدير النظام الأساسي من الحذف
+            if ((int) $admin->user->role_id === 1) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'لا يمكن حذف حساب مدير النظام الأساسي.'
+                ], 403);
+            }
+
+            $deletedName = $admin->user->full_name;
+
+            $this->adminService->deleteAdmin($admin, $currentUser?->id ?? $admin->created_by);
+
+            return response()->json([
+                'status'  => true,
+                'message' => "تم حذف المشرف ({$deletedName}) نهائياً بنجاح."
+            ], 200);
+
+        } catch (Exception $e) {
+            Log::error("Delete Admin Error: " . $e->getMessage());
+            return response()->json([
+                'status'  => false,
+                'message' => 'تعذر حذف المشرف، يرجى المحاولة لاحقاً.'
+            ], 500);
+        }
+    }
+
+    /**
+     * 🟢 تأكيد تغيير البريد — يُفتح من رابط البريد مباشرة (رابط موقّع عام)
+     */
     public function approveEmailChange(Request $request, $token): JsonResponse
     {
         try {
             if (! $request->hasValidSignature()) {
-                return response()->json(['status' => false, 'message' => 'عذراً، هذا الرابط غير صالح أو انتهت صلاحيته!'], 403);
+                return response()->json([
+                    'status'        => false,
+                    'email_changed' => false,
+                    'message'       => 'عذراً، هذا الرابط غير صالح أو انتهت صلاحيته!'
+                ], 403);
             }
 
-            $cachedData = Cache::get("admin_email_change_{$token}");
-            if (!$cachedData) {
-                return response()->json(['status' => false, 'message' => 'الرابط منتهي الصلاحية أو تم استخدامه مسبقاً.'], 400);
-            }
+            $user = $this->adminService->approveEmailChange($token);
 
-            $user = \App\Models\User::findOrFail($cachedData['admin_user_id']);
-            $user->update([
-                'email' => $cachedData['new_email'],
-                'email_verified_at' => now()
-            ]);
+            return response()->json([
+                'status'        => true,
+                'email_changed' => true,
+                'message'       => 'تم تفعيل وتحديث بريدك الإلكتروني بنجاح! 🎉',
+                'data'          => ['email' => $user->email],
+            ], 200);
 
-            Cache::forget("admin_email_change_{$token}");
-
-            return response()->json(['status' => true, 'message' => 'تم تفعيل وتحديث بريدك الإلكتروني بنجاح! 🎉'], 200);
         } catch (Exception $e) {
             Log::error("Approve Email Change Error: " . $e->getMessage());
-            return response()->json(['status' => false, 'message' => 'حدث خطأ أثناء معالجة الطلب.'], 500);
+            return response()->json([
+                'status'        => false,
+                'email_changed' => false,
+                'message'       => $e->getMessage()
+            ], 400);
         }
     }
 
+    /**
+     * 🔴 رفض تغيير البريد — يُفتح من رابط البريد مباشرة (رابط موقّع عام)
+     */
     public function rejectEmailChange(Request $request, $token): JsonResponse
     {
         try {
@@ -191,12 +235,91 @@ class AdminController extends Controller
                 return response()->json(['status' => false, 'message' => 'رابط غير صالح أو تم التلاعب به.'], 403);
             }
 
-            Cache::forget("admin_email_change_{$token}");
+            $this->adminService->rejectEmailChange($token);
 
-            return response()->json(['status' => true, 'message' => 'تم إلغاء طلب تغيير البريد الإلكتروني بنجاح.'], 200);
+            return response()->json([
+                'status'  => true,
+                'message' => 'تم إلغاء طلب تغيير البريد الإلكتروني بنجاح.'
+            ], 200);
+
         } catch (Exception $e) {
             Log::error("Reject Email Change Error: " . $e->getMessage());
-            return response()->json(['status' => false, 'message' => 'حدث خطأ أثناء إلغاء الطلب.'], 500);
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 400);
+        }
+    }
+
+    /**
+     * 🔍 فحص حالة طلب تغيير البريد لمشرف معيّن
+     * GET /api/admin/admins/{id}/email-change/status
+     */
+    public function emailChangeStatus($id): JsonResponse
+    {
+        try {
+            $admin = Admin::with('user')->whereHas('user')->find($id);
+
+            if (!$admin) {
+                return response()->json(['status' => false, 'message' => 'عذراً، المشرف غير موجود.'], 404);
+            }
+
+            return response()->json([
+                'status' => true,
+                'data'   => $this->adminService->getEmailChangeStatus($admin->user_id),
+            ], 200);
+
+        } catch (Exception $e) {
+            Log::error("Email Change Status Error: " . $e->getMessage());
+            return response()->json(['status' => false, 'message' => 'حدث خطأ في النظام.'], 500);
+        }
+    }
+
+    /**
+     * ❌ إلغاء طلب تغيير البريد من لوحة التحكم
+     * POST /api/admin/admins/{id}/email-change/cancel
+     */
+    public function cancelEmailChange($id): JsonResponse
+    {
+        try {
+            $admin = Admin::with('user')->whereHas('user')->find($id);
+
+            if (!$admin) {
+                return response()->json(['status' => false, 'message' => 'عذراً، المشرف غير موجود.'], 404);
+            }
+
+            $this->adminService->cancelEmailChange($admin->user_id);
+
+            return response()->json([
+                'status'  => true,
+                'message' => 'تم إلغاء طلب تغيير البريد الإلكتروني.'
+            ], 200);
+
+        } catch (Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 400);
+        }
+    }
+
+    /**
+     * 🔁 إعادة إرسال رابط التأكيد للبريد الجديد
+     * POST /api/admin/admins/{id}/email-change/resend
+     */
+    public function resendEmailChange($id): JsonResponse
+    {
+        try {
+            $admin = Admin::with('user')->whereHas('user')->find($id);
+
+            if (!$admin) {
+                return response()->json(['status' => false, 'message' => 'عذراً، المشرف غير موجود.'], 404);
+            }
+
+            $emailVerification = $this->adminService->resendEmailChange($admin->user);
+
+            return response()->json([
+                'status'             => true,
+                'message'            => 'تمت إعادة إرسال رابط التأكيد بنجاح.',
+                'email_verification' => $emailVerification,
+            ], 200);
+
+        } catch (Exception $e) {
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 400);
         }
     }
 
