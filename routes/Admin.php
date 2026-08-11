@@ -10,6 +10,9 @@ use App\Http\Controllers\Api\Admin\ComplaintController as AdminComplaintControll
 use App\Http\Controllers\Api\Admin\DashboardController;
 use App\Http\Controllers\Api\Admin\AdminAvatarController;
 use App\Http\Controllers\Api\Admin\AdminProfileController;
+use App\Http\Controllers\Api\Admin\MunicipalityController;
+use App\Http\Controllers\Api\Admin\SubMunicipalityController;
+use App\Http\Controllers\Api\Admin\MunicipalityZoneController;
 
 // =========================================================================
 // 🖼️ صور المشرفين (عامة بلا توكن)
@@ -102,7 +105,45 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::delete('/{id}', [SchoolController::class, 'destroy']);
     });
 
-    // مسارات إدارة الجغرافيا والمناطق (صلاحيات كاملة للآدمن)
+    // =========================================================================
+    // 🗺️ إدارة الجغرافيا: بلدية ← محلة ← منطقة
+    // =========================================================================
+
+    // --- 🏛️ البلديات (المستوى الأول) ---
+    Route::prefix('municipalities')->group(function () {
+        Route::get('/',        [MunicipalityController::class, 'index']);
+        Route::post('/',       [MunicipalityController::class, 'store']);
+        Route::get('/{id}',    [MunicipalityController::class, 'show']);
+        Route::post('/{id}',   [MunicipalityController::class, 'update']);
+        Route::delete('/{id}', [MunicipalityController::class, 'destroy']);
+
+        // 🏘️ محلات البلدية
+        Route::get('/{municipalityId}/sub-municipalities',  [SubMunicipalityController::class, 'index']);
+        Route::post('/{municipalityId}/sub-municipalities', [SubMunicipalityController::class, 'store']);
+
+        // 📍 كل مناطق البلدية مسطّحة عبر محلاتها (عرض مريح للواجهة)
+        Route::get('/{municipalityId}/zones', [MunicipalityZoneController::class, 'indexByMunicipality']);
+    });
+
+    // --- 🏘️ المحلات (المستوى الثاني) ---
+    Route::prefix('sub-municipalities')->group(function () {
+        Route::get('/{id}',    [SubMunicipalityController::class, 'show']);
+        Route::post('/{id}',   [SubMunicipalityController::class, 'update']);
+        Route::delete('/{id}', [SubMunicipalityController::class, 'destroy']);
+
+        // 📍 مناطق المحلة
+        Route::get('/{subMunicipalityId}/zones',  [MunicipalityZoneController::class, 'index']);
+        Route::post('/{subMunicipalityId}/zones', [MunicipalityZoneController::class, 'store']);
+    });
+
+    // --- 📍 المناطق (المستوى الثالث) ---
+    Route::prefix('admin-zones')->group(function () {
+        Route::get('/{id}',    [MunicipalityZoneController::class, 'show']);
+        Route::post('/{id}',   [MunicipalityZoneController::class, 'update']);
+        Route::delete('/{id}', [MunicipalityZoneController::class, 'destroy']);
+    });
+
+    // --- ⚠️ المسارات القديمة: يعتمد عليها تطبيقا السائق وولي الأمر، تُترك كما هي ---
 Route::prefix('zones')->group(function () {
     Route::get('/', [ZoneController::class, 'index']);       // عرض المناطق
     Route::post('/', [ZoneController::class, 'store']);      // إضافة منطقة جديدة
