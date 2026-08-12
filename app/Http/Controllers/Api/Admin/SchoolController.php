@@ -40,12 +40,12 @@ class SchoolController extends Controller
     public function store(StoreSchoolRequest $request): JsonResponse
     {
         try { $validated = $request->validated(); } catch (\Throwable $e) { $validated = $request->all(); }
-        $data = array_merge($validated ?? $request->all(), ['status' => 'approved']);
+        $data = array_merge($validated ?? $request->all(), ['status' => 'active']);
         $school = $this->schoolService->createSchool($data);
 
         return response()->json([
             'success' => true,
-            'message' => 'تم إضافة المدرسة كعنوان معتمد ومربوط جغرافياً بنجاح.',
+            'message' => 'تم إضافة المدرسة وتفعيل حالتها (active) بنجاح.',
             'data'    => new SchoolResource($school)
         ], Response::HTTP_CREATED);
     }
@@ -53,15 +53,28 @@ class SchoolController extends Controller
     /**
      * عرض تفاصيل مدرسة محددة
      */
-    public function show(School $school): JsonResponse
+    public function show($school): JsonResponse
     {
-        // شحن علاقة الـ zone لضمان خروج البيانات كاملة للـ Front-end
-        $school->load('zone.subMunicipality.municipality');
+        try {
+            $schoolModel = $school instanceof School ? $school : School::findOrFail($school);
+            $schoolModel->load(['zone.subMunicipality.municipality', 'children']);
 
-        return response()->json([
-            'success' => true,
-            'data'    => new SchoolResource($school)
-        ], Response::HTTP_OK);
+            return response()->json([
+                'success' => true,
+                'message' => 'تم جلب تفاصيل المدرسة بنجاح.',
+                'data'    => new SchoolResource($schoolModel)
+            ], Response::HTTP_OK);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'عذراً، المدرسة المطلوبة غير موجودة في النظام.'
+            ], Response::HTTP_NOT_FOUND);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'حدث خطأ أثناء جلب تفاصيل المدرسة: ' . $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
     }
 
     /**
@@ -70,11 +83,12 @@ class SchoolController extends Controller
     public function update(UpdateSchoolRequest $request, School $school): JsonResponse
     {
         try { $validated = $request->validated(); } catch (\Throwable $e) { $validated = $request->all(); }
-        $updatedSchool = $this->schoolService->updateSchool($school, $validated ?? $request->all());
+        $data = array_merge($validated ?? $request->all(), ['status' => 'active']);
+        $updatedSchool = $this->schoolService->updateSchool($school, $data);
 
         return response()->json([
             'success' => true,
-            'message' => 'تم تحديث بيانات وموقع المدرسة الجغرافي بنجاح.',
+            'message' => 'تم تحديث بيانات المدرسة وتفعيل حالتها (active) بنجاح.',
             'data'    => new SchoolResource($updatedSchool)
         ], Response::HTTP_OK);
     }
