@@ -13,9 +13,17 @@ class ZoneResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id'         => $this->id,
-            'zone_name'  => $this->name,
-            'created_at' => $this->created_at ? $this->created_at->format('Y-m-d H:i:s') : null,
+            'id'                  => $this->id,
+            'zone_name'           => $this->name,
+            'name'                => $this->name,
+            'sub_municipality_id' => $this->sub_municipality_id,
+            'sub_municipality'    => $this->relationLoaded('subMunicipality') && $this->subMunicipality ? [
+                'id'                => $this->subMunicipality->id,
+                'name'              => $this->subMunicipality->name,
+                'municipality_id'   => $this->subMunicipality->municipality_id,
+                'municipality_name' => $this->subMunicipality->relationLoaded('municipality') ? $this->subMunicipality->municipality?->name : null,
+            ] : null,
+            'created_at'          => $this->created_at ? $this->created_at->format('Y-m-d H:i:s') : null,
         ];
     }
 }

@@ -30,6 +30,12 @@ class DriverReviewResource extends JsonResource
                         : null,
                 ];
             }),
+            'driver'      => $this->whenLoaded('driver', function () {
+                return [
+                    'id'   => (int) $this->driver->id,
+                    'name' => optional($this->driver->user)->full_name,
+                ];
+            }),
         ];
     }
 }

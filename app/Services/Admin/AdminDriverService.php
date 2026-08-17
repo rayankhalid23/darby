@@ -4,6 +4,7 @@ namespace App\Services\Admin;
 
 use App\Models\Driver\Driver;
 use App\Models\Driver\DriverApproval;
+use App\Services\Admin\AdminAuditLogService;
 use App\Services\Shared\EmailService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -13,10 +14,12 @@ use Exception;
 class AdminDriverService
 {
     protected EmailService $emailService;
+    protected AdminAuditLogService $auditLogService;
 
-    public function __construct(EmailService $emailService)
+    public function __construct(EmailService $emailService, AdminAuditLogService $auditLogService)
     {
         $this->emailService = $emailService;
+        $this->auditLogService = $auditLogService;
     }
 
     /**
@@ -24,20 +27,26 @@ class AdminDriverService
      */
     public function getDriversList(array $filters): LengthAwarePaginator
     {
+        // القيم الصحيحة للـ enum في قاعدة البيانات
+        $validStatuses = ['Pending', 'Approved', 'Suspended', 'Rejected', 'Offline', 'ON_TRIP'];
+
         // 1. بدء الاستعلام مع كسر حجب جدول المستخدمين (Users) المرتبطين بالسائقين
         $query = Driver::with(['user' => function($q) {
-            $q->withTrashed()->withoutGlobalScopes(); 
+            $q->withTrashed()->withoutGlobalScopes();
         }]);
 
-        // 2. 🚀 الإجبار الصارم: جلب الحالات المعلقة فقط وإلغاء أي فلاتر أخرى قادمة من الـ Controller
-        $query->whereIn('status', ['Pending', 'pending']);
+        // 2. ✅ فلترة الحالة: إذا أرسل الأدمن status يُطبَّق، وإلا يُجلب جميع السائقين
+        if (!empty($filters['status']) && in_array($filters['status'], $validStatuses, true)) {
+            $query->where('status', $filters['status']);
+        }
+        // ملاحظة: لا يوجد where افتراضي — الأدمن يرى الكل بدون فلتر
 
         // 3. فلترة البحث النصي (تُفعّل فقط إذا كتب الآدمن نصاً في خانة البحث)
         if (!empty($filters['search'])) {
             $search = $filters['search'];
             $query->whereHas('user', function ($q) use ($search) {
                 $q->withTrashed()->withoutGlobalScopes()
-                  ->where(function($sub) use ($search) {
+                  ->where(function ($sub) use ($search) {
                       $sub->where('full_name', 'like', "%{$search}%")
                           ->orWhere('email', 'like', "%{$search}%")
                           ->orWhere('phone_number', 'like', "%{$search}%");
@@ -45,8 +54,12 @@ class AdminDriverService
             });
         }
 
-        // 4. ترتيب تنازلي (الأحدث أولاً) مع الـ Pagination
-        return $query->orderBy('id', 'desc')->paginate(15);
+        // 4. ترتيب تنازلي (الأحدث أولاً) مع الـ Pagination — per_page يحدده الأدمن أو افتراضي 15
+        $perPage = isset($filters['per_page']) && is_numeric($filters['per_page'])
+            ? (int) min($filters['per_page'], 100)  // حد أقصى 100 لمنع استنزاف الذاكرة
+            : 15;
+
+        return $query->orderBy('id', 'desc')->paginate($perPage);
     }
    
 
@@ -126,12 +139,116 @@ class AdminDriverService
                 'created_at'       => now()
             ]);
 
+            // 📝 تسجيل إجراء القرار في سجل تدقيق المشرفين
+            $this->auditLogService->record(
+                action: $status === 'Approved' ? 'approve_driver' : 'reject_driver',
+                entityType: 'driver',
+                entityId: $driver->id,
+                entityName: $driver->user->full_name,
+                result: $status === 'Approved' ? 'approved' : 'rejected',
+                reason: $rejectionReason,
+                changes: [],
+                adminId: $adminId
+            );
+
             $this->emailService->sendDriverReviewResult(
                 $driver->user->email,
                 $driver->user->full_name,
                 $status,
                 $rejectionReason,
                 $driver->gender
+            );
+
+            return $driver;
+        });
+    }
+
+    /**
+     * 3-ب. تعديل بيانات السائق مباشرة من قبل المشرف / الأدمن مع التوثيق في سجل التدقيق
+     */
+    public function updateDriver(int $driverId, array $data, ?int $adminId = null): Driver
+    {
+        return DB::transaction(function () use ($driverId, $data, $adminId) {
+            $driver = Driver::with('user')->lockForUpdate()->findOrFail($driverId);
+            $user = $driver->user;
+
+            // أخذ لقطة من القيم القديمة لحساب الفروقات
+            $oldSnapshot = [
+                'full_name'      => $user->full_name,
+                'phone_number'   => $user->phone_number,
+                'is_active'      => (bool) $user->is_active,
+                'national_id'    => $driver->national_id,
+                'license_number' => $driver->license_number,
+                'license_expiry' => $driver->license_expiry ? \Carbon\Carbon::parse($driver->license_expiry)->format('Y-m-d') : null,
+                'status'         => $driver->status,
+            ];
+
+            // تحضير بيانات تحديث المستخدم
+            $userUpdates = [];
+            if (isset($data['full_name'])) {
+                $userUpdates['full_name'] = $data['full_name'];
+            }
+            if (isset($data['phone_number'])) {
+                $userUpdates['phone_number'] = $data['phone_number'];
+            }
+            if (isset($data['is_active'])) {
+                $userUpdates['is_active'] = (bool) $data['is_active'];
+            }
+
+            if (!empty($userUpdates)) {
+                $user->update($userUpdates);
+            }
+
+            // تحضير بيانات تحديث السائق
+            $driverUpdates = [];
+            if (isset($data['national_id'])) {
+                $driverUpdates['national_id'] = $data['national_id'];
+            }
+            if (isset($data['license_number'])) {
+                $driverUpdates['license_number'] = $data['license_number'];
+            }
+            if (isset($data['license_expiry'])) {
+                $driverUpdates['license_expiry'] = $data['license_expiry'];
+            }
+            if (isset($data['status'])) {
+                $driverUpdates['status'] = ucfirst(strtolower($data['status']));
+                if ($driverUpdates['status'] === 'Active') {
+                    $driverUpdates['status'] = 'Approved';
+                }
+            }
+
+            if (!empty($driverUpdates)) {
+                $driver->update($driverUpdates);
+            }
+
+            $driver->refresh()->load('user');
+
+            // لقطة القيم الجديدة
+            $newSnapshot = [
+                'full_name'      => $driver->user->full_name,
+                'phone_number'   => $driver->user->phone_number,
+                'is_active'      => (bool) $driver->user->is_active,
+                'national_id'    => $driver->national_id,
+                'license_number' => $driver->license_number,
+                'license_expiry' => $driver->license_expiry ? \Carbon\Carbon::parse($driver->license_expiry)->format('Y-m-d') : null,
+                'status'         => $driver->status,
+            ];
+
+            // حساب التغييرات مع التسميات العربية
+            $changes = $this->auditLogService->diff($oldSnapshot, $newSnapshot);
+
+            $reason = $data['reason'] ?? 'تعديل بيانات السائق من قبل الإدارة';
+
+            // تسجيل العملية في سجل التدقيق
+            $this->auditLogService->record(
+                action: 'update_driver',
+                entityType: 'driver',
+                entityId: $driver->id,
+                entityName: $driver->user->full_name,
+                result: null,
+                reason: $reason,
+                changes: $changes,
+                adminId: $adminId
             );
 
             return $driver;
@@ -227,20 +344,18 @@ class AdminDriverService
                     'action_at' => now()
                 ]);
 
-                // 🚀 هـ) إدخال إشعار القبول مباشرة في جدول الإشعارات الخاص بك
-                DB::table('notifications')->insert([
-                    'user_id'    => $driver->user_id,
-                    'type'       => 'SYSTEM', // متوافق تماماً مع Enum جدولك الخاص
-                    'title'      => '🎉 تم قبول تحديث بياناتك',
-                    'body'       => 'مرحباً بك كابتن، تمت الموافقة على تعديل بيانات ملفك الشخصي وتطبيقها بنجاح.',
-                    'metadata'   => json_encode([
-                        'status' => 'Approved',
-                        'type'   => 'profile_update_review'
-                    ]),
-                    'priority'   => 'High',
-                    'is_read'    => 0,
-                    'created_at' => now(),
-                ]);
+                // 🚀 هـ) إرسال إشعار القبول عبر الفايربيز وقاعدة البيانات
+                try {
+                    $driver->user->notify(new \App\Notifications\CustomDatabaseNotification([
+                        'type'      => 'driver_account_approved',
+                        'title'     => '🎉 تم قبول تحديث بياناتك',
+                        'message'   => 'مرحباً بك كابتن، تمت الموافقة على تعديل بيانات ملفك الشخصي وتطبيقها بنجاح.',
+                        'screen'    => 'DRIVER_PROFILE',
+                        'entity_id' => (string) $driver->id,
+                    ]));
+                } catch (\Throwable $e) {
+                    Log::warning("Failed sending approval notification: " . $e->getMessage());
+                }
 
             } else {
                 // أ) في حال الرفض: تحديث حالة الطلب وإثبات سبب الرفض
@@ -250,22 +365,31 @@ class AdminDriverService
                     'action_at'        => now()
                 ]);
 
-                // 🚀 ب) إدخال إشعار الرفض مباشرة في جدول الإشعارات الخاص بك مع توضيح السبب
-                DB::table('notifications')->insert([
-                    'user_id'    => $driver->user_id,
-                    'type'       => 'SYSTEM', // متوافق تماماً مع Enum جدولك الخاص
-                    'title'      => '📋 مراجعة تحديث البيانات',
-                    'body'       => "نأسف لإبلاغك برفض طلب تعديل البيانات المرفق بملفك الشخصي بسبب: {$rejectionReason}",
-                    'metadata'   => json_encode([
-                        'status'           => 'Rejected',
-                        'rejection_reason' => $rejectionReason,
-                        'type'             => 'profile_update_review'
-                    ]),
-                    'priority'   => 'High',
-                    'is_read'    => 0,
-                    'created_at' => now(),
-                ]);
+                // 🚀 ب) إرسال إشعار الرفض عبر الفايربيز وقاعدة البيانات
+                try {
+                    $driver->user->notify(new \App\Notifications\CustomDatabaseNotification([
+                        'type'      => 'driver_account_rejected',
+                        'title'     => '📋 مراجعة تحديث البيانات',
+                        'message'   => "نأسف لإبلاغك برفض طلب تعديل البيانات المرفق بملفك الشخصي بسبب: {$rejectionReason}",
+                        'screen'    => 'DRIVER_PROFILE',
+                        'entity_id' => (string) $driver->id,
+                    ]));
+                } catch (\Throwable $e) {
+                    Log::warning("Failed sending rejection notification: " . $e->getMessage());
+                }
             }
+
+            // 📝 تسجيل إجراء مراجعة تعديل بيانات السائق في سجل تدقيق المشرفين
+            $this->auditLogService->record(
+                action: $decision === 'Approved' ? 'approve_driver_change' : 'reject_driver_change',
+                entityType: 'driver_change',
+                entityId: $changeId,
+                entityName: $driver->user->full_name,
+                result: $decision === 'Approved' ? 'approved' : 'rejected',
+                reason: $rejectionReason,
+                changes: $decision === 'Approved' ? $this->auditLogService->diff([], $newValues ?? []) : [],
+                adminId: $adminId
+            );
 
             return true;
         });

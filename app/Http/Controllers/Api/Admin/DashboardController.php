@@ -39,8 +39,13 @@ class DashboardController extends Controller
                 ->whereIn('status', ['Approved', 'approved', 'Active', 'active'])
                 ->count();
 
-            // 3. إجمالي أولياء الأمور
+            // 3. إجمالي أولياء الأمور (حساب السجلات المباشرة مع تغطية الاحتياط من حسابات المستخدمين)
             $totalParents = \App\Models\Parent\ParentModel::count();
+            if ($totalParents === 0) {
+                $totalParents = User::where('role_id', 3)
+                    ->orWhereHas('parent')
+                    ->count();
+            }
 
             // 4. إجمالي الأطفال المشتركون في رحلات (الذين لديهم اشتراكات نشطة)
             $subscribedChildren = ActiveSubscription::where('status', 'active')

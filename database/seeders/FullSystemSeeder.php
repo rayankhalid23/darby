@@ -570,7 +570,7 @@ class FullSystemSeeder extends Seeder
             'driver_id' => $driver2->id,
             'route_id' => 0,
             'trip_type' => 'Morning',
-            'status' => 'started',
+            'status' => 'in_progress',
             'scheduled_at' => now(),
             'started_at' => now()->subMinutes(12),
             'scheduled_start_time' => now(),

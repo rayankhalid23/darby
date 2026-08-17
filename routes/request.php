@@ -65,13 +65,15 @@ Route::middleware('auth:sanctum')->group(function () {
         // 1. مسارات ثابتة (Static Routes) - توضع أولاً
         
         // المسار الموحد الجديد لجلب طلبات الاشتراك المبدئية بالفلاتر
-        Route::get('/requests', [DriverSubscriptionController::class, 'index']); 
+        Route::get('/requests', [DriverSubscriptionController::class, 'index']);
         Route::get('/requests/{id}/trip-details', [DriverSubscriptionController::class, 'tripDetails']);
+        Route::get('/requests/{id}/feasibility-check', [DriverSubscriptionController::class, 'feasibilityCheck']);
         Route::get('/requests/{id}', [DriverSubscriptionController::class, 'show']);
         
         // المسار الموحد الجديد لجلب الاشتراكات الفعلية والمثبتة بالفلاتر
-        Route::get('/active-subscriptions', [DriverSubscriptionController::class, 'activeSubscriptions']); 
+        Route::get('/active-subscriptions', [DriverSubscriptionController::class, 'activeSubscriptions']);
         Route::get('/active-subscriptions/{id}', [DriverSubscriptionController::class, 'activeSubscriptionDetails']);
+        Route::post('/active-subscriptions/{id}/cancel', [DriverSubscriptionController::class, 'cancelActiveSubscription']);
         Route::get('/chats', [ChatController::class, 'getDriverChatList']);
   
         

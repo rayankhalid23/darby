@@ -5,8 +5,9 @@ namespace App\Models\Parent;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
-use App\Models\parent\ParentModel; // تأكد من المسار الصحيح
+use App\Models\parent\ParentModel;
 use App\Models\Parent\ChildLogistics;
+use App\Enums\Shared\SchoolStage;
 
 class Child extends Model
 {
@@ -14,8 +15,6 @@ class Child extends Model
 
     // يفضل تفعيل timestamps إذا كانت موجودة في الـ Migration، 
     // وإلا اتركها false كما هي في كودك القديم
-    public $timestamps = true;
-
     protected $fillable = [
         'parent_id',
         'school_id',
@@ -85,5 +84,16 @@ public function subscription()
     public function getAgeAttribute(): int
     {
         return $this->birth_date ? $this->birth_date->age : 0;
+    }
+
+    /** اشتقاق المرحلة الدراسية من رقم الصف تلقائياً */
+    public function getSchoolStageAttribute(): string
+    {
+        return SchoolStage::fromGrade((int) $this->grade)->value;
+    }
+
+    public function getSchoolStageLabelAttribute(): string
+    {
+        return SchoolStage::fromGrade((int) $this->grade)->label();
     }
 }

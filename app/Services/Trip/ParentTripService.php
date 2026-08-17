@@ -43,7 +43,7 @@ class ParentTripService
         $driverIds = $subscriptions->pluck('driver_id')->unique()->toArray();
 
         $activeTrips = Trip::whereIn('driver_id', $driverIds)
-            ->where('status', 'started')
+            ->where('status', 'in_progress')
             ->whereDate('trip_date', Carbon::today()->toDateString())
             ->with(['driver.user', 'driver.vehicles'])
             ->get();
@@ -59,22 +59,34 @@ class ParentTripService
                 $childObj = $sub->child;
                 if (!$childObj) continue;
 
-                $event = DB::table('trip_events')
+                // trip_stops هو مصدر الحقيقة الدقيق (boarded/absent_late/dropped_off_school/...)؛
+                // نرجع لـ trip_events/absence_logs فقط للرحلات القديمة التي لا تملك trip_stops بعد
+                $stop = DB::table('trip_stops')
                     ->where('trip_id', $trip->id)
                     ->where('child_id', $childObj->id)
-                    ->latest('scanned_at')
+                    ->where('stop_type', 'home')
                     ->first();
 
-                $isAbsent = DB::table('absence_logs')
-                    ->where('child_id', $childObj->id)
-                    ->whereDate('absence_date', Carbon::today()->toDateString())
-                    ->exists();
+                if ($stop) {
+                    $childStatus = $stop->status;
+                } else {
+                    $event = DB::table('trip_events')
+                        ->where('trip_id', $trip->id)
+                        ->where('child_id', $childObj->id)
+                        ->latest('scanned_at')
+                        ->first();
 
-                $childStatus = 'waiting';
-                if ($isAbsent) {
-                    $childStatus = 'absent';
-                } elseif ($event) {
-                    $childStatus = $event->action_type;
+                    $isAbsent = DB::table('absence_logs')
+                        ->where('child_id', $childObj->id)
+                        ->whereDate('absence_date', Carbon::today()->toDateString())
+                        ->exists();
+
+                    $childStatus = 'waiting';
+                    if ($isAbsent) {
+                        $childStatus = 'absent';
+                    } elseif ($event) {
+                        $childStatus = $event->action_type;
+                    }
                 }
 
                 $rawPhoto = $childObj->photo_url ?? null;
@@ -587,7 +599,7 @@ class ParentTripService
         $activeTrip = null;
         if ($sub) {
             $trip = Trip::where('driver_id', $sub->driver_id)
-                ->where('status', 'started')
+                ->where('status', 'in_progress')
                 ->whereDate('trip_date', Carbon::today()->toDateString())
                 ->first();
 
@@ -616,6 +628,21 @@ class ParentTripService
      */
     public function getChildTripStatus(int $userId, int $tripId, int $childId): array
     {
+        $stop = DB::table('trip_stops')
+            ->where('trip_id', $tripId)
+            ->where('child_id', $childId)
+            ->where('stop_type', 'home')
+            ->first();
+
+        if ($stop) {
+            return [
+                'child_id' => $childId,
+                'status'   => $stop->status,
+                'time'     => $stop->updated_at ? Carbon::parse($stop->updated_at)->format('H:i') : null,
+            ];
+        }
+
+        // توافقية: رحلات قديمة بلا trip_stops بعد
         $event = DB::table('trip_events')
             ->where('trip_id', $tripId)
             ->where('child_id', $childId)
@@ -671,7 +698,7 @@ class ParentTripService
             ->where('action_type', 'dropped_off')
             ->first();
 
-        $isStarted = !empty($trip->actual_start_time) || !empty($trip->started_at) || in_array($trip->status, ['started', 'in_progress', 'completed']);
+        $isStarted = !empty($trip->actual_start_time) || !empty($trip->started_at) || in_array($trip->status, ['in_progress', 'completed']);
         $startTime = $trip->actual_start_time ? Carbon::parse($trip->actual_start_time)->format('Y-m-d H:i:s') : ($trip->started_at ? Carbon::parse($trip->started_at)->format('Y-m-d H:i:s') : null);
 
         $isPickedUp = !empty($pickupEvent) || !empty($dropoffEvent);
@@ -751,7 +778,7 @@ class ParentTripService
         $driverIds = $subscriptions->pluck('driver_id')->unique()->toArray();
 
         $activeTrips = Trip::whereIn('driver_id', $driverIds)
-            ->where('status', 'started')
+            ->where('status', 'in_progress')
             ->whereDate('trip_date', Carbon::today()->toDateString())
             ->get();
 

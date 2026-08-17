@@ -4,6 +4,7 @@ namespace App\Models\Shared;
 
 use App\Models\Parent\ParentModel;
 use App\Models\Driver\Driver;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -68,6 +69,26 @@ class Contract extends Model
     }
 
     /**
+     * حساب المستخدم (users) الفعلي لولي الأمر — parent_id على هذا الجدول
+     * هو مفتاح أجنبي على users.id مباشرة (كما في هجرة الجدول)، وليس على parents.id
+     * كما تفترض علاقة parent() أعلاه خطأً. أُبقيت parent() كما هي حتى لا تنكسر
+     * عمليات المحفظة التي تعتمد عليها (FinancialService/FinancialLedgerService)،
+     * واستُخدمت هذه العلاقة الجديدة في نقاط العرض (Resources/الإشعارات) بدلاً منها.
+     */
+    public function parentUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'parent_id');
+    }
+
+    /**
+     * حساب المستخدم (users) الفعلي للسائق — نفس ملاحظة parentUser() أعلاه.
+     */
+    public function driverUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'driver_id');
+    }
+
+    /**
      * الاشتراكات النشطة المرتبطة بهذا العقد
      */
     public function activeSubscriptions(): HasMany
@@ -115,9 +136,9 @@ class Contract extends Model
     public function getSubscriptionTypeTextAttribute(): string
     {
         return match($this->subscription_type) {
-            'monthly' => 'اشتراك شهري',
-            'daily'   => 'اشتراك يومي',
-            default   => $this->subscription_type,
+            'single_day' => 'اشتراك يوم واحد',
+            'multi_day'  => 'اشتراك عدة أيام',
+            default      => $this->subscription_type,
         };
     }
 

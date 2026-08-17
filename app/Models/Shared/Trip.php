@@ -15,12 +15,16 @@ class Trip extends Model
         'driver_id',
         'route_id',
         'trip_type',
+        'shift_slot',
         'status',
+        'suspension_reason',
         'scheduled_at',
         'started_at',
         'completed_at',
         'scheduled_start_time',
         'actual_start_time',
+        'start_lat',
+        'start_lng',
         'trip_date',
         'created_at',
     ];
@@ -59,4 +63,9 @@ class Trip extends Model
     // إذا كنت تريد جلب الاشتراكات المرتبطة بنفس مسار الرحلة (route_id)
     return $this->hasMany(ActiveSubscription::class, 'route_id', 'route_id');
 }
+
+    public function stops()
+    {
+        return $this->hasMany(TripStop::class, 'trip_id')->orderBy('sequence_order');
+    }
 }

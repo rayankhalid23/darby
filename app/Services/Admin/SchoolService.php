@@ -24,21 +24,22 @@ class SchoolService
     }
 
     /**
-     * إضافة مدرسة جديدة في النظام مربوطة بالمنطقة الجغرافية (zone_id)
+     * إضافة مدرسة جديدة في النظام وتفعيلها تلقائياً (status = active)
      */
     public function createSchool(array $data): School
     {
-        // سيتم تخزين الـ zone_id تلقائياً لأنه مضاف في الـ $fillable للموديل
+        $data['status'] = 'active';
         $school = School::create($data);
 
         return $school->load('zone.subMunicipality.municipality');
     }
 
     /**
-     * تحديث بيانات مدرسة، موقعها الجغرافي، أو تغيير حالتها (الاعتماد)
+     * تحديث بيانات مدرسة وضمان بقاء حالتها نشطة (status = active)
      */
     public function updateSchool(School $school, array $data): School
     {
+        $data['status'] = 'active';
         $school->update($data);
         
         // شحن البيانات الجغرافية المحدثة لضمان رجوع الـ Resource كامل للفرونت إند

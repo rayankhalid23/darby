@@ -1,0 +1,8 @@
+# scikit-learn مثبّت بإصدار دقيق: توافق ملفات joblib المحفوظة غير مضمون رسمياً
+# حتى بين إصدارات فرعية من sklearn. أي ترقية هنا تتطلب إعادة تدريب النموذج
+# (python src/train_model.py) قبل النشر.
+scikit-learn==1.8.0
+joblib>=1.3
+pytest>=7.4
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.29,<1.0

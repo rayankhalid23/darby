@@ -21,7 +21,7 @@ class UpdateSchoolRequest extends FormRequest
             'lng'      => 'sometimes|required|numeric|between:-180,180',
             'address'  => 'sometimes|required|string|max:255',
             'zone_id'  => 'sometimes|required|exists:zones,id',
-            'status'   => 'sometimes|required|in:approved,pending'
+            'status'   => 'sometimes|required|in:active,approved,pending'
         ];
     }
 

@@ -15,7 +15,7 @@ class DriverReviewController extends Controller
      */
     public function index(int $driverId): JsonResponse
     {
-        $reviews = DriverReview::with(['parent', 'driver'])
+        $reviews = DriverReview::with(['parent.user', 'driver.user'])
             ->where('driver_id', $driverId)
             ->latest()
             ->paginate(10);
@@ -64,26 +64,15 @@ class DriverReviewController extends Controller
     public function allReviews(): JsonResponse
     {
         try {
-            // جلب العلاقات مباشرة بناءً على بنية موديول مشروعك الحالية
-            $reviews = DriverReview::with(['parent', 'driver'])
+            // نفس علاقات "parent.user" و"driver.user" التي تعتمد عليها DriverReviewResource
+            $reviews = DriverReview::with(['parent.user', 'driver.user'])
                 ->latest()
                 ->paginate(15);
 
-            $formattedReviews = collect($reviews->items())->map(function ($review) {
-                return [
-                    'review_id'   => $review->id,
-                    'comment'     => $review->comment ?? 'بدون تعليق ناصي',
-                    'rating'      => $review->rating,
-                    // التعديل الذكي: استخراج الاسم مباشرة من الحقل المرتبط بـ User أو حقول الموديول المتاحة
-                    'parent_name' => $review->parent ? ($review->parent->full_name ?? $review->parent->name ?? 'ولي أمر') : 'مستخدم محذوف',
-                    'driver_name' => $review->driver ? ($review->driver->full_name ?? $review->driver->name ?? 'سائق') : 'سائق محذوف',
-                    'is_deleted'  => $review->trashed(),
-                ];
-        });
-
             return response()->json([
                 'status'  => true,
-                'data'    => $formattedReviews,
+                // نفس Resource المستخدم في index() لتوحيد شكل الاستجابة بين الـ endpoint-ين
+                'data'    => \App\Http\Resources\Api\Parent\DriverReviewResource::collection($reviews),
                 'pagination' => [
                     'current_page' => $reviews->currentPage(),
                     'last_page'    => $reviews->lastPage(),

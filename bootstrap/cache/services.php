@@ -58,7 +58,6 @@
     54 => 'RyanChandler\\BladeCaptureDirective\\BladeCaptureDirectiveServiceProvider',
     55 => 'Spatie\\Permission\\PermissionServiceProvider',
     56 => 'App\\Providers\\AppServiceProvider',
-    57 => 'App\\Providers\\Filament\\AdminPanelProvider',
   ),
   'eager' => 
   array (
@@ -102,7 +101,6 @@
     37 => 'RyanChandler\\BladeCaptureDirective\\BladeCaptureDirectiveServiceProvider',
     38 => 'Spatie\\Permission\\PermissionServiceProvider',
     39 => 'App\\Providers\\AppServiceProvider',
-    40 => 'App\\Providers\\Filament\\AdminPanelProvider',
   ),
   'deferred' => 
   array (

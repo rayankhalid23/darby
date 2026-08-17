@@ -164,10 +164,8 @@ class DriverMatchingService
         // ── فلترة جنس القبول للسائق ──
         $genders = $children->pluck('gender')->unique()->values()->toArray();
         if (count($genders) > 1) {
-            // أطفال من الجنسين → السائق يجب أن يقبل 'both'
             $query->where('drivers.accepted_gender', 'both');
         } else {
-            // جنس واحد → السائق يقبل هذا الجنس أو 'both'
             $query->whereIn('drivers.accepted_gender', [$genders[0], 'both']);
         }
 
@@ -181,11 +179,47 @@ class DriverMatchingService
 
         if (!empty($subscriptionTypes)) {
             $query->where(function ($q) use ($subscriptionTypes) {
-                // السائق يقبل 'both' أو أي نوع من أنواع الأطفال
                 $q->where('drivers.subscription_type', 'both');
                 foreach ($subscriptionTypes as $type) {
                     $q->orWhere('drivers.subscription_type', $type);
                 }
+            });
+        }
+
+        // ── فلترة توفر المقاعد ──
+        $this->applySeatsAvailabilityFilter($query, $children);
+    }
+
+    /**
+     * يُخفي السائقين الذين لا تتوفر لديهم مقاعد كافية في الفترات/الاتجاهات
+     * المطلوبة من logistics الأطفال المختارين.
+     *
+     * الخوارزمية:
+     *   1. لكل طفل → resolveSlots(timing, direction) → قائمة slots مطلوبة
+     *   2. احسب عدد الأطفال المحتاجين لكل slot
+     *   3. فلتر: السائق يجب أن يكون عنده (total_seats - reserved_seats) >= العدد المطلوب
+     */
+    private function applySeatsAvailabilityFilter($query, Collection $children): void
+    {
+        // حساب عدد الأطفال المحتاجين لكل slot
+        $slotDemand = [];
+
+        foreach ($children as $child) {
+            $timing    = strtoupper($child->logistics?->preferred_time_slot ?? 'MORNING');
+            $direction = $child->logistics?->trip_direction ?? 'go';
+
+            $slots = \App\Models\Driver\DriverSeatSlot::resolveSlots($timing, $direction);
+
+            foreach ($slots as $slot) {
+                $slotDemand[$slot] = ($slotDemand[$slot] ?? 0) + 1;
+            }
+        }
+
+        // لكل slot مطلوب: السائق يجب أن يملك مقاعد كافية
+        foreach ($slotDemand as $slot => $needed) {
+            $query->whereHas('seatSlots', function ($q) use ($slot, $needed) {
+                $q->where('slot', $slot)
+                  ->whereRaw('(total_seats - reserved_seats) >= ?', [$needed]);
             });
         }
     }
@@ -298,24 +332,23 @@ class DriverMatchingService
 
             // تحديد عدد أيام العمل
             $logistics        = $child->logistics;
-            $subscriptionType = $logistics ? $logistics->subscription_type : 'monthly';
+            $subscriptionType = $logistics ? $logistics->subscription_type : 'multi_day';
 
-            if ($subscriptionType === 'daily') {
+            if ($subscriptionType === 'single_day') {
                 $workingDays = 1;
             } else {
-                // monthly: حساب أيام العمل الفعلية (استثناء الجمعة والسبت)
+                // multi_day: حساب أيام العمل الفعلية (استثناء الجمعة والسبت)
                 $workingDays = $this->calculateWorkingDays(
                     $logistics?->start_date,
                     $logistics?->end_date
                 );
             }
 
-            // تحديد معامل المسافة بناءً على عمود trip_direction من ملف image_94b148.png
-$tripDirection = $logistics?->trip_direction ?? 'go'; 
-$tripMultiplier = ($tripDirection === 'both') ? 2 : 1;
+            // ذهاب وإياب = المسافة × 2، ذهاب فقط أو إياب فقط = المسافة × 1
+            $tripDirection  = $logistics?->trip_direction ?? 'go';
+            $tripMultiplier = ($tripDirection === 'both') ? 2 : 1;
 
-// حساب السعر النهائي مع مضاعفة المسافة إذا كان نوع الرحلة 'both'
-$childPrice  = round($distanceKm * $pricePerKm * $workingDays * $tripMultiplier, 2);
+            $childPrice = round($distanceKm * $pricePerKm * $workingDays * $tripMultiplier, 2);
             $totalPrice += $childPrice;
 
             $childEntry['school_name']        = $child->school->name ?? '';

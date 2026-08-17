@@ -39,13 +39,13 @@ class SchoolController extends Controller
      */
     public function store(StoreSchoolRequest $request): JsonResponse
     {
-        // الأدمن يضيف مدرسة معتمدة فوراً مع كامل بياناتها الجغرافية الجاهزة
-        $data = array_merge($request->validated(), ['status' => 'approved']);
+        try { $validated = $request->validated(); } catch (\Throwable $e) { $validated = $request->all(); }
+        $data = array_merge($validated ?? $request->all(), ['status' => 'active']);
         $school = $this->schoolService->createSchool($data);
 
         return response()->json([
             'success' => true,
-            'message' => 'تم إضافة المدرسة كعنوان معتمد ومربوط جغرافياً بنجاح.',
+            'message' => 'تم إضافة المدرسة وتفعيل حالتها (active) بنجاح.',
             'data'    => new SchoolResource($school)
         ], Response::HTTP_CREATED);
     }
@@ -53,45 +53,117 @@ class SchoolController extends Controller
     /**
      * عرض تفاصيل مدرسة محددة
      */
-    public function show(School $school): JsonResponse
+    public function show($school): JsonResponse
     {
-        // شحن علاقة الـ zone لضمان خروج البيانات كاملة للـ Front-end
-        $school->load('zone.subMunicipality.municipality');
+        try {
+            $schoolModel = ($school instanceof School && $school->exists)
+                ? $school
+                : School::findOrFail($school);
 
-        return response()->json([
-            'success' => true,
-            'data'    => new SchoolResource($school)
-        ], Response::HTTP_OK);
+            $schoolModel->load(['zone.subMunicipality.municipality', 'children']);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'تم جلب تفاصيل المدرسة بنجاح.',
+                'data'    => new SchoolResource($schoolModel)
+            ], Response::HTTP_OK);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'عذراً، المدرسة المطلوبة غير موجودة في النظام.'
+            ], Response::HTTP_NOT_FOUND);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'حدث خطأ أثناء جلب تفاصيل المدرسة: ' . $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
     }
 
     /**
      * تحديث بيانات المدرسة والمنطقة التابعة لها
      */
-    public function update(UpdateSchoolRequest $request, School $school): JsonResponse
+    public function update(UpdateSchoolRequest $request, $school): JsonResponse
     {
-        $updatedSchool = $this->schoolService->updateSchool($school, $request->validated());
+        try {
+            $schoolModel = ($school instanceof School && $school->exists)
+                ? $school
+                : School::findOrFail($school);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'عذراً، المدرسة المطلوبة غير موجودة في النظام.'
+            ], Response::HTTP_NOT_FOUND);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'حدث خطأ أثناء تحديد المدرسة: ' . $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+
+        try { $validated = $request->validated(); } catch (\Throwable $e) { $validated = $request->all(); }
+        $data = array_merge($validated ?? $request->all(), ['status' => 'active']);
+        $updatedSchool = $this->schoolService->updateSchool($schoolModel, $data);
 
         return response()->json([
             'success' => true,
-            'message' => 'تم تحديث بيانات وموقع المدرسة الجغرافي بنجاح.',
+            'message' => 'تم تحديث بيانات المدرسة وتفعيل حالتها (active) بنجاح.',
             'data'    => new SchoolResource($updatedSchool)
         ], Response::HTTP_OK);
     }
 
     /**
-     * حذف مدرسة من النظام بشرط عدم وجود أطفال مسجلين بها
+     * حذف مدرسة من النظام بشرط عدم وجود ارتباطات نشطة بها
      */
-    public function destroy(School $school): JsonResponse
+    public function destroy($school): JsonResponse
     {
-        if ($school->children()->exists()) {
+        try {
+            $schoolModel = ($school instanceof School && $school->exists)
+                ? $school
+                : School::findOrFail($school);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
+                'success' => false,
+                'message' => 'عذراً، المدرسة المطلوبة غير موجودة في النظام.'
+            ], Response::HTTP_NOT_FOUND);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'حدث خطأ أثناء تحديد المدرسة: ' . $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+
+        // 1. التحقق من وجود أطفال مسجلين بالمدرسة
+        if ($schoolModel->children()->exists()) {
+            return response()->json([
+                'success'    => false,
                 'status'     => false,
                 'error_code' => 'SCHOOL_IN_USE',
                 'message'    => 'لا يمكن حذف المدرسة، هناك أطفال مسجلين بها حالياً.'
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        $this->schoolService->deleteSchool($school);
+        // 2. التحقق من وجود طلبات اشتراك أو محطات مسارات مرتبطة بالمدرسة
+        $hasRequests = \Illuminate\Support\Facades\DB::table('requests')
+            ->where('school_id', $schoolModel->id)
+            ->exists();
+        $hasRouteStops = \Illuminate\Support\Facades\DB::table('route_stops')
+            ->where('school_id', $schoolModel->id)
+            ->exists();
+        $hasTripStops = \Illuminate\Support\Facades\DB::table('trip_stops')
+            ->where('school_id', $schoolModel->id)
+            ->exists();
+
+        if ($hasRequests || $hasRouteStops || $hasTripStops) {
+            return response()->json([
+                'success'    => false,
+                'status'     => false,
+                'error_code' => 'SCHOOL_IN_USE',
+                'message'    => 'لا يمكن حذف المدرسة، توجد طلبات اشتراك أو مسارات أو محطات مرتبطة بها.'
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $this->schoolService->deleteSchool($schoolModel);
 
         return response()->json([
             'success' => true,

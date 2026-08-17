@@ -13,57 +13,13 @@ use Exception;
 class DriverReviewController extends Controller
 {
     /**
-     * 🌐 عرض كافة التعليقات والتقييمات الموجودة في المنصة بالكامل
-     */
-    public function allReviews(): JsonResponse
-    {
-        try {
-            $reviews = DriverReview::with(['parent.user', 'driver.user'])
-                ->latest()
-                ->withTrashed()
-                ->paginate(15);
-
-            $formattedReviews = collect($reviews->items())->map(function ($review) {
-                return [
-                    'review_id'   => $review->id,
-                    'comment'     => $review->comment ?? 'بدون تعليق',
-                    'rating'      => $review->rating,
-                    'parent_name' => optional(optional($review->parent)->user)->full_name ?? 'مستخدم محذوف',
-                    'driver_name' => ($review->driver && $review->driver->user) ? $review->driver->user->full_name : 'سائق محذوف',
-                    'is_deleted'  => $review->trashed(),
-                    'created_at'  => $review->created_at->toDateTimeString(),
-                ];
-            });
-
-            return response()->json([
-                'status'  => true,
-                'data'    => $formattedReviews,
-                'pagination' => [
-                    'current_page' => $reviews->currentPage(),
-                    'last_page'    => $reviews->lastPage(),
-                    'total'        => $reviews->total(),
-                    'per_page'     => $reviews->perPage(),
-                ],
-            ]);
-
-        } catch (Exception $e) {
-            Log::error("AdminDriverReview [allReviews] - خطأ في جلب كافة التقييمات: " . $e->getMessage());
-            return response()->json([
-                'status'  => false,
-                'message' => 'حدث خطأ أثناء جلب التقييمات من السيرفر.',
-            ], 500);
-        }
-    }
-
-    /**
-     * 📊 جلب تقييمات سائق معين
+     * 📊 جلب تقييمات سائق معين (تُستخدم من واجهة ولي الأمر قبل اختيار سائق)
      */
     public function index(int $driverId): JsonResponse
     {
-        $reviews = DriverReview::with(['parent', 'driver'])
+        $reviews = DriverReview::with(['parent.user', 'driver.user'])
             ->where('driver_id', $driverId)
             ->latest()
-            ->withTrashed()
             ->paginate(10);
 
         return response()->json([
@@ -161,7 +117,7 @@ class DriverReviewController extends Controller
 
             // تحديث البيانات
             $review->update($validatedData);
-            
+
             // إعادة تحميل العلاقات
             $review->load(['parent.user', 'driver.user']);
 
@@ -183,28 +139,49 @@ class DriverReviewController extends Controller
     }
 
     /**
-     * 🗑️ إمكانية الحذف الكامل والنهائي لأي تعليق (لوحة الأدمن)
+     * 🗑️ حذف ولي الأمر لتقييمه الخاص فقط (حذف نهائي)
+     * ملاحظة: حذف أي تقييم من أي ولي أمر هو صلاحية أدمن حصرياً
+     * عبر DELETE /api/admin/driver-reviews/{id}، وليس هذا المسار.
      */
     public function destroy(int $id): JsonResponse
     {
         try {
-            $review = DriverReview::withTrashed()->findOrFail($id);
-            
-            Log::info("AdminDriverReview [Destroy] - الأدمن يقوم بحذف التقييم نهائياً.", ['review_id' => $id]);
-            
+            $user = auth()->user();
+            $parentRecord = $user->parentRecord ?? $user->parent ?? \App\Models\Parent\ParentModel::where('user_id', $user->id)->first();
+
+            if (!$parentRecord) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'حساب ولي الأمر غير مرتبط بسجل صحيح.',
+                ], 422);
+            }
+
+            $review = DriverReview::where('id', $id)
+                ->where('parent_id', $parentRecord->id)
+                ->first();
+
+            if (!$review) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'التقييم غير موجود أو ليس لديك صلاحية لحذفه.',
+                ], 404);
+            }
+
             $review->forceDelete();
+
+            Log::info("DriverReview [Destroy] - ولي الأمر حذف تقييمه بنجاح.", ['review_id' => $id, 'parent_id' => $parentRecord->id]);
 
             return response()->json([
                 'status'  => true,
-                'message' => 'تم حذف تقييم السائق نهائياً وبنجاح من المنصة.',
+                'message' => 'تم حذف تقييمك بنجاح.',
             ]);
 
         } catch (Exception $e) {
-            Log::error("AdminDriverReview [Destroy] - فشل الحذف النهائي للتقييم رقم $id: " . $e->getMessage());
+            Log::error("DriverReview [Destroy] - فشل حذف التقييم رقم $id: " . $e->getMessage());
             return response()->json([
                 'status'  => false,
-                'message' => 'التقييم غير موجود أو تم حذفه نهائياً مسبقاً.',
-            ], 404);
+                'message' => 'حدث خطأ أثناء حذف التقييم.',
+            ], 500);
         }
     }
 }

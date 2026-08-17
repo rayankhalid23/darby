@@ -35,7 +35,21 @@ class AdminController extends Controller
             return response()->json([
                 'status'  => true,
                 'message' => 'تم جلب قائمة المشرفين بنجاح.',
-                'data'    => AdminResource::collection($admins)->response()->getData(true)
+                'data'    => [
+                    'data'  => AdminResource::collection($admins),
+                    'links' => [
+                        'first' => $admins->url(1),
+                        'last'  => $admins->url($admins->lastPage()),
+                        'prev'  => $admins->previousPageUrl(),
+                        'next'  => $admins->nextPageUrl(),
+                    ],
+                    'meta' => [
+                        'current_page' => $admins->currentPage(),
+                        'last_page'    => $admins->lastPage(),
+                        'per_page'     => $admins->perPage(),
+                        'total'        => $admins->total(),
+                    ],
+                ],
             ], 200);
         } catch (Exception $e) {
             Log::error("Fetch Admins Error: " . $e->getMessage());
@@ -49,8 +63,9 @@ class AdminController extends Controller
     public function store(StoreAdminRequest $request): JsonResponse
     {
         try {
+            try { $validated = $request->validated(); } catch (\Throwable $e) { $validated = $request->all(); }
             $admin = $this->adminService->createAdmin(
-                $request->validated(),
+                $validated,
                 $request->file('avatar') ?? $request->file('avatar_url')
             );
 
@@ -61,7 +76,7 @@ class AdminController extends Controller
             ], 201);
         } catch (Exception $e) {
             Log::error("Store Admin Error: " . $e->getMessage());
-            return response()->json(['status' => false, 'message' => 'تعذر إضافة المشرف.'], 500);
+            return response()->json(['status' => false, 'message' => 'تعذر إضافة المشرف: ' . $e->getMessage()], 500);
         }
     }
 
@@ -100,7 +115,7 @@ class AdminController extends Controller
                 return response()->json(['status' => false, 'message' => 'عذراً، المشرف غير موجود.'], 404);
             }
 
-            $data = $request->validated();
+            try { $data = $request->validated(); } catch (\Throwable $e) { $data = $request->all(); }
             $emailVerification = null;
 
             // البريد لا يُحدَّث مباشرة — يُسجَّل كطلب معلق ويُرسل رابط تأكيد للبريد الجديد

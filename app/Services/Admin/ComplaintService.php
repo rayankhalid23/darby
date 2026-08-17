@@ -30,9 +30,14 @@ class ComplaintService
                 $query->where(function ($q) {
                     $q->where('status', 'pending')
                       ->orWhere(function ($sub) {
-                          $sub->whereNull('action_taken')
-                              ->orWhere('action_taken', 'none')
-                              ->orWhere('action_taken', '');
+                          // 'dismissed' إجراء نهائي يُسجَّل بـ action_taken='none' أيضاً، لذا يُستثنى
+                          // صراحةً هنا وإلا ستبقى الشكاوى المرفوضة تظهر أبدياً ضمن "المعلّقة".
+                          $sub->whereNotIn('status', ['completed', 'resolved', 'closed', 'dismissed'])
+                              ->where(function ($aq) {
+                                  $aq->whereNull('action_taken')
+                                     ->orWhere('action_taken', 'none')
+                                     ->orWhere('action_taken', '');
+                              });
                       });
                 });
             } elseif ($statusFilter === 'completed' || $statusFilter === 'resolved' || $statusFilter === 'action_taken') {
@@ -127,9 +132,10 @@ class ComplaintService
     }
 
     /**
-     * إيقاف السائق مباشرة وبشكل مستقل عند الضرورة القصوى من قبل الإدارة
+     * إيقاف السائق مباشرة وبشكل مستقل عند الضرورة القصوى من قبل الإدارة.
+     * $adminId = null يعني أن الإيقاف تم آلياً (نظام/ذكاء اصطناعي) وليس بقرار أدمن محدد.
      */
-    public function suspendDriver(int $driverId, int $adminId): Driver
+    public function suspendDriver(int $driverId, ?int $adminId = null): Driver
     {
         $driver = Driver::findOrFail($driverId);
         $driver->status = 'Suspended';
