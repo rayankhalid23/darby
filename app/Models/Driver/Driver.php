@@ -23,16 +23,17 @@ class Driver extends Model implements Wallet
     protected $guarded = [];
 
     protected $fillable = [
-        'user_id', 
+        'user_id',
         'gender',
         'shift',
         'subscription_type',
-        'national_id', 
-        'license_number', 
-        'license_expiry', 
+        'school_stages',
+        'national_id',
+        'license_number',
+        'license_expiry',
         'status',
-        'current_lat', 
-        'current_lng', 
+        'current_lat',
+        'current_lng',
         'morning_go',
         'morning_return',
         'afternoon_go',
@@ -55,7 +56,8 @@ class Driver extends Model implements Wallet
             'morning_return'   => 'boolean',
             'afternoon_go'     => 'boolean',
             'afternoon_return' => 'boolean',
-            'shift'          => DriverShift::class, // تحويل تلقائي لقراءة الـ value والـ label للـ Enum
+            'shift'            => DriverShift::class,
+            'school_stages'    => 'array', // تحويل تلقائي لقراءة الـ value والـ label للـ Enum
         ];
     }
 

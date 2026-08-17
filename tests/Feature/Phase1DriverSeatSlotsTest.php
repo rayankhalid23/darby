@@ -6,6 +6,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\QueryException;
 use Tests\TestCase;
+use App\Models\User;
 use App\Models\Driver\Driver;
 use App\Models\Driver\DriverSeatSlot;
 
@@ -23,11 +24,23 @@ class Phase1DriverSeatSlotsTest extends TestCase
         ]));
     }
 
+    private function makeDriverUser(): User
+    {
+        return User::create([
+            'full_name'     => 'سائق اختبار الفترات',
+            'email'         => 'seatslot.' . uniqid() . '@darby.test',
+            'phone_number'  => '091' . rand(1000000, 9999999),
+            'password_hash' => bcrypt('password123'),
+            'role_id'       => 2,
+            'is_active'     => 1,
+        ]);
+    }
+
     public function test_creates_driver_seat_slot_and_calculates_available_seats(): void
     {
         $driver = Driver::create([
-            'user_id' => 1,
-            'status' => 'active',
+            'user_id' => $this->makeDriverUser()->id,
+            'status' => 'Approved',
         ]);
 
         $slot = DriverSeatSlot::create([
@@ -43,8 +56,8 @@ class Phase1DriverSeatSlotsTest extends TestCase
     public function test_enforces_unique_constraint_on_driver_id_and_slot(): void
     {
         $driver = Driver::create([
-            'user_id' => 1,
-            'status' => 'active',
+            'user_id' => $this->makeDriverUser()->id,
+            'status' => 'Approved',
         ]);
 
         DriverSeatSlot::create([

@@ -43,6 +43,7 @@ class DriverPreferenceResource extends JsonResource
                 'afternoon_return'=> (bool) $this->afternoon_return,
             ],
             'subscription_type' => $this->subscription_type,
+            'school_stages'     => $this->school_stages ?? [],
             'seat_slots'        => $seatSlotsData,
             'coverage'          => $groupedZones,
         ];

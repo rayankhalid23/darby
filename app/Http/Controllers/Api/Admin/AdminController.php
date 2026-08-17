@@ -35,13 +35,21 @@ class AdminController extends Controller
             return response()->json([
                 'status'  => true,
                 'message' => 'تم جلب قائمة المشرفين بنجاح.',
-                'data'    => AdminResource::collection($admins),
-                'meta'    => [
-                    'current_page' => $admins->currentPage(),
-                    'last_page'    => $admins->lastPage(),
-                    'per_page'     => $admins->perPage(),
-                    'total'        => $admins->total(),
-                ]
+                'data'    => [
+                    'data'  => AdminResource::collection($admins),
+                    'links' => [
+                        'first' => $admins->url(1),
+                        'last'  => $admins->url($admins->lastPage()),
+                        'prev'  => $admins->previousPageUrl(),
+                        'next'  => $admins->nextPageUrl(),
+                    ],
+                    'meta' => [
+                        'current_page' => $admins->currentPage(),
+                        'last_page'    => $admins->lastPage(),
+                        'per_page'     => $admins->perPage(),
+                        'total'        => $admins->total(),
+                    ],
+                ],
             ], 200);
         } catch (Exception $e) {
             Log::error("Fetch Admins Error: " . $e->getMessage());

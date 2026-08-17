@@ -118,13 +118,13 @@ class ChildrenController extends Controller
             Log::info('Parent Added New Child Successfully', [
                 'parent_id'  => $parentId,
                 'child_id'   => $child->id,
-                'child_name' => $child->name ?? ($child->first_name . ' ' . $child->last_name),
+                'child_name' => $child->full_name,
             ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'تم إضافة بيانات الطفل بنجاح.',
-                'data'    => new ChildResource($child->load('logistics'))
+                'data'    => new ChildResource($child->load(['logistics', 'school', 'address']))
             ], 201);
 
         } catch (\Throwable $e) {

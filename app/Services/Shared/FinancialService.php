@@ -259,7 +259,7 @@ class FinancialService
     {
         $daysCount = $contract->days_count ?? 1;
 
-        if ($contract->subscription_type === 'daily') {
+        if ($contract->subscription_type === 'single_day') {
             return max((int)$daysCount, 1);
         }
 
@@ -267,13 +267,16 @@ class FinancialService
             try {
                 $start = Carbon::parse($contract->start_date);
                 $end   = Carbon::parse($contract->end_date);
-                
-                $weekdays = 0;
+
+                // استثناء الجمعة (5) والسبت (6) — نظام الأسبوع الإسلامي
+                $workingDays = 0;
                 while ($start->lte($end)) {
-                    if ($start->isWeekday()) $weekdays++;
+                    if (!in_array($start->dayOfWeek, [Carbon::FRIDAY, Carbon::SATURDAY])) {
+                        $workingDays++;
+                    }
                     $start->addDay();
                 }
-                return max($weekdays, 1);
+                return max($workingDays, 1);
             } catch (\Exception $e) {
                 return max((int)$daysCount, 1);
             }

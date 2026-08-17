@@ -25,3 +25,10 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# ai_service — نتاج قابل لإعادة التوليد (python src/data_prep.py && python src/train_model.py)
+/ai_service/model.joblib
+/ai_service/metrics.json
+/ai_service/**/__pycache__/
+/ai_service/**/*.pyc
+/ai_service/.pytest_cache/

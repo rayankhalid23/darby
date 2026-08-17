@@ -74,6 +74,40 @@ class AdminDriverController extends Controller
     }
 
     /**
+     * 2-ب. تعديل بيانات السائق مباشرة من قبل المشرف / الأدمن مع التوثيق
+     * PUT /api/admin/drivers/{id}
+     */
+    public function update(\App\Http\Requests\Api\Admin\UpdateDriverByAdminRequest $request, int $id): JsonResponse
+    {
+        try {
+            $adminId = auth()->user()->admin->id ?? auth()->id();
+            $data = $request->validated();
+
+            $driver = $this->adminDriverService->updateDriver($id, $data, $adminId);
+
+            return response()->json([
+                'success' => true,
+                'status'  => true,
+                'message' => 'تم تحديث بيانات السائق بنجاح.',
+                'data'    => new AdminDriverDetailResource($driver)
+            ], 200);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'status'  => false,
+                'message' => 'عذراً، السائق المطلوب غير موجود في النظام.'
+            ], 404);
+        } catch (Exception $e) {
+            Log::error("Admin Update Driver Error: " . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'status'  => false,
+                'message' => 'تعذر تحديث بيانات السائق: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * 3. اتخاذ قرار القبول والتفعيل الاحتفالي أو الرفض المسبب للسائق (الطلب الأولي)
      */
     public function review(DriverReviewRequest $request, int $id): JsonResponse

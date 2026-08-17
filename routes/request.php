@@ -71,8 +71,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/requests/{id}', [DriverSubscriptionController::class, 'show']);
         
         // المسار الموحد الجديد لجلب الاشتراكات الفعلية والمثبتة بالفلاتر
-        Route::get('/active-subscriptions', [DriverSubscriptionController::class, 'activeSubscriptions']); 
+        Route::get('/active-subscriptions', [DriverSubscriptionController::class, 'activeSubscriptions']);
         Route::get('/active-subscriptions/{id}', [DriverSubscriptionController::class, 'activeSubscriptionDetails']);
+        Route::post('/active-subscriptions/{id}/cancel', [DriverSubscriptionController::class, 'cancelActiveSubscription']);
         Route::get('/chats', [ChatController::class, 'getDriverChatList']);
   
         

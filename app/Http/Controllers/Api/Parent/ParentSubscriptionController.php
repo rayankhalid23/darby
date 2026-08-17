@@ -290,7 +290,7 @@ class ParentSubscriptionController extends Controller
                             ?? $parentModel->addresses()->first();
             }
 
-            $homeLat   = $address->lat ?? $item->pickup_ln ?? null;
+            $homeLat   = $address->lat ?? $item->pickup_lat ?? null;
             $homeLng   = $address->lng ?? $item->pickup_lng ?? null;
             $homeLabel = $address->label ?? $item->pickup_label ?? 'المنزل';
 
@@ -383,56 +383,34 @@ class ParentSubscriptionController extends Controller
     public function cancelActiveSubscription(Request $request, $id): JsonResponse
     {
         try {
-            $userId = $request->user()->id;
-            $parent = \App\Models\Parent\ParentModel::where('user_id', $userId)->first();
-
-            $activeSub = \App\Models\Shared\ActiveSubscription::where('id', $id)
-                ->where(function ($q) use ($userId, $parent) {
-                    $q->where('parent_id', $userId);
-                    if ($parent) {
-                        $q->orWhere('parent_id', $parent->id);
-                    }
-                })
-                ->first();
-
-            if (!$activeSub) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'الاشتراك النشط غير موجود أو لا تملك صلاحية إلغائه.',
-                ], 404);
-            }
-
-            if ($activeSub->status === 'cancelled') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'هذا الاشتراك ملغى بالفعل.',
-                ], 422);
-            }
-
-            $updated = $this->subscriptionService->updateActiveSubscriptionStatus($activeSub->id, 'cancelled');
+            $updated = $this->subscriptionService->cancelActiveSubscriptionByParent(
+                (int) $id,
+                $request->user()->id
+            );
 
             return response()->json([
                 'success' => true,
-                'message' => 'تم إلغاء الاشتراك بنجاح.',
-                'data'    => [
-                    'id'     => $updated->id,
-                    'status' => $updated->status,
-                ],
+                'message' => 'تم إلغاء الاشتراك بنجاح وتم إشعار السائق.',
+                'data'    => ['id' => $updated->id, 'status' => $updated->status],
             ], 200);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'الاشتراك النشط غير موجود أو لا تملك صلاحية إلغائه.',
+            ], 404);
 
         } catch (Exception $e) {
             Log::error('Error in ParentSubscriptionController@cancelActiveSubscription', [
                 'message' => $e->getMessage(),
-                'file'    => $e->getFile(),
-                'line'    => $e->getLine(),
                 'user_id' => $request->user()->id ?? null,
                 'sub_id'  => $id,
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'حدث خطأ أثناء إلغاء الاشتراك.',
-            ], 500);
+                'message' => $e->getMessage(),
+            ], 422);
         }
     }
 
@@ -455,10 +433,10 @@ class ParentSubscriptionController extends Controller
         $childPrice = $childPrice !== null ? (float) $childPrice : $totalPrice;
 
         $endsAt = $contract?->end_date;
-        $remainingDays = $endsAt ? (int) now()->startOfDay()->diffInDays($endsAt->copy()->startOfDay(), false) : null;
+        $remainingDays = $endsAt ? max(0, (int) now()->startOfDay()->diffInDays($endsAt->copy()->startOfDay(), false)) : null;
 
         return [
-            'subscriptionType' => $contract?->subscription_type ?? 'monthly',
+            'subscriptionType' => $contract?->subscription_type ?? 'multi_day',
             'totalPrice'       => $totalPrice,
             'childPrice'       => round($childPrice, 2),
             'currency'         => 'د.ل',

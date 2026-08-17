@@ -10,3 +10,6 @@ Artisan::command('inspire', function () {
 
 // توليد الرحلات اليومية (Daily Trips) لأي مسار دخل نافذة T-30 دقيقة قبل وقت انطلاقه
 Schedule::command('trips:generate-daily')->everyMinute();
+
+// فحص الطلبات المعلقة كل 6 ساعات وإلغاء غير القابلة للتنفيذ
+Schedule::command('subscriptions:check-pending')->everySixHours();

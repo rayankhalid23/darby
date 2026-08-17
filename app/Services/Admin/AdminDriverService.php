@@ -4,6 +4,7 @@ namespace App\Services\Admin;
 
 use App\Models\Driver\Driver;
 use App\Models\Driver\DriverApproval;
+use App\Services\Admin\AdminAuditLogService;
 use App\Services\Shared\EmailService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -13,10 +14,12 @@ use Exception;
 class AdminDriverService
 {
     protected EmailService $emailService;
+    protected AdminAuditLogService $auditLogService;
 
-    public function __construct(EmailService $emailService)
+    public function __construct(EmailService $emailService, AdminAuditLogService $auditLogService)
     {
         $this->emailService = $emailService;
+        $this->auditLogService = $auditLogService;
     }
 
     /**
@@ -136,12 +139,116 @@ class AdminDriverService
                 'created_at'       => now()
             ]);
 
+            // 📝 تسجيل إجراء القرار في سجل تدقيق المشرفين
+            $this->auditLogService->record(
+                action: $status === 'Approved' ? 'approve_driver' : 'reject_driver',
+                entityType: 'driver',
+                entityId: $driver->id,
+                entityName: $driver->user->full_name,
+                result: $status === 'Approved' ? 'approved' : 'rejected',
+                reason: $rejectionReason,
+                changes: [],
+                adminId: $adminId
+            );
+
             $this->emailService->sendDriverReviewResult(
                 $driver->user->email,
                 $driver->user->full_name,
                 $status,
                 $rejectionReason,
                 $driver->gender
+            );
+
+            return $driver;
+        });
+    }
+
+    /**
+     * 3-ب. تعديل بيانات السائق مباشرة من قبل المشرف / الأدمن مع التوثيق في سجل التدقيق
+     */
+    public function updateDriver(int $driverId, array $data, ?int $adminId = null): Driver
+    {
+        return DB::transaction(function () use ($driverId, $data, $adminId) {
+            $driver = Driver::with('user')->lockForUpdate()->findOrFail($driverId);
+            $user = $driver->user;
+
+            // أخذ لقطة من القيم القديمة لحساب الفروقات
+            $oldSnapshot = [
+                'full_name'      => $user->full_name,
+                'phone_number'   => $user->phone_number,
+                'is_active'      => (bool) $user->is_active,
+                'national_id'    => $driver->national_id,
+                'license_number' => $driver->license_number,
+                'license_expiry' => $driver->license_expiry ? \Carbon\Carbon::parse($driver->license_expiry)->format('Y-m-d') : null,
+                'status'         => $driver->status,
+            ];
+
+            // تحضير بيانات تحديث المستخدم
+            $userUpdates = [];
+            if (isset($data['full_name'])) {
+                $userUpdates['full_name'] = $data['full_name'];
+            }
+            if (isset($data['phone_number'])) {
+                $userUpdates['phone_number'] = $data['phone_number'];
+            }
+            if (isset($data['is_active'])) {
+                $userUpdates['is_active'] = (bool) $data['is_active'];
+            }
+
+            if (!empty($userUpdates)) {
+                $user->update($userUpdates);
+            }
+
+            // تحضير بيانات تحديث السائق
+            $driverUpdates = [];
+            if (isset($data['national_id'])) {
+                $driverUpdates['national_id'] = $data['national_id'];
+            }
+            if (isset($data['license_number'])) {
+                $driverUpdates['license_number'] = $data['license_number'];
+            }
+            if (isset($data['license_expiry'])) {
+                $driverUpdates['license_expiry'] = $data['license_expiry'];
+            }
+            if (isset($data['status'])) {
+                $driverUpdates['status'] = ucfirst(strtolower($data['status']));
+                if ($driverUpdates['status'] === 'Active') {
+                    $driverUpdates['status'] = 'Approved';
+                }
+            }
+
+            if (!empty($driverUpdates)) {
+                $driver->update($driverUpdates);
+            }
+
+            $driver->refresh()->load('user');
+
+            // لقطة القيم الجديدة
+            $newSnapshot = [
+                'full_name'      => $driver->user->full_name,
+                'phone_number'   => $driver->user->phone_number,
+                'is_active'      => (bool) $driver->user->is_active,
+                'national_id'    => $driver->national_id,
+                'license_number' => $driver->license_number,
+                'license_expiry' => $driver->license_expiry ? \Carbon\Carbon::parse($driver->license_expiry)->format('Y-m-d') : null,
+                'status'         => $driver->status,
+            ];
+
+            // حساب التغييرات مع التسميات العربية
+            $changes = $this->auditLogService->diff($oldSnapshot, $newSnapshot);
+
+            $reason = $data['reason'] ?? 'تعديل بيانات السائق من قبل الإدارة';
+
+            // تسجيل العملية في سجل التدقيق
+            $this->auditLogService->record(
+                action: 'update_driver',
+                entityType: 'driver',
+                entityId: $driver->id,
+                entityName: $driver->user->full_name,
+                result: null,
+                reason: $reason,
+                changes: $changes,
+                adminId: $adminId
             );
 
             return $driver;
@@ -271,6 +378,18 @@ class AdminDriverService
                     Log::warning("Failed sending rejection notification: " . $e->getMessage());
                 }
             }
+
+            // 📝 تسجيل إجراء مراجعة تعديل بيانات السائق في سجل تدقيق المشرفين
+            $this->auditLogService->record(
+                action: $decision === 'Approved' ? 'approve_driver_change' : 'reject_driver_change',
+                entityType: 'driver_change',
+                entityId: $changeId,
+                entityName: $driver->user->full_name,
+                result: $decision === 'Approved' ? 'approved' : 'rejected',
+                reason: $rejectionReason,
+                changes: $decision === 'Approved' ? $this->auditLogService->diff([], $newValues ?? []) : [],
+                adminId: $adminId
+            );
 
             return true;
         });

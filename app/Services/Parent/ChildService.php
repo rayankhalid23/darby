@@ -5,6 +5,7 @@ namespace App\Services\Parent;
 use App\Models\Parent\Child;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Http\UploadedFile;
+use App\Enums\Shared\SchoolStage;
 
 class ChildService
 {
@@ -36,57 +37,69 @@ class ChildService
                 $data['photo_url'] = $this->uploadPhoto($data['photo']);
                 unset($data['photo']);
             }
-    
-            // إنشاء الطفل (تأكد أن حقول logistics ليست ضمن $data الأساسية للطفل)
-            // نقوم بفلترة البيانات أو استخدام المصفوفة المباشرة
-            $child = Child::create($data);
+
+            // الحقول الخاصة بجدول اللوجستيات
+            $logisticsFields = ['preferred_time_slot', 'trip_direction', 'pickup_time', 'dropoff_time', 'start_date', 'end_date', 'subscription_type', 'is_active'];
+            $logisticsData   = array_intersect_key($data, array_flip($logisticsFields));
+            $childData       = array_diff_key($data, array_flip($logisticsFields));
+            $subType = $logisticsData['subscription_type'] ?? 'monthly';
+            if ($subType === 'multi_day') $subType = 'monthly';
+            if ($subType === 'single_day') $subType = 'daily';
+
+            $child = Child::create($childData);
     
             // 3. إضافة بيانات الـ Logistics مع الحقول الجديدة
             $child->logistics()->create([
-                'preferred_time_slot' => $data['preferred_time_slot'],
-            'trip_direction'      => $data['trip_direction'],
-            'pickup_time'         => $data['pickup_time'] ?? null,
-            'dropoff_time'        => $data['dropoff_time'] ?? null,
-            'start_date'          => $data['start_date'],
-            'end_date'            => $data['end_date'],
-            'subscription_type'   => $data['subscription_type'],
-            'is_active'           => true,
+                'preferred_time_slot' => $logisticsData['preferred_time_slot'] ?? 'morning',
+                'trip_direction'      => $logisticsData['trip_direction'] ?? 'both',
+                'pickup_time'         => $logisticsData['pickup_time'] ?? null,
+                'dropoff_time'        => $logisticsData['dropoff_time'] ?? null,
+                'start_date'          => $logisticsData['start_date'] ?? now()->toDateString(),
+                'end_date'            => $logisticsData['end_date'] ?? now()->addMonth()->toDateString(),
+                'subscription_type'   => $subType,
+                'is_active'           => true,
             ]);
     
             return $child;
         });
     }
 
-   /**
+    /**
      * تحديث بيانات الطفل وبيانات اشتراكه اللوجستي في نفس الوقت.
      */
-   public function updateChild(Child $child, array $data): Child
-   {
-       // 1. تأمين البيانات
-       unset($data['qr_code_token']);
+    public function updateChild(Child $child, array $data): Child
+    {
+        // 1. تأمين البيانات
+        unset($data['qr_code_token'], $data['school_stage']);
 
-       // 2. معالجة تحديث الصورة
-       if (isset($data['photo']) && $data['photo'] instanceof UploadedFile) {
-           $this->deletePhoto($child->photo_url);
-           $data['photo_url'] = $this->uploadPhoto($data['photo']);
-           unset($data['photo']);
-       }
+        // 2. معالجة تحديث الصورة
+        if (isset($data['photo']) && $data['photo'] instanceof UploadedFile) {
+            $this->deletePhoto($child->photo_url);
+            $data['photo_url'] = $this->uploadPhoto($data['photo']);
+            unset($data['photo']);
+        }
 
-       // 3. تحديث بيانات الطفل الأساسية
-       $child->update($data);
+        $logisticsFields = ['preferred_time_slot', 'trip_direction', 'pickup_time', 'dropoff_time', 'start_date', 'end_date', 'subscription_type', 'is_active'];
+        $logisticsData   = array_intersect_key($data, array_flip($logisticsFields));
+        $childData       = array_diff_key($data, array_flip($logisticsFields));
 
-       // 4. تحديث بيانات الاشتراك (Logistics) إذا تم إرسال أي منها في الطلب
-       // نتحقق من وجود أي حقل خاص بالاشتراك قبل التحديث
-       $logisticsFields = ['preferred_time_slot', 'trip_direction', 'pickup_time', 'dropoff_time', 'start_date', 'end_date', 'subscription_type', 'is_active'];
-       
-       $logisticsData = array_intersect_key($data, array_flip($logisticsFields));
+        if (isset($logisticsData['subscription_type'])) {
+            if ($logisticsData['subscription_type'] === 'multi_day') $logisticsData['subscription_type'] = 'monthly';
+            if ($logisticsData['subscription_type'] === 'single_day') $logisticsData['subscription_type'] = 'daily';
+        }
 
-       if (!empty($logisticsData)) {
-           $child->logistics()->update($logisticsData);
-       }
+        // 3. تحديث بيانات الطفل الأساسية
+        if (!empty($childData)) {
+            $child->update($childData);
+        }
 
-       return $child;
-   }
+        // 4. تحديث بيانات الاشتراك (Logistics) إذا تم إرسال أي منها في الطلب
+        if (!empty($logisticsData) && $child->logistics) {
+            $child->logistics()->update($logisticsData);
+        }
+
+        return $child->refresh();
+    }
 
     /**
      * حذف طفل من النظام نهائياً مع حذف صورته المرفقة.

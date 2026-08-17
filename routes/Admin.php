@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\Admin\ComplaintController as AdminComplaintControll
 use App\Http\Controllers\Api\Admin\DashboardController;
 use App\Http\Controllers\Api\Admin\AdminAvatarController;
 use App\Http\Controllers\Api\Admin\AdminProfileController;
+use App\Http\Controllers\Api\Admin\AdminAuditLogController;
 use App\Http\Controllers\Api\Admin\MunicipalityController;
 use App\Http\Controllers\Api\Admin\SubMunicipalityController;
 use App\Http\Controllers\Api\Admin\MunicipalityZoneController;
@@ -97,9 +98,19 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // 2. مسار جلب تفاصيل ووثائق وإحصائيات سائق معين بعمق لمراجعته
         Route::get('/{id}', [AdminDriverController::class, 'show'])->name('api.admin.drivers.show');
         
+        // 2-ب. مسار تعديل بيانات السائق مباشرة من قبل المشرف / الأدمن
+        Route::put('/{id}', [AdminDriverController::class, 'update'])->name('api.admin.drivers.update');
+        Route::post('/{id}', [AdminDriverController::class, 'update']);
+
         // 3. مسار اتخاذ قرار المراجعة لإنشاء الحساب (قبول مفعل باحتفالية أو رفض مسبب)
         Route::post('/{id}/review', [AdminDriverController::class, 'review'])->name('api.admin.drivers.review');
     });
+
+    // =========================================================================
+    // 📜 مسارات سجل تدقيق إجراءات المشرفين والمدراء (Audit Logs - الأدمن فقط)
+    // =========================================================================
+    Route::get('/admin-audit-logs', [AdminAuditLogController::class, 'index'])->name('api.admin.audit-logs.index');
+    Route::get('/admin-audit-logs/{id}', [AdminAuditLogController::class, 'show'])->name('api.admin.audit-logs.show');
 
     // --- مجموعة روابط إدارة المدارس ---
     Route::prefix('schools')->group(function () {
@@ -123,24 +134,40 @@ Route::middleware(['auth:sanctum'])->group(function () {
     });
     Route::get('/zones-tree', [ZoneController::class, 'index']);    // الشجرة الجغرافية الكاملة
 
-    // مسارات البلديات الكبرى (Municipalities)
+    // مسارات البلديات الكبرى (Municipalities) — لوحة الأدمن الجديدة (بلدية ← محلة ← منطقة)
     Route::prefix('municipalities')->group(function () {
-        Route::get('/', [ZoneController::class, 'indexMunicipalities']);
-        Route::post('/', [ZoneController::class, 'storeMunicipality']);
-        Route::get('/{id}', [ZoneController::class, 'showMunicipality']);
-        Route::put('/{id}', [ZoneController::class, 'updateMunicipality']);
-        Route::post('/{id}', [ZoneController::class, 'updateMunicipality']);
-        Route::delete('/{id}', [ZoneController::class, 'destroyMunicipality']);
+        Route::get('/', [MunicipalityController::class, 'index']);
+        Route::post('/', [MunicipalityController::class, 'store']);
+
+        // متداخلة تحت بلدية محددة — توضع قبل مسار {id} المفرد لتفادي أي تعارض
+        Route::get('/{id}/sub-municipalities', [SubMunicipalityController::class, 'index']);
+        Route::post('/{id}/sub-municipalities', [SubMunicipalityController::class, 'store']);
+        Route::get('/{id}/zones', [MunicipalityZoneController::class, 'indexByMunicipality']);
+
+        Route::get('/{id}', [MunicipalityController::class, 'show']);
+        Route::put('/{id}', [MunicipalityController::class, 'update']);
+        Route::post('/{id}', [MunicipalityController::class, 'update']);
+        Route::delete('/{id}', [MunicipalityController::class, 'destroy']);
     });
 
     // مسارات البلديات الفرعية / المحلات (Sub-Municipalities)
     Route::prefix('sub-municipalities')->group(function () {
-        Route::get('/', [ZoneController::class, 'indexSubMunicipalities']);
-        Route::post('/', [ZoneController::class, 'storeSubMunicipality']);
-        Route::get('/{id}', [ZoneController::class, 'showSubMunicipality']);
-        Route::put('/{id}', [ZoneController::class, 'updateSubMunicipality']);
-        Route::post('/{id}', [ZoneController::class, 'updateSubMunicipality']);
-        Route::delete('/{id}', [ZoneController::class, 'destroySubMunicipality']);
+        Route::get('/{id}/zones', [MunicipalityZoneController::class, 'index']);
+        Route::post('/{id}/zones', [MunicipalityZoneController::class, 'store']);
+
+        Route::get('/{id}', [SubMunicipalityController::class, 'show']);
+        Route::put('/{id}', [SubMunicipalityController::class, 'update']);
+        Route::post('/{id}', [SubMunicipalityController::class, 'update']);
+        Route::delete('/{id}', [SubMunicipalityController::class, 'destroy']);
+    });
+
+    // مسارات المناطق الدقيقة للوحة الأدمن الجديدة (منفصلة تماماً عن /zones القديم
+    // الذي يعتمد عليه تطبيقا السائق وولي الأمر ولم يُمس بأي تعديل)
+    Route::prefix('admin-zones')->group(function () {
+        Route::get('/{id}', [MunicipalityZoneController::class, 'show']);
+        Route::put('/{id}', [MunicipalityZoneController::class, 'update']);
+        Route::post('/{id}', [MunicipalityZoneController::class, 'update']);
+        Route::delete('/{id}', [MunicipalityZoneController::class, 'destroy']);
     });
 
   // --- 📊 مسارات إدارة تقييمات السائقين للأدمن (بالاسم الصريح الحاسم) ---

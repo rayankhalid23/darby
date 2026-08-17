@@ -117,6 +117,7 @@ class DriverPreferencesTest extends TestCase
             'afternoon_go'      => true,
             'afternoon_return'  => true,
             'subscription_type' => 'both',
+            'school_stages'     => ['primary'],
             'zones'             => [$this->zone1->id, $this->zone2->id],
         ];
 
@@ -141,7 +142,8 @@ class DriverPreferencesTest extends TestCase
             'morning_return'    => false,
             'afternoon_go'      => false,
             'afternoon_return'  => false,
-            'subscription_type' => 'monthly',
+            'subscription_type' => 'multi_day',
+            'school_stages'     => ['primary'],
             'zones'             => [$this->zone1->id],
         ];
 
@@ -161,7 +163,8 @@ class DriverPreferencesTest extends TestCase
             'morning_return'    => true,
             'afternoon_go'      => false,
             'afternoon_return'  => false,
-            'subscription_type' => 'monthly',
+            'subscription_type' => 'multi_day',
+            'school_stages'     => ['primary'],
             'zones'             => [$this->zone1->id, $this->otherSubZone->id], // بلديات مختلفة!
         ];
 
