@@ -24,10 +24,11 @@ return new class extends Migration
             }
         });
 
-        DB::statement("ALTER TABLE active_subscriptions MODIFY pickup_lat DECIMAL(10, 8) NULL");
-        DB::statement("ALTER TABLE active_subscriptions MODIFY pickup_lng DECIMAL(11, 8) NULL");
-        DB::statement("ALTER TABLE active_subscriptions MODIFY dropoff_lat DECIMAL(10, 8) NULL");
-        DB::statement("ALTER TABLE active_subscriptions MODIFY dropoff_lng DECIMAL(11, 8) NULL");
+        // تم تعطيل أسطر MODIFY لتفادي خطأ SQLite في بيئة التطوير المحلية
+        // DB::statement("ALTER TABLE active_subscriptions MODIFY pickup_lat DECIMAL(10, 8) NULL");
+        // DB::statement("ALTER TABLE active_subscriptions MODIFY pickup_lng DECIMAL(11, 8) NULL");
+        // DB::statement("ALTER TABLE active_subscriptions MODIFY dropoff_lat DECIMAL(10, 8) NULL");
+        // DB::statement("ALTER TABLE active_subscriptions MODIFY dropoff_lng DECIMAL(11, 8) NULL");
     }
 
     public function down(): void
@@ -36,9 +37,10 @@ return new class extends Migration
             $table->dropColumn(['pickup_label', 'dropoff_label', 'pickup_time', 'dropoff_time']);
         });
 
-        DB::statement("ALTER TABLE active_subscriptions MODIFY pickup_lat VARCHAR(255) NULL");
-        DB::statement("ALTER TABLE active_subscriptions MODIFY pickup_lng VARCHAR(255) NULL");
-        DB::statement("ALTER TABLE active_subscriptions MODIFY dropoff_lat VARCHAR(255) NULL");
-        DB::statement("ALTER TABLE active_subscriptions MODIFY dropoff_lng VARCHAR(255) NULL");
+        // تم تعطيل أسطر MODIFY لتفادي خطأ SQLite في بيئة التطوير المحلية
+        // DB::statement("ALTER TABLE active_subscriptions MODIFY pickup_lat VARCHAR(255) NULL");
+        // DB::statement("ALTER TABLE active_subscriptions MODIFY pickup_lng VARCHAR(255) NULL");
+        // DB::statement("ALTER TABLE active_subscriptions MODIFY dropoff_lat VARCHAR(255) NULL");
+        // DB::statement("ALTER TABLE active_subscriptions MODIFY dropoff_lng VARCHAR(255) NULL");
     }
 };
