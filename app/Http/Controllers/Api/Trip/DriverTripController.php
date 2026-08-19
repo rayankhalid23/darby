@@ -11,6 +11,7 @@ use App\Services\Trip\TripLifecycleService;
 use App\Services\Trip\TripTrackingService;
 use App\Services\Trip\TripStopService;
 use App\Services\Trip\RouteRecommendationService;
+use App\Services\Notification\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -28,6 +29,7 @@ class DriverTripController extends Controller
     protected RouteRecommendationService $recommendationService;
     protected \App\Services\Trip\DailyTripGenerationService $dailyTripGenerationService;
     protected \App\Services\Trip\GeofenceService $geofenceService;
+    protected NotificationService $notificationService;
 
     public function __construct(
         TripLifecycleService $lifecycleService,
@@ -35,7 +37,8 @@ class DriverTripController extends Controller
         TripStopService $stopService,
         RouteRecommendationService $recommendationService,
         \App\Services\Trip\DailyTripGenerationService $dailyTripGenerationService,
-        \App\Services\Trip\GeofenceService $geofenceService
+        \App\Services\Trip\GeofenceService $geofenceService,
+        NotificationService $notificationService
     ) {
         $this->lifecycleService = $lifecycleService;
         $this->trackingService = $trackingService;
@@ -43,6 +46,7 @@ class DriverTripController extends Controller
         $this->recommendationService = $recommendationService;
         $this->dailyTripGenerationService = $dailyTripGenerationService;
         $this->geofenceService = $geofenceService;
+        $this->notificationService = $notificationService;
     }
 
     /**
@@ -570,12 +574,11 @@ class DriverTripController extends Controller
 
                     $users = \App\Models\User::whereIn('id', $parentUserIds)->get();
                     if ($users->isNotEmpty()) {
-                        \Illuminate\Support\Facades\Notification::send($users, new \App\Notifications\CustomDatabaseNotification([
-                            'title'    => '🚨 توقف مؤقت للحافلة',
-                            'message'  => 'حدث عطل طارئ وتوقفت الحافلة مؤقتاً، سيتم إبلاغكم فور استئناف الرحلة.',
-                            'type'     => 'trip_suspended',
-                            'metadata' => ['trip_id' => $trip->id],
-                        ]));
+                        $this->notificationService->sendToUsers($users, 'trip_suspended', [
+                            'title'   => '🚨 توقف مؤقت للحافلة',
+                            'message' => 'حدث عطل طارئ وتوقفت الحافلة مؤقتاً، سيتم إبلاغكم فور استئناف الرحلة.',
+                            'trip_id' => (string) $trip->id,
+                        ]);
                     }
                 }
             } catch (\Throwable $e) {
@@ -719,15 +722,12 @@ class DriverTripController extends Controller
                     $parentUser = $sub->parent?->user ?? \App\Models\User::find($sub->parent_id);
                     if ($parentUser) {
                         $childName = $sub->child->full_name ?? $sub->child->name ?? 'طفلك';
-                        app(\App\Services\Notification\FcmService::class)->sendPushNotification($parentUser, [
-                            'title'   => '🚌 صعود الحافلة بنجاح',
-                            'message' => "صعد {$childName} إلى الحافلة الآن بسلام.",
-                            'payload' => [
-                                'type'     => 'child_picked_up',
-                                'trip_id'  => (string) $tripId,
-                                'child_id' => (string) $childId,
-                                'screen'   => 'LIVE_TRACKING',
-                            ]
+                        $this->notificationService->sendToUser($parentUser, 'child_picked_up', [
+                            'title'      => '🚌 صعود الحافلة بنجاح',
+                            'message'    => "صعد {$childName} إلى الحافلة الآن بسلام.",
+                            'child_name' => $childName,
+                            'trip_id'    => (string) $tripId,
+                            'entity_id'  => $tripId . '_' . $childId,
                         ]);
                     }
                 } catch (\Throwable $e) {
@@ -775,15 +775,12 @@ class DriverTripController extends Controller
                     $parentUser = $sub->parent?->user ?? \App\Models\User::find($sub->parent_id);
                     if ($parentUser) {
                         $childName = $sub->child->full_name ?? $sub->child->name ?? 'طفلك';
-                        app(\App\Services\Notification\FcmService::class)->sendPushNotification($parentUser, [
-                            'title'   => '🏫 وصول بسلام',
-                            'message' => "وصل {$childName} ونزل بالمدرسة/المنزل بسلام.",
-                            'payload' => [
-                                'type'     => 'child_dropped_off',
-                                'trip_id'  => (string) $tripId,
-                                'child_id' => (string) $childId,
-                                'screen'   => 'TRIP_DETAILS',
-                            ]
+                        $this->notificationService->sendToUser($parentUser, 'child_dropped_off', [
+                            'title'      => '🏫 وصول بسلام',
+                            'message'    => "وصل {$childName} ونزل بالمدرسة/المنزل بسلام.",
+                            'child_name' => $childName,
+                            'trip_id'    => (string) $tripId,
+                            'entity_id'  => $tripId . '_' . $childId,
                         ]);
                     }
                 } catch (\Throwable $e) {
@@ -811,6 +808,12 @@ class DriverTripController extends Controller
                     'dropoff_failed'         => ['title' => '🚨 تعذر تسليم الطفل', 'message' => 'تعذر على السائق تسليم {name} في محطة النزول، يرجى التواصل الفوري.'],
                     'direct_parent_handling' => ['title' => 'ℹ️ استلام مباشر من ولي الأمر', 'message' => 'تم تسليم {name} مباشرة لولي الأمر خارج الإجراء المعتاد.'],
                 ];
+                $notificationTypeMap = [
+                    'absent'                 => 'child_absent',
+                    'skip'                   => 'child_skip',
+                    'dropoff_failed'         => 'child_dropoff_failed',
+                    'direct_parent_handling' => 'child_direct_parent_handling',
+                ];
 
                 TripEvent::create([
                     'trip_id'         => $tripId,
@@ -832,15 +835,12 @@ class DriverTripController extends Controller
                     if ($parentUser) {
                         $childName = $sub->child->full_name ?? $sub->child->name ?? 'طفلك';
                         $notif = $notificationMap[$action];
-                        app(\App\Services\Notification\FcmService::class)->sendPushNotification($parentUser, [
-                            'title'   => $notif['title'],
-                            'message' => str_replace('{name}', $childName, $notif['message']),
-                            'payload' => [
-                                'type'     => 'child_' . $action,
-                                'trip_id'  => (string) $tripId,
-                                'child_id' => (string) $childId,
-                                'screen'   => 'TRIP_DETAILS',
-                            ]
+                        $this->notificationService->sendToUser($parentUser, $notificationTypeMap[$action], [
+                            'title'      => $notif['title'],
+                            'message'    => str_replace('{name}', $childName, $notif['message']),
+                            'child_name' => $childName,
+                            'trip_id'    => (string) $tripId,
+                            'entity_id'  => $tripId . '_' . $childId,
                         ]);
                     }
                 } catch (\Throwable $e) {

@@ -83,16 +83,24 @@ class ParentRegistrationService
                 ]);
                 Log::info("Service: Parent profile created for User ID: {$user->id}");
 
-                $deviceName = $data['device_name'] ?? 'mobile_device';
-                DB::table('user_devices')->updateOrInsert(
-                    ['user_id' => $user->id, 'device_name' => $deviceName],
-                    [
-                        'fcm_token'      => $data['fcm_token'] ?? 'mock_fcm_token',
-                        'platform'       => $data['platform'] ?? 'unknown',
-                        'last_active_at' => Carbon::now(),
-                    ]
-                );
-                Log::info("Service: Device registered for User ID: {$user->id}");
+                // تسجيل الجهاز فقط إذا تم إرسال fcm_token حقيقي (فريد عالمياً في الجدول)؛
+                // التسجيل الرسمي يتم عبر POST /api/user/device-token بعد تسجيل الدخول
+                if (!empty($data['fcm_token'])) {
+                    DB::table('user_devices')->updateOrInsert(
+                        ['fcm_token' => $data['fcm_token']],
+                        [
+                            'user_id'        => $user->id,
+                            'device_id'      => $data['device_id'] ?? null,
+                            'device_name'    => $data['device_name'] ?? 'mobile_device',
+                            'platform'       => $data['platform'] ?? 'unknown',
+                            'is_active'      => true,
+                            'last_active_at' => Carbon::now(),
+                            'created_at'     => Carbon::now(),
+                            'updated_at'     => Carbon::now(),
+                        ]
+                    );
+                    Log::info("Service: Device registered for User ID: {$user->id}");
+                }
 
                 return $user;
             });

@@ -8,7 +8,7 @@ use App\Models\Driver\Driver;
 use App\Models\Shared\Contract;
 use App\Models\Shared\ActiveSubscription;
 use App\Services\Shared\ContractService;
-use App\Notifications\CustomDatabaseNotification;
+use App\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Exception;
@@ -17,13 +17,16 @@ class SubscriptionRequestService
 {
     protected ContractService $contractService;
     protected \App\Services\Trip\MasterRouteStopSyncService $masterRouteStopSyncService;
+    protected NotificationService $notificationService;
 
     public function __construct(
         ContractService $contractService,
-        \App\Services\Trip\MasterRouteStopSyncService $masterRouteStopSyncService
+        \App\Services\Trip\MasterRouteStopSyncService $masterRouteStopSyncService,
+        NotificationService $notificationService
     ) {
         $this->contractService = $contractService;
         $this->masterRouteStopSyncService = $masterRouteStopSyncService;
+        $this->notificationService = $notificationService;
     }
 
     /**
@@ -135,7 +138,8 @@ class SubscriptionRequestService
                 'طلب اشتراك جديد',
                 "لديك طلب اشتراك جديد من {$parent->user->full_name}.",
                 'new_subscription_request',
-                ['subscription_request_id' => $subscriptionRequest->id, 'parent_id' => $parent->id]
+                (string) $subscriptionRequest->id,
+                ['parent_id' => (string) $parent->id]
             );
 
             return $subscriptionRequest->load(['children', 'driver.user', 'parent.user', 'school']);
@@ -438,7 +442,8 @@ class SubscriptionRequestService
                     'تم قبول طلب الاشتراك',
                     "تم قبول طلبك مع السائق " . ($req->driver->user->full_name ?? 'السائق') . ". رقم العقد: {$contract->contract_number}",
                     'request_accepted',
-                    ['contract_id' => $contract->id]
+                    (string) $req->id,
+                    ['contract_id' => (string) $contract->id]
                 );
             }
         } catch (\Throwable $e) {
@@ -465,7 +470,8 @@ class SubscriptionRequestService
                     $parent->user,
                     'تم رفض طلب الاشتراك',
                     "عذراً، تم رفض طلبك. السبب: " . ($reason ?? 'لم يحدد السائق سبباً.'),
-                    'request_rejected'
+                    'request_rejected',
+                    (string) $req->id
                 );
             }
         } catch (\Throwable $e) {
@@ -609,7 +615,7 @@ class SubscriptionRequestService
                     'إلغاء اشتراك من قِبل ولي الأمر',
                     "قام ولي الأمر بإلغاء اشتراك الطفل [{$childName}].",
                     'subscription_cancelled_by_parent',
-                    ['active_subscription_id' => $activeSub->id]
+                    (string) $activeSub->id
                 );
             }
 
@@ -664,7 +670,8 @@ class SubscriptionRequestService
                     'إلغاء اشتراك من قِبل السائق',
                     $body,
                     'subscription_cancelled_by_driver',
-                    ['active_subscription_id' => $activeSub->id, 'reason' => $reason]
+                    (string) $activeSub->id,
+                    ['reason' => $reason]
                 );
             }
 
@@ -770,7 +777,7 @@ class SubscriptionRequestService
                 'إلغاء تلقائي لطلب اشتراك',
                 "تم إلغاء طلب اشتراكك مع السائق [{$driverName}] تلقائياً. السبب: {$reason}",
                 $notificationType,
-                ['subscription_request_id' => $req->id]
+                (string) $req->id
             );
         }
 
@@ -783,7 +790,7 @@ class SubscriptionRequestService
                 'إلغاء تلقائي لطلب اشتراك',
                 "تم إلغاء طلب الاشتراك من [{$parentName}] تلقائياً. السبب: {$reason}",
                 $notificationType . '_driver',
-                ['subscription_request_id' => $req->id]
+                (string) $req->id
             );
         }
     }
@@ -792,16 +799,16 @@ class SubscriptionRequestService
     // نظام إشعارات موحد
     // ============================================================
 
-    private function notifyUser($user, string $title, string $message, string $type, array $metadata = []): void
+    private function notifyUser($user, string $title, string $message, string $type, ?string $entityId = null, array $extra = []): void
     {
         if ($user) {
             try {
-                $user->notify(new CustomDatabaseNotification([
-                    'title'    => $title,
-                    'message'  => $message,
-                    'type'     => $type,
-                    'metadata' => $metadata
-                ]));
+                $this->notificationService->sendToUser($user, $type, array_merge([
+                    'title'       => $title,
+                    'message'     => $message,
+                    'entity_type' => 'subscription_request',
+                    'entity_id'   => $entityId,
+                ], $extra));
             } catch (Exception $e) {
                 Log::error("فشل إرسال الإشعار لـ {$user->id}: " . $e->getMessage());
             }
@@ -900,7 +907,7 @@ class SubscriptionRequestService
                 'إلغاء طلب اشتراك',
                 'قام ولي الأمر بإلغاء طلب اشتراكه.',
                 'subscription_request_cancelled_by_parent',
-                ['subscription_request_id' => $subscription->id]
+                (string) $subscription->id
             );
         }
 

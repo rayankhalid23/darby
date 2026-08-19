@@ -4,123 +4,130 @@ namespace App\Services\Notification;
 
 use App\Models\User;
 use App\Models\UserDevice;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Kreait\Firebase\Contract\Messaging;
 use Kreait\Firebase\Factory;
 use Kreait\Firebase\Messaging\CloudMessage;
-use Kreait\Firebase\Messaging\Notification;
+use Kreait\Firebase\Messaging\Notification as FcmNotification;
 use Throwable;
 
+/**
+ * إرسال Push Notifications عبر Firebase Cloud Messaging (HTTP v1 فقط، عبر kreait/firebase-php).
+ * لا يوجد أي مسار Legacy أو مسار وهمي (mock) هنا — عدم توفر بيانات الاعتماد يعني فشل صامت
+ * موثّق في الـ log فقط، وليس نجاحاً وهمياً.
+ */
 class FcmService
 {
-    /**
-     * إرسال إشعار FCM Push لمستخدم واحد أو عدة مستخدمين
-     */
-    public function sendPushNotification($users, array $payload): bool
+    protected ?Messaging $messaging = null;
+
+    protected bool $messagingResolved = false;
+
+    protected function messaging(): ?Messaging
     {
-        $userCollection = is_iterable($users) ? $users : [$users];
-        $tokens = [];
-
-        foreach ($userCollection as $user) {
-            if ($user instanceof User) {
-                $userTokens = UserDevice::where('user_id', $user->id)
-                    ->whereNotNull('fcm_token')
-                    ->where('fcm_token', '!=', '')
-                    ->where('fcm_token', '!=', 'mock_fcm_token')
-                    ->pluck('fcm_token')
-                    ->toArray();
-
-                $tokens = array_merge($tokens, $userTokens);
-            }
+        if ($this->messagingResolved) {
+            return $this->messaging;
         }
 
-        $tokens = array_unique(array_filter($tokens));
+        $this->messagingResolved = true;
 
-        if (empty($tokens)) {
-            Log::info("FcmService: No valid FCM tokens found for target user(s).");
-            return false;
+        $credentialsFile = config('firebase.credentials.file');
+
+        if (empty($credentialsFile) || !file_exists($credentialsFile)) {
+            Log::error("FcmService: Firebase credentials file not found at [{$credentialsFile}]. Push notifications will not be sent.");
+            return null;
         }
 
-        return $this->sendToTokens($tokens, $payload);
+        try {
+            $this->messaging = (new Factory)->withServiceAccount($credentialsFile)->createMessaging();
+        } catch (Throwable $e) {
+            Log::error('FcmService: failed to initialize Firebase Messaging: ' . $e->getMessage());
+            $this->messaging = null;
+        }
+
+        return $this->messaging;
     }
 
     /**
-     * إرسال الإشعار لمجموعة من توكنات FCM
+     * إرسال إشعار Push لكل الأجهزة النشطة (is_active=true) الخاصة بمستخدم واحد.
+     *
+     * @param  array{title:string,body:string,data:array<string,string>}  $payload
      */
-    public function sendToTokens(array $tokens, array $payload): bool
+    public function sendToUser(User $user, array $payload): void
     {
-        $title = $payload['title'] ?? 'إشعار جديد';
-        $body = $payload['message'] ?? $payload['body'] ?? '';
-        $customData = array_map('strval', $payload['payload'] ?? []);
+        $tokens = UserDevice::where('user_id', $user->id)
+            ->where('is_active', true)
+            ->whereNotNull('fcm_token')
+            ->where('fcm_token', '!=', '')
+            ->pluck('fcm_token')
+            ->unique()
+            ->values()
+            ->all();
 
-        // 1. استخدام Firebase Admin SDK (V1 API) عند توفر ملف الـ Credentials
-        $serviceAccountPath = config('firebase.credentials.file', storage_path('app/firebase/firebase-service-account.json'));
-        
-        if (file_exists($serviceAccountPath)) {
-            try {
-                $factory = (new Factory)->withServiceAccount($serviceAccountPath);
-                $messaging = $factory->createMessaging();
+        if (empty($tokens)) {
+            Log::info("FcmService: no active devices for user #{$user->id}, skipping push.");
+            return;
+        }
 
-                $notification = Notification::create($title, $body);
+        $this->sendToTokens($tokens, $payload);
+    }
 
-                foreach ($tokens as $token) {
-                    try {
-                        $message = CloudMessage::withTarget('token', $token)
-                            ->withNotification($notification)
-                            ->withData(array_merge([
-                                'title' => $title,
-                                'body'  => $body,
-                            ], $customData));
+    /**
+     * إرسال نفس الإشعار لمجموعة توكنات عبر Multicast (Kreait sendMulticast — HTTP v1).
+     * كل توكن يُعالَج بشكل مستقل من طرف Firebase: نجاح/فشل توكن واحد لا يوقف الباقي.
+     *
+     * @param  string[]  $tokens
+     * @param  array{title:string,body:string,data:array<string,string>}  $payload
+     */
+    public function sendToTokens(array $tokens, array $payload): void
+    {
+        $tokens = array_values(array_unique(array_filter($tokens)));
 
-                        $messaging->send($message);
-                    } catch (Throwable $e) {
-                        Log::warning("FcmService V1 send error for token {$token}: " . $e->getMessage());
-                        if (str_contains($e->getMessage(), 'UNREGISTERED') || str_contains($e->getMessage(), 'NOT_FOUND')) {
-                            UserDevice::where('fcm_token', $token)->delete();
-                        }
-                    }
-                }
+        if (empty($tokens)) {
+            return;
+        }
 
-                Log::info("FcmService [V1 SDK SENT]: Notification sent to " . count($tokens) . " token(s).");
-                return true;
+        $messaging = $this->messaging();
 
-            } catch (Throwable $e) {
-                Log::error("FcmService V1 Factory Error: " . $e->getMessage());
+        if ($messaging === null) {
+            Log::warning('FcmService: messaging unavailable, skipping push for ' . count($tokens) . ' token(s).');
+            return;
+        }
+
+        $title = (string) ($payload['title'] ?? '');
+        $body = (string) ($payload['body'] ?? $payload['message'] ?? '');
+        $data = array_map('strval', $payload['data'] ?? []);
+
+        $message = CloudMessage::new()
+            ->withNotification(FcmNotification::create($title, $body))
+            ->withData($data);
+
+        try {
+            $report = $messaging->sendMulticast($message, $tokens);
+        } catch (Throwable $e) {
+            // فشل على مستوى الطلب بأكمله (شبكة، انقطاع Firebase مؤقت، مهلة زمنية...) —
+            // هذا خطأ عابر (transient) يستحق إعادة المحاولة عبر آلية retry/backoff الخاصة
+            // بـ SendFcmNotificationJob، لذا نُعيد رميه بدل ابتلاعه. لو ابتلعناه هنا، الـ Job
+            // يُعتبر "نجح" رغم عدم إرسال أي شيء فعلياً، ولن يُعاد أبداً حتى مع خطأ عابر بحت.
+            // ملاحظة: هذا مختلف عن فشل توكن واحد داخل استجابة ناجحة (يُعالَج أدناه بلا استثناء).
+            Log::error('FcmService: sendMulticast request failed (will be retried by the job if attempts remain): ' . $e->getMessage());
+            throw $e;
+        }
+
+        $deadTokens = array_unique(array_merge($report->invalidTokens(), $report->unknownTokens()));
+
+        foreach ($deadTokens as $deadToken) {
+            UserDevice::where('fcm_token', $deadToken)->update(['is_active' => false]);
+            Log::warning("FcmService: device token deactivated (invalid/unregistered): {$deadToken}");
+        }
+
+        foreach ($report->failures()->getItems() as $failure) {
+            if ($failure->messageTargetWasInvalid() || $failure->messageWasSentToUnknownToken()) {
+                continue; // already handled above via is_active=false
             }
+
+            Log::warning('FcmService: delivery failure for token ' . $failure->target()->value() . ': ' . ($failure->error()?->getMessage() ?? 'unknown error'));
         }
 
-        // 2. المحاولة عبر Legacy HTTP API أو Mock Send في بيئة الاختبار
-        $serverKey = config('services.fcm.key');
-        if (empty($serverKey) || $serverKey === 'mock_key' || config('app.env') === 'testing') {
-            Log::info("FcmService [MOCK SEND]: Notification sent to " . count($tokens) . " token(s). Title: {$title}, Body: {$body}");
-            return true;
-        }
-
-        $url = 'https://fcm.googleapis.com/fcm/send';
-        $response = Http::withHeaders([
-            'Authorization' => 'key=' . $serverKey,
-            'Content-Type'  => 'application/json',
-        ])->post($url, [
-            'registration_ids' => array_values($tokens),
-            'notification'     => [
-                'title' => $title,
-                'body'  => $body,
-                'sound' => 'default',
-                'badge' => 1,
-            ],
-            'data'             => array_merge([
-                'title'        => $title,
-                'body'         => $body,
-                'click_action' => 'FLUTTER_NOTIFICATION_CLICK',
-            ], $customData),
-            'priority'         => 'high',
-        ]);
-
-        if ($response->successful()) {
-            return true;
-        }
-
-        Log::error("FcmService Failed: HTTP Status {$response->status()} - Response: " . $response->body());
-        return false;
+        Log::info('FcmService: multicast finished, ' . $report->successes()->count() . '/' . $report->count() . ' token(s) succeeded.');
     }
 }

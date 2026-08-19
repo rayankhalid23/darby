@@ -8,11 +8,10 @@ use App\Models\Shared\ActiveSubscription;
 use App\Models\Driver\Driver;
 use App\Models\User;
 use App\Services\Trip\TripLifecycleService;
+use App\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Auth;
-use App\Notifications\CustomDatabaseNotification;
 use Carbon\Carbon;
 use Exception;
 
@@ -20,9 +19,12 @@ class TripStopService
 {
     protected TripLifecycleService $lifecycleService;
 
-    public function __construct(TripLifecycleService $lifecycleService)
+    protected NotificationService $notificationService;
+
+    public function __construct(TripLifecycleService $lifecycleService, NotificationService $notificationService)
     {
         $this->lifecycleService = $lifecycleService;
+        $this->notificationService = $notificationService;
     }
 
     public function startWaitingCounter(int $tripId, int $childId): array
@@ -98,11 +100,13 @@ class TripStopService
             if ($parentModel && $parentModel->user_id) {
                 $parentUser = User::find($parentModel->user_id);
                 if ($parentUser) {
-                    Notification::send($parentUser, new CustomDatabaseNotification([
-                        'title'   => 'تنبيه: تحركت الحافلة ⚠️',
-                        'message' => "نظراً لانتهاء وقت الانتظار المحدد دون صعود الطفل: {$dbChild->full_name}، تحركت الحافلة للمحطة التالية.",
-                        'type'    => 'child_skipped'
-                    ]));
+                    $this->notificationService->sendToUser($parentUser, 'child_skipped', [
+                        'title'      => 'تنبيه: تحركت الحافلة ⚠️',
+                        'message'    => "نظراً لانتهاء وقت الانتظار المحدد دون صعود الطفل: {$dbChild->full_name}، تحركت الحافلة للمحطة التالية.",
+                        'child_name' => $dbChild->full_name,
+                        'trip_id'    => (string) $trip->id,
+                        'entity_id'  => $trip->id . '_' . $childId,
+                    ]);
                 }
             }
         }
@@ -211,11 +215,13 @@ class TripStopService
       if (isset($subscription->child->parent->user_id)) {
           $parentUser = \App\Models\User::find($subscription->child->parent->user_id);
           if ($parentUser) {
-              \Illuminate\Support\Facades\Notification::send($parentUser, new \App\Notifications\CustomDatabaseNotification([
-                  'title'   => 'صعد طفلك الحافلة بسلام 🚌✨',
-                  'message' => "تم مسح الـ QR بنجاح للطفل: {$subscription->child->full_name}.", // 👈 تم التحديث إلى full_name المطابق لجدولك
-                  'type'    => 'child_picked_up'
-              ]));
+              $this->notificationService->sendToUser($parentUser, 'child_picked_up', [
+                  'title'      => 'صعد طفلك الحافلة بسلام 🚌✨',
+                  'message'    => "تم مسح الـ QR بنجاح للطفل: {$subscription->child->full_name}.",
+                  'child_name' => $subscription->child->full_name,
+                  'trip_id'    => (string) $trip->id,
+                  'entity_id'  => $trip->id . '_' . $childId,
+              ]);
           }
       }
 
@@ -264,11 +270,12 @@ class TripStopService
 
         $driverUser = User::find($trip->driver->user_id ?? null);
         if ($driverUser) {
-            Notification::send($driverUser, new CustomDatabaseNotification([
-                'title' => 'تأكيد يدوي من ولي الأمر 🎯',
-                'message' => 'قامت الأم بتأكيد ركوب الطفل يدوياً.',
-                'type' => 'manual_pickup_confirmed'
-            ]));
+            $this->notificationService->sendToUser($driverUser, 'manual_pickup_confirmed', [
+                'title'     => 'تأكيد يدوي من ولي الأمر 🎯',
+                'message'   => 'قامت الأم بتأكيد ركوب الطفل يدوياً.',
+                'trip_id'   => (string) $trip->id,
+                'entity_id' => $trip->id . '_' . $childId,
+            ]);
         }
     }
 }

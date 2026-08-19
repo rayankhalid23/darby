@@ -26,7 +26,7 @@ class ParentRegisterRequest extends FormRequest
 
             'device_name'           => 'nullable|string',
             'platform'              => 'nullable|string',
-            'fcm_token'             => 'nullable|string'
+            'fcm_token'             => 'nullable|string',
             'avatar' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
         ];
     }

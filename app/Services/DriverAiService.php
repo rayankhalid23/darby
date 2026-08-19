@@ -6,8 +6,8 @@ use App\Models\Admin\Admin;
 use App\Models\Driver\Driver;
 use App\Models\Shared\Complaint;
 use App\Models\Shared\DriverReview;
-use App\Notifications\CustomDatabaseNotification;
 use App\Services\Admin\ComplaintService as AdminComplaintService;
+use App\Services\Notification\NotificationService;
 use App\Services\Shared\AiClassifierService;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -15,7 +15,7 @@ use Throwable;
 /**
  * يحلّل نص شكوى أو تعليق مراجعة عبر AiClassifierService (اتصال HTTP فقط)،
  * ويطبّق القرار الإداري المقابل بناءً على الأنظمة الجاهزة في المشروع
- * (تعليق السائق عبر ComplaintService::suspendDriver، والإشعارات عبر CustomDatabaseNotification).
+ * (تعليق السائق عبر ComplaintService::suspendDriver، والإشعارات عبر NotificationService).
  */
 class DriverAiService
 {
@@ -29,11 +29,18 @@ class DriverAiService
 
     protected AiClassifierService $classifier;
     protected AdminComplaintService $adminComplaintService;
+    protected NotificationService $notificationService;
 
-    public function __construct(AiClassifierService $classifier, AdminComplaintService $adminComplaintService)
+    public function __construct(AiClassifierService $classifier, AdminComplaintService $adminComplaintService, NotificationService $notificationService)
     {
         $this->classifier = $classifier;
         $this->adminComplaintService = $adminComplaintService;
+        $this->notificationService = $notificationService;
+    }
+
+    protected function adminUsers(): \Illuminate\Support\Collection
+    {
+        return Admin::with('user')->get()->map(fn ($admin) => $admin->user)->filter();
     }
 
     // ============================================================
@@ -90,21 +97,12 @@ class DriverAiService
 
         $confidencePercent = round(((float) ($result['confidence'] ?? 0)) * 100);
 
-        foreach (Admin::with('user')->get() as $admin) {
-            if (!$admin->user) {
-                continue;
-            }
-            $admin->user->notify(new CustomDatabaseNotification([
-                'title'   => '⚠️ شكوى تحتاج مراجعة عاجلة (ثقة منخفضة)',
-                'message' => "صنّف النظام الشكوى رقم {$complaint->id} كمخالفة جسيمة، لكن بثقة منخفضة ({$confidencePercent}%) — لم يتم إيقاف السائق آلياً تفادياً لقرار خاطئ، يرجى المراجعة اليدوية فوراً.",
-                'type'    => 'driver_ai_needs_review',
-                'metadata' => [
-                    'complaint_id' => $complaint->id,
-                    'driver_id'    => $complaint->driver_id,
-                    'confidence'   => $result['confidence'] ?? null,
-                ],
-            ]));
-        }
+        $this->notificationService->sendToUsers($this->adminUsers(), 'driver_ai_needs_review', [
+            'title'       => '⚠️ شكوى تحتاج مراجعة عاجلة (ثقة منخفضة)',
+            'message'     => "صنّف النظام الشكوى رقم {$complaint->id} كمخالفة جسيمة، لكن بثقة منخفضة ({$confidencePercent}%) — لم يتم إيقاف السائق آلياً تفادياً لقرار خاطئ، يرجى المراجعة اليدوية فوراً.",
+            'entity_type' => 'complaint',
+            'entity_id'   => (string) $complaint->id,
+        ], withPush: false);
     }
 
     /**
@@ -128,30 +126,21 @@ class DriverAiService
             'resolved_at'    => now(),
         ])->save();
 
-        foreach (Admin::with('user')->get() as $admin) {
-            if (!$admin->user) {
-                continue;
-            }
-            $admin->user->notify(new CustomDatabaseNotification([
-                'title'   => 'إيقاف تلقائي لسائق ⛔',
-                'message' => "أوقف النظام السائق رقم {$driver->id} تلقائياً بناءً على تحليل الذكاء الاصطناعي لشكوى رقم {$complaint->id} (خطورة: " . ($result['severity'] ?? '-') . ').',
-                'type'    => 'driver_ai_suspended',
-                'metadata' => [
-                    'complaint_id' => $complaint->id,
-                    'driver_id'    => $driver->id,
-                    'severity'     => $result['severity'] ?? null,
-                ],
-            ]));
-        }
+        $this->notificationService->sendToUsers($this->adminUsers(), 'driver_ai_suspended', [
+            'title'       => 'إيقاف تلقائي لسائق ⛔',
+            'message'     => "أوقف النظام السائق رقم {$driver->id} تلقائياً بناءً على تحليل الذكاء الاصطناعي لشكوى رقم {$complaint->id} (خطورة: " . ($result['severity'] ?? '-') . ').',
+            'entity_type' => 'complaint',
+            'entity_id'   => (string) $complaint->id,
+        ], withPush: false);
 
         // 🔔 إخطار السائق نفسه بإيقاف حسابه (كان مفقوداً سابقاً — السائق لم يكن يُخطَر إطلاقاً)
         if ($driver->user) {
-            $driver->user->notify(new CustomDatabaseNotification([
-                'title'   => 'تم إيقاف حسابك مؤقتاً ⛔',
-                'message' => 'تم إيقاف حسابك بناءً على مراجعة شكوى وردت بحقك. يرجى التواصل مع الدعم لمعرفة التفاصيل وتقديم توضيحك.',
-                'type'    => 'driver_suspended',
-                'metadata' => ['complaint_id' => $complaint->id],
-            ]));
+            $this->notificationService->sendToUser($driver->user, 'driver_suspended', [
+                'title'       => 'تم إيقاف حسابك مؤقتاً ⛔',
+                'message'     => 'تم إيقاف حسابك بناءً على مراجعة شكوى وردت بحقك. يرجى التواصل مع الدعم لمعرفة التفاصيل وتقديم توضيحك.',
+                'entity_type' => 'complaint',
+                'entity_id'   => (string) $complaint->id,
+            ]);
         }
     }
 
@@ -170,15 +159,12 @@ class DriverAiService
             return;
         }
 
-        $driver->user->notify(new CustomDatabaseNotification([
-            'title'   => 'تنبيه سلوكي ⚠️',
-            'message' => $result['message_ar'] ?? 'تم رصد ملاحظة على أدائك بناءً على شكوى، يرجى الانتباه لجودة الخدمة.',
-            'type'    => 'driver_ai_alert',
-            'metadata' => [
-                'complaint_id' => $complaint->id,
-                'severity'     => $result['severity'] ?? null,
-            ],
-        ]));
+        $this->notificationService->sendToUser($driver->user, 'driver_ai_alert', [
+            'title'       => 'تنبيه سلوكي ⚠️',
+            'message'     => $result['message_ar'] ?? 'تم رصد ملاحظة على أدائك بناءً على شكوى، يرجى الانتباه لجودة الخدمة.',
+            'entity_type' => 'complaint',
+            'entity_id'   => (string) $complaint->id,
+        ]);
     }
 
     /**
@@ -233,21 +219,12 @@ class DriverAiService
     protected function notifyAdminsOfFlaggedReview(DriverReview $review, array $result): void
     {
         try {
-            foreach (Admin::with('user')->get() as $admin) {
-                if (!$admin->user) {
-                    continue;
-                }
-                $admin->user->notify(new CustomDatabaseNotification([
-                    'title'   => '📝 تعليق تقييم يحتاج مراجعة',
-                    'message' => "تعليق ولي أمر على تقييم السائق رقم {$review->driver_id} صُنِّف كملاحظة مثيرة للقلق (" . ($result['message_ar'] ?? '') . ')، يُنصح بالمراجعة.',
-                    'type'    => 'driver_review_flagged',
-                    'metadata' => [
-                        'review_id' => $review->id,
-                        'driver_id' => $review->driver_id,
-                        'severity'  => $result['severity'] ?? null,
-                    ],
-                ]));
-            }
+            $this->notificationService->sendToUsers($this->adminUsers(), 'driver_review_flagged', [
+                'title'       => '📝 تعليق تقييم يحتاج مراجعة',
+                'message'     => "تعليق ولي أمر على تقييم السائق رقم {$review->driver_id} صُنِّف كملاحظة مثيرة للقلق (" . ($result['message_ar'] ?? '') . ')، يُنصح بالمراجعة.',
+                'entity_type' => 'driver_review',
+                'entity_id'   => (string) $review->id,
+            ], withPush: false);
         } catch (Throwable $e) {
             Log::warning('DriverAiService: فشل إشعار الإدارة بتعليق مراجعة مُعلَّم - ' . $e->getMessage());
         }

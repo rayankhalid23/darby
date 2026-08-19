@@ -61,15 +61,23 @@ class LoginController extends Controller
             $deviceName = $request->device_name ?? 'mobile_device';
             $token = $user->createToken($deviceName, ['*'], $expiresAt)->plainTextToken;
 
-            // 6. تسجيل الجهاز
-            DB::table('user_devices')->updateOrInsert(
-                ['user_id' => $user->id, 'device_name' => $deviceName],
-                [
-                    'fcm_token' => $request->fcm_token ?? 'mock_fcm_token',
-                    'platform' => $request->platform ?? 'unknown',
-                    'last_active_at' => Carbon::now()
-                ]
-            );
+            // 6. تسجيل الجهاز فقط إذا تم إرسال fcm_token حقيقي (فريد عالمياً في الجدول)؛
+            // التسجيل الرسمي يتم عبر POST /api/user/device-token
+            if ($request->filled('fcm_token')) {
+                DB::table('user_devices')->updateOrInsert(
+                    ['fcm_token' => $request->fcm_token],
+                    [
+                        'user_id'        => $user->id,
+                        'device_id'      => $request->device_id ?? null,
+                        'device_name'    => $deviceName,
+                        'platform'       => $request->platform ?? 'unknown',
+                        'is_active'      => true,
+                        'last_active_at' => Carbon::now(),
+                        'created_at'     => Carbon::now(),
+                        'updated_at'     => Carbon::now(),
+                    ]
+                );
+            }
 
             // تحديد مسمى الدور (Role Name) بناءً على المعرف في قاعدة البيانات
             $roleName = match ((int) $user->role_id) {

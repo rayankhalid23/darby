@@ -33,7 +33,8 @@ class FullSystemSeeder extends Seeder
 {
     public function run(): void
     {
-        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+        \Illuminate\Support\Facades\Schema::disableForeignKeyConstraints();
+        
 
         echo "ًںڑ€ ط¨ط¯ط§ظٹط© ط²ط±ط¹ ط§ظ„ط¨ظٹط§ظ†ط§طھ ط§ظ„ط´ط§ظ…ظ„ط© ظ„ظ„ظ†ط¸ط§ظ…...\n";
 
@@ -375,7 +376,7 @@ class FullSystemSeeder extends Seeder
             'end_date' => Carbon::today()->addDays(30)->toDateString(),
             'days_count' => 22,
             'total_price' => 600.00,
-            'status' => 'active',
+            'status' => 'activated',
             'signed_at' => now()
         ]);
 
@@ -635,8 +636,14 @@ class FullSystemSeeder extends Seeder
             'payment_method_details' => ['bank' => 'ظ…طµط±ظپ ط§ظ„ط¬ظ…ظ‡ظˆط±ظٹط©', 'account' => 'LY3300100200300400']
         ]);
 
+<<<<<<< HEAD
         DB::statement('SET FOREIGN_KEY_CHECKS=1;');
 
         echo "ًںژ‰ طھظ… ط²ط±ط¹ ظƒط§ظپط© ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ†ط¸ط§ظ… ظˆط§ظ„ط³ظٹظ†ط§ط±ظٹظˆظ‡ط§طھ ط¨ظ†ط¬ط§ط­ ظˆط­ط³ط§ط¨ط§طھ ط§ظ„ط§ط®طھط¨ط§ط± ط¬ط§ظ‡ط²ط© ظ„ظ„ط§ط³طھط®ط¯ط§ظ…!\n";
+=======
+        
+        \Illuminate\Support\Facades\Schema::enableForeignKeyConstraints();
+        echo "🎉 تم زرع كافة بيانات النظام والسيناريوهات بنجاح وحسابات الاختبار جاهزة للاستخدام!\n";
+>>>>>>> 7c7e95414ad0f0430534f46f0b6057beb96b09af
     }
 }

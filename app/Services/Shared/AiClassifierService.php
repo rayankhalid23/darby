@@ -3,7 +3,7 @@
 namespace App\Services\Shared;
 
 use App\Models\Admin\Admin;
-use App\Notifications\CustomDatabaseNotification;
+use App\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -26,11 +26,13 @@ class AiClassifierService
 
     protected string $endpoint;
     protected int $timeoutSeconds;
+    protected NotificationService $notificationService;
 
-    public function __construct()
+    public function __construct(NotificationService $notificationService)
     {
         $this->endpoint = config('services.driver_ai.url', 'http://127.0.0.1:8000/api/v1/predict');
         $this->timeoutSeconds = (int) config('services.driver_ai.timeout', 3);
+        $this->notificationService = $notificationService;
     }
 
     /**
@@ -104,18 +106,22 @@ class AiClassifierService
     protected function notifyAdminsOfOutage(int $failureCount): void
     {
         try {
-            foreach (Admin::with('user')->get() as $admin) {
-                if (!$admin->user) {
-                    continue;
-                }
-                $admin->user->notify(new CustomDatabaseNotification([
-                    'title'   => '🚨 خدمة التصنيف الآلي غير متاحة',
-                    'message' => "فشل الاتصال بخدمة التصنيف الآلي {$failureCount} مرات متتالية خلال آخر "
-                        . self::FAILURE_WINDOW_MINUTES
-                        . ' دقيقة — الشكاوى والتعليقات الجديدة لن تُحلَّل آلياً حتى تعود الخدمة، يُنصح بالمراجعة اليدوية مؤقتاً.',
-                    'type'    => 'ai_service_outage',
-                ]));
+            $adminUsers = Admin::with('user')->get()->map(fn ($admin) => $admin->user)->filter();
+
+            if ($adminUsers->isEmpty()) {
+                return;
             }
+
+            // withPush: false — إشعارات الأدمن عبر DB + polling فقط، بلا Firebase Push.
+            // entity_id بدقيقة الحدوث حتى لا يمنع dedupe_key تنبيه انقطاع لاحق فعلي (كل انقطاع جديد
+            // يستحق تنبيهاً خاصاً به، بينما يمنع فقط استدعاءً متزامناً مكرراً لنفس اللحظة بالضبط).
+            $this->notificationService->sendToUsers($adminUsers, 'ai_service_outage', [
+                'title'     => '🚨 خدمة التصنيف الآلي غير متاحة',
+                'message'   => "فشل الاتصال بخدمة التصنيف الآلي {$failureCount} مرات متتالية خلال آخر "
+                    . self::FAILURE_WINDOW_MINUTES
+                    . ' دقيقة — الشكاوى والتعليقات الجديدة لن تُحلَّل آلياً حتى تعود الخدمة، يُنصح بالمراجعة اليدوية مؤقتاً.',
+                'entity_id' => now()->format('Y-m-d_H:i'),
+            ], withPush: false);
         } catch (Throwable $e) {
             Log::error('AiClassifierService: فشل إرسال إشعار انقطاع الخدمة - ' . $e->getMessage());
         }

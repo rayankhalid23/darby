@@ -5,7 +5,6 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\Auth\LoginController;
 use App\Http\Controllers\Api\Auth\PasswordController;
 use App\Http\Controllers\Api\Shared\NotificationController as SharedNotificationController;
-use App\Http\Controllers\Api\NotificationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -36,8 +35,6 @@ Route::middleware('auth:sanctum')->group(function () {
         ]);
     });
 
-    Route::post('/send-notification', [NotificationController::class, 'sendTestNotification']);
-
     // مسارات الإشعارات الفورية وإدارة التوكنات (Notifications & Device Tokens)
     Route::prefix('notifications')->group(function () {
         Route::get('/', [SharedNotificationController::class, 'index']);
@@ -50,6 +47,5 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::post('/user/device-token', [SharedNotificationController::class, 'storeDeviceToken']);
     Route::delete('/user/device-token', [SharedNotificationController::class, 'removeDeviceToken']);
-    Route::post('/shared/notifications/device-token', [SharedNotificationController::class, 'storeDeviceToken']);
-    Route::delete('/shared/notifications/device-token', [SharedNotificationController::class, 'removeDeviceToken']);
+    Route::post('/user/device-token/logout-all', [SharedNotificationController::class, 'logoutAllDevices']);
 });

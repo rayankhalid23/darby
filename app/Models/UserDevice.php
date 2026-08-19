@@ -11,20 +11,22 @@ class UserDevice extends Model
 
     protected $table = 'user_devices';
 
-    public $timestamps = false; // الجدول يتضمن last_active_at فقط
-
     protected $fillable = [
         'user_id',
+        'device_id',
         'fcm_token',
         'device_name',
         'platform',
+        'app_version',
+        'is_active',
         'last_active_at',
     ];
 
     protected function casts(): array
     {
         return [
-            'last_active_at' => 'datetime',
+            'is_active'       => 'boolean',
+            'last_active_at'  => 'datetime',
         ];
     }
 

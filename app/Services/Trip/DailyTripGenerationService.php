@@ -11,10 +11,9 @@ use App\Models\Shared\RouteStop;
 use App\Models\Shared\Trip;
 use App\Models\Shared\TripStop;
 use App\Models\User;
-use App\Notifications\CustomDatabaseNotification;
+use App\Services\Notification\NotificationService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Notification;
 
 /**
  * يولّد الرحلة اليومية التشغيلية (Daily Trip Instance) من المسار الهيكلي المرجعي (Master Route)
@@ -22,6 +21,13 @@ use Illuminate\Support\Facades\Notification;
  */
 class DailyTripGenerationService
 {
+    protected NotificationService $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
+
     /**
      * ينشئ (أو يعيد) رحلة اليوم لمسار معين — عملية idempotent، آمنة للاستدعاء المتكرر
      * (سواء من الـ cron أو من السحب اللحظي في todayTrips()).
@@ -178,12 +184,11 @@ class DailyTripGenerationService
         try {
             $driverUser = $route->driver?->user;
             if ($driverUser) {
-                $driverUser->notify(new CustomDatabaseNotification([
-                    'title'    => 'رحلتك القادمة تبدأ بعد 30 دقيقة',
-                    'message'  => 'تم تجهيز رحلتك القادمة. انقر لمعاينة الطلاب.',
-                    'type'     => 'trip_ready',
-                    'metadata' => ['trip_id' => $trip->id],
-                ]));
+                $this->notificationService->sendToUser($driverUser, 'trip_ready', [
+                    'title'   => 'رحلتك القادمة تبدأ بعد 30 دقيقة',
+                    'message' => 'تم تجهيز رحلتك القادمة. انقر لمعاينة الطلاب.',
+                    'trip_id' => (string) $trip->id,
+                ]);
             }
 
             $pendingChildIds = TripStop::where('trip_id', $trip->id)
@@ -203,12 +208,11 @@ class DailyTripGenerationService
             $users = User::whereIn('id', $parentUserIds)->get();
 
             if ($users->isNotEmpty()) {
-                Notification::send($users, new CustomDatabaseNotification([
-                    'title'    => 'تذكير: انطلاق رحلة طفلكم بعد 30 دقيقة',
-                    'message'  => 'رحلة طفلكم ستنطلق قريباً، يرجى الاستعداد.',
-                    'type'     => 'trip_upcoming',
-                    'metadata' => ['trip_id' => $trip->id],
-                ]));
+                $this->notificationService->sendToUsers($users, 'trip_upcoming', [
+                    'title'   => 'تذكير: انطلاق رحلة طفلكم بعد 30 دقيقة',
+                    'message' => 'رحلة طفلكم ستنطلق قريباً، يرجى الاستعداد.',
+                    'trip_id' => (string) $trip->id,
+                ]);
             }
         } catch (\Throwable $e) {
             Log::warning("فشل إرسال إشعارات توليد الرحلة اليومية للرحلة ID: {$trip->id} - " . $e->getMessage());

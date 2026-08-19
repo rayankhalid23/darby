@@ -9,7 +9,7 @@ return new class extends Migration
     public function up()
     {
         Schema::table('active_subscriptions', function (Blueprint $table) {
-            // إضافة الأعمدة فقط إذا لم تكن موجودة لتجنب أي أخطاء
+            // إضافة الأعمدة بأمان تام يتوافق مع SQLite
             if (!Schema::hasColumn('active_subscriptions', 'child_id')) {
                 $table->foreignId('child_id')->nullable()->constrained('children')->onDelete('cascade');
             }
