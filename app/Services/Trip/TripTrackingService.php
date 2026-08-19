@@ -8,18 +8,23 @@ use App\Models\Shared\TripTracking;
 use App\Models\Shared\ActiveSubscription;
 use App\Models\Driver\Driver;
 use App\Models\User;
-use App\Notifications\CustomDatabaseNotification;
-use App\Notifications\TripStartedNotification; // تأكد من وجود هذا الـ Notification
+use App\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Notification;
 use Carbon\Carbon;
 use Kreait\Firebase\Factory;
 use Throwable;
 
 class TripTrackingService
 {
+    protected NotificationService $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
+
     /**
      * استقبال إحداثيات السائق وتخزينها ذكياً
      */
@@ -127,11 +132,11 @@ class TripTrackingService
 
         foreach ($pendingSubscriptions as $sub) {
             if ($user = $sub->child->parent->user ?? null) {
-                Notification::send($user, new CustomDatabaseNotification([
-                    'title' => 'بدأت الرحلة 🚌',
+                $this->notificationService->sendToUser($user, 'trip_started', [
+                    'title'   => 'بدأت الرحلة 🚌',
                     'message' => 'الحافلة في طريقها إليكم الآن.',
-                    'type' => 'trip_started'
-                ]));
+                    'trip_id' => (string) $trip->id,
+                ]);
             }
         }
     }

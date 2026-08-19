@@ -9,13 +9,20 @@ use App\Models\Shared\TripStudentAttendance;
 use App\Models\Shared\ActiveSubscription;
 use App\Models\Parent\ParentModel;
 use App\Models\Driver\Driver;
-use App\Notifications\CustomDatabaseNotification;
+use App\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
 class FinancialService
 {
+    protected NotificationService $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
+
     public function generateProformaInvoice(Contract $contract): Invoice
 {
     $contract->loadMissing(['subscriptionRequest.parent', 'parent.user', 'driver']);
@@ -135,19 +142,21 @@ class FinancialService
                 ]);
 
                 if (isset($parent->user)) {
-                    $parent->user->notify(new CustomDatabaseNotification([
-                        'title'   => 'تم تسوية الاشتراك',
-                        'message' => "تم خصم {$netAmount} د.ل من محفظتك لقاء العقد رقم {$contract->contract_number}.",
-                        'type'    => 'settlement_paid',
-                    ]));
+                    $this->notificationService->sendToUser($parent->user, 'settlement_paid', [
+                        'title'      => 'تم تسوية الاشتراك',
+                        'message'    => "تم خصم {$netAmount} د.ل من محفظتك لقاء العقد رقم {$contract->contract_number}.",
+                        'amount'     => $netAmount,
+                        'invoice_id' => (string) $proforma->id,
+                    ]);
                 }
 
                 if (isset($driver->user)) {
-                    $driver->user->notify(new CustomDatabaseNotification([
-                        'title'   => 'تم إيداع مستحقات الاشتراك',
-                        'message' => "تم إيداع {$netAmount} د.ل في محفظتك لقاء العقد رقم {$contract->contract_number}.",
-                        'type'    => 'settlement_received',
-                    ]));
+                    $this->notificationService->sendToUser($driver->user, 'settlement_received', [
+                        'title'      => 'تم إيداع مستحقات الاشتراك',
+                        'message'    => "تم إيداع {$netAmount} د.ل في محفظتك لقاء العقد رقم {$contract->contract_number}.",
+                        'amount'     => $netAmount,
+                        'invoice_id' => (string) $proforma->id,
+                    ]);
                 }
             } else {
                 $overdueInvoices = Invoice::where('contract_id', $contract->id)
@@ -172,11 +181,12 @@ class FinancialService
                 ]);
 
                 if (isset($parent->user)) {
-                    $parent->user->notify(new CustomDatabaseNotification([
-                        'title'   => 'فاتورة غير مدفوعة',
-                        'message' => "رصيد محفظتك غير كافٍ لتسوية {$netAmount} د.ل للعقد {$contract->contract_number}. يرجى شحن المحفظة.",
-                        'type'    => 'settlement_overdue',
-                    ]));
+                    $this->notificationService->sendToUser($parent->user, 'settlement_overdue', [
+                        'title'      => 'فاتورة غير مدفوعة',
+                        'message'    => "رصيد محفظتك غير كافٍ لتسوية {$netAmount} د.ل للعقد {$contract->contract_number}. يرجى شحن المحفظة.",
+                        'amount'     => $netAmount,
+                        'invoice_id' => (string) $proforma->id,
+                    ]);
                 }
             }
 
@@ -198,12 +208,13 @@ class FinancialService
             $invoice = $this->generateProformaInvoice($contract);
         }
 
-        $parent->user->notify(new CustomDatabaseNotification([
+        $this->notificationService->sendToUser($parent->user, 'settlement_warning', [
             'title'      => 'تذكير بتسوية الاشتراك',
             'message'    => "سيتم تسوية العقد رقم {$contract->contract_number} بقيمة {$invoice->amount} د.ل بعد 3 أيام. يرجى شحن محفظتك.",
-            'type'       => 'settlement_warning',
             'action_url' => '/parent/wallet',
-        ]));
+            'amount'     => $invoice->amount,
+            'invoice_id' => (string) $invoice->id,
+        ]);
     }
 
     public function getParentInvoices(int $parentUserId, array $filters = [])

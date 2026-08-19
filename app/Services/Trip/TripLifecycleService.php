@@ -8,12 +8,11 @@ use App\Models\Shared\AbsenceLog;
 use App\Models\Driver\DriverAbsence;
 use App\Models\Shared\ActiveSubscription;
 use App\Services\Shared\OsrmRoutingService;
+use App\Services\Notification\NotificationService;
 use App\Models\Driver\Driver;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache; // ✅ استيراد الفيساد الصحيح للكاش
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Notification;
-use App\Notifications\CustomDatabaseNotification;
 use Carbon\Carbon;
 use Exception;
 
@@ -37,12 +36,15 @@ class TripLifecycleService
 {
     protected OsrmRoutingService $osrmService;
 
+    protected NotificationService $notificationService;
+
     /**
      * حقن خدمة الـ OSRM التي قمنا بإعدادها مسبقاً
      */
-    public function __construct(OsrmRoutingService $osrmService)
+    public function __construct(OsrmRoutingService $osrmService, NotificationService $notificationService)
     {
         $this->osrmService = $osrmService;
+        $this->notificationService = $notificationService;
     }
 
     /**
@@ -319,11 +321,11 @@ class TripLifecycleService
 
         // إطلاق وإيداع الإشعارات في جدول notifications
         $datesString = implode(', ', $dates);
-        Notification::send($usersToNotify, new CustomDatabaseNotification([
-            'title' => 'تنبيه: غياب السائق اليومي',
+        $this->notificationService->sendToUsers($usersToNotify, 'driver_absence', [
+            'title'   => 'تنبيه: غياب السائق اليومي',
             'message' => "نفيدكم علماً بأن السائق حدد أيام غياب له في التواريخ التالية: ({$datesString})، ولن يتم تفعيل مسار الرحلة في هذه الأيام.",
-            'type' => 'driver_absence'
-        ]));
+            'entity_id' => $driverId . '_' . $datesString,
+        ]);
     }
 
     /**
@@ -415,11 +417,11 @@ class TripLifecycleService
             $isGoTrip = \App\Models\Driver\DriverSeatSlot::isGoSlot($trip->shift_slot ?? '')
                 || strtolower($trip->trip_type ?? '') === 'morning';
             $destination = $isGoTrip ? 'المدرسة' : 'المنزل';
-            Notification::send($usersToNotify, new CustomDatabaseNotification([
-                'title' => 'وصلت الحافلة بسلام 🏁',
+            $this->notificationService->sendToUsers($usersToNotify, 'trip_completed', [
+                'title'   => 'وصلت الحافلة بسلام 🏁',
                 'message' => "أنهى السائق الرحلة بنجاح، ووصل جميع الأطفال إلى {$destination} بسلامة الله.",
-                'type' => 'trip_completed'
-            ]));
+                'trip_id' => (string) $trip->id,
+            ]);
 
             return [
                 'status' => 'success',

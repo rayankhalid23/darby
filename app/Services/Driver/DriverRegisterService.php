@@ -8,6 +8,7 @@ use App\Models\Driver\Vehicle;
 use App\Models\Driver\DriverDocument;
 use App\Services\Shared\EmailService;
 use App\Services\Shared\OtpService;
+use App\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -18,11 +19,13 @@ class DriverRegisterService
 {
     protected EmailService $emailService;
     protected OtpService $otpService;
+    protected NotificationService $notificationService;
 
-    public function __construct(EmailService $emailService, OtpService $otpService)
+    public function __construct(EmailService $emailService, OtpService $otpService, NotificationService $notificationService)
     {
         $this->emailService = $emailService;
         $this->otpService = $otpService;
+        $this->notificationService = $notificationService;
     }
 
     /**
@@ -69,16 +72,23 @@ class DriverRegisterService
                 'status'  => 'Offline',
             ]);
 
-            // 3. تسجيل تفاصيل جهاز السائق
-            $deviceName = $data['device_name'] ?? 'mobile_device';
-            DB::table('user_devices')->updateOrInsert(
-                ['user_id' => $user->id, 'device_name' => $deviceName],
-                [
-                    'fcm_token'      => $data['fcm_token'] ?? 'mock_fcm_token',
-                    'platform'       => $data['platform'] ?? 'unknown',
-                    'last_active_at' => Carbon::now()
-                ]
-            );
+            // 3. تسجيل جهاز السائق فقط إذا تم إرسال fcm_token حقيقي (fcm_token فريد عالمياً في الجدول،
+            //    ولا معنى لإدراج توكن وهمي؛ التسجيل الرسمي للجهاز يتم عبر POST /api/user/device-token بعد تسجيل الدخول)
+            if (!empty($data['fcm_token'])) {
+                DB::table('user_devices')->updateOrInsert(
+                    ['fcm_token' => $data['fcm_token']],
+                    [
+                        'user_id'        => $user->id,
+                        'device_id'      => $data['device_id'] ?? null,
+                        'device_name'    => $data['device_name'] ?? 'mobile_device',
+                        'platform'       => $data['platform'] ?? 'unknown',
+                        'is_active'      => true,
+                        'last_active_at' => Carbon::now(),
+                        'created_at'     => Carbon::now(),
+                        'updated_at'     => Carbon::now(),
+                    ]
+                );
+            }
 
             return $user;
         });
@@ -141,12 +151,25 @@ class DriverRegisterService
                     ]);
                 }
 
+                try {
+                    $admins = \App\Models\User::whereIn('role_id', [1, 2])->get();
+                    // withPush: false — إشعارات الأدمن عبر DB + polling فقط، بلا Firebase Push.
+                    $this->notificationService->sendToUsers($admins, 'new_driver_registered', [
+                        'title'       => 'تسجيل سائق جديد 🚐',
+                        'message'     => "قام السائق ({$user->full_name}) بإكمال بياناته وبانتظار المراجعة.",
+                        'driver_name' => $user->full_name,
+                        'entity_id'   => (string) $driver->id,
+                    ], withPush: false);
+                } catch (\Throwable $e) {
+                    Log::warning("فشل إرسال إشعار الأدمن عن تسجيل السائق الجديد #{$driver->id}: " . $e->getMessage());
+                }
+
                 // الكود الجديد البديل لمنع استعلام الحذف الناعم المنهار
 return $driver->load([
-    'user', 
+    'user',
     'vehicles' => function($query) {
         $query->withoutGlobalScopes(); // 🚀 تخطي أي شروط حذف ناعم مبرمجة تلقائياً
-    }, 
+    },
     'documents'
 ]);
 

@@ -4,6 +4,7 @@ namespace App\Services\Admin;
 
 use App\Models\Driver\Driver;
 use App\Models\Driver\DriverApproval;
+use App\Services\Notification\NotificationService;
 use App\Services\Shared\EmailService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -14,9 +15,12 @@ class AdminDriverService
 {
     protected EmailService $emailService;
 
-    public function __construct(EmailService $emailService)
+    protected NotificationService $notificationService;
+
+    public function __construct(EmailService $emailService, NotificationService $notificationService)
     {
         $this->emailService = $emailService;
+        $this->notificationService = $notificationService;
     }
 
     /**
@@ -237,15 +241,14 @@ class AdminDriverService
                     'action_at' => now()
                 ]);
 
-                // 🚀 هـ) إرسال إشعار القبول عبر الفايربيز وقاعدة البيانات
+                // 🚀 هـ) إرسال إشعار القبول عبر NotificationService (database + push)
                 try {
-                    $driver->user->notify(new \App\Notifications\CustomDatabaseNotification([
-                        'type'      => 'driver_account_approved',
-                        'title'     => '🎉 تم قبول تحديث بياناتك',
-                        'message'   => 'مرحباً بك كابتن، تمت الموافقة على تعديل بيانات ملفك الشخصي وتطبيقها بنجاح.',
-                        'screen'    => 'DRIVER_PROFILE',
-                        'entity_id' => (string) $driver->id,
-                    ]));
+                    $this->notificationService->sendToUser($driver->user, 'driver_account_approved', [
+                        'title'       => '🎉 تم قبول تحديث بياناتك',
+                        'message'     => 'مرحباً بك كابتن، تمت الموافقة على تعديل بيانات ملفك الشخصي وتطبيقها بنجاح.',
+                        'entity_type' => 'driver_profile_change',
+                        'entity_id'   => (string) $changeId,
+                    ]);
                 } catch (\Throwable $e) {
                     Log::warning("Failed sending approval notification: " . $e->getMessage());
                 }
@@ -258,15 +261,14 @@ class AdminDriverService
                     'action_at'        => now()
                 ]);
 
-                // 🚀 ب) إرسال إشعار الرفض عبر الفايربيز وقاعدة البيانات
+                // 🚀 ب) إرسال إشعار الرفض عبر NotificationService (database + push)
                 try {
-                    $driver->user->notify(new \App\Notifications\CustomDatabaseNotification([
-                        'type'      => 'driver_account_rejected',
-                        'title'     => '📋 مراجعة تحديث البيانات',
-                        'message'   => "نأسف لإبلاغك برفض طلب تعديل البيانات المرفق بملفك الشخصي بسبب: {$rejectionReason}",
-                        'screen'    => 'DRIVER_PROFILE',
-                        'entity_id' => (string) $driver->id,
-                    ]));
+                    $this->notificationService->sendToUser($driver->user, 'driver_account_rejected', [
+                        'title'       => '📋 مراجعة تحديث البيانات',
+                        'message'     => "نأسف لإبلاغك برفض طلب تعديل البيانات المرفق بملفك الشخصي بسبب: {$rejectionReason}",
+                        'entity_type' => 'driver_profile_change',
+                        'entity_id'   => (string) $changeId,
+                    ]);
                 } catch (\Throwable $e) {
                     Log::warning("Failed sending rejection notification: " . $e->getMessage());
                 }

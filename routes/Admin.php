@@ -41,6 +41,15 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // تشغيل يدوي لتوليد الرحلات اليومية (Daily Trips) دون انتظار الـ Cron — للتشغيل والاختبار
     Route::post('/trips/generate-daily', [\App\Http\Controllers\Api\Admin\TripOpsController::class, 'generateDaily'])
         ->name('api.admin.trips.generate-daily');
+
+    // --- 🔔 إشعارات لوحة تحكم الأدمن ---
+    Route::prefix('notifications')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Admin\AdminNotificationController::class, 'index']);
+        Route::get('/unread-count', [\App\Http\Controllers\Api\Admin\AdminNotificationController::class, 'unreadCount']);
+        Route::patch('/{id}/read', [\App\Http\Controllers\Api\Admin\AdminNotificationController::class, 'markAsRead']);
+        Route::post('/read-all', [\App\Http\Controllers\Api\Admin\AdminNotificationController::class, 'markAllAsRead']);
+        Route::delete('/{id}', [\App\Http\Controllers\Api\Admin\AdminNotificationController::class, 'destroy']);
+    });
     
     // --- 👤 الملف الشخصي للمشرف / مدير النظام (الحساب الحالي) ---
     Route::prefix('profile')->group(function () {

@@ -5,6 +5,8 @@ namespace App\Services\Parent;
 use App\Models\Shared\Complaint;
 use App\Models\Shared\Contract;
 use App\Models\Shared\Trip;
+use App\Models\User;
+use App\Services\Notification\NotificationService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -14,6 +16,13 @@ use Exception;
 
 class ComplaintService
 {
+    protected NotificationService $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
+
     public function getParentComplaints(int $parentUserId, array $filters = []): LengthAwarePaginator
     {
         $parentId = $this->getParentRecordId($parentUserId);
@@ -133,7 +142,7 @@ class ComplaintService
             }
         }
 
-        return Complaint::create([
+        $complaint = Complaint::create([
             'submitted_by'  => $parentId,
             'against_type'  => 'DRIVER',
             'against_id'    => $realDriverId,
@@ -142,6 +151,20 @@ class ComplaintService
             'description'   => $data['description'],
             'status'        => 'pending',
         ]);
+
+        try {
+            $admins = User::whereIn('role_id', [1, 2])->get();
+            // withPush: false — إشعارات الأدمن عبر DB + polling فقط، بلا Firebase Push.
+            $this->notificationService->sendToUsers($admins, 'new_complaint_submitted', [
+                'title'       => 'شكوى جديدة 📩',
+                'message'     => 'تم تقديم شكوى جديدة ضد أحد السائقين وتحتاج إلى مراجعة.',
+                'entity_id'   => (string) $complaint->id,
+            ], withPush: false);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("فشل إرسال إشعار الأدمن عن الشكوى الجديدة #{$complaint->id}: " . $e->getMessage());
+        }
+
+        return $complaint;
     }
 
 

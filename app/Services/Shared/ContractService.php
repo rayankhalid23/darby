@@ -7,7 +7,7 @@ use App\Models\Shared\SubscriptionRequest;
 use App\Models\Shared\Clause;
 use App\Models\Shared\ActiveSubscription;
 use App\Models\Parent\ParentModel;
-use App\Notifications\CustomDatabaseNotification;
+use App\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -21,9 +21,12 @@ class ContractService
 
     protected FinancialService $financialService;
 
-    public function __construct(FinancialService $financialService)
+    protected NotificationService $notificationService;
+
+    public function __construct(FinancialService $financialService, NotificationService $notificationService)
     {
         $this->financialService = $financialService;
+        $this->notificationService = $notificationService;
     }
 
     // ============================================================
@@ -112,19 +115,36 @@ class ContractService
             }
 
             if ($contract->parentUser) {
-                $contract->parentUser->notify(new CustomDatabaseNotification([
-                    'title'   => 'تم توقيع العقد',
-                    'message' => "تم توقيع العقد رقم {$contract->contract_number} بنجاح وبدء الاشتراك.",
-                    'type'    => 'contract_signed',
-                ]));
+                $this->notificationService->sendToUser($contract->parentUser, 'contract_signed', [
+                    'title'           => 'تم توقيع العقد',
+                    'message'         => "تم توقيع العقد رقم {$contract->contract_number} بنجاح وبدء الاشتراك.",
+                    'contract_number' => $contract->contract_number,
+                    'contract_id'     => (string) $contract->id,
+                ]);
             }
 
             if ($contract->driverUser) {
-                $contract->driverUser->notify(new CustomDatabaseNotification([
-                    'title'   => 'تم توقيع العقد',
-                    'message' => "قام ولي الأمر بتوقيع العقد رقم {$contract->contract_number}.",
-                    'type'    => 'contract_signed',
-                ]));
+                $this->notificationService->sendToUser($contract->driverUser, 'contract_signed', [
+                    'title'           => 'تم توقيع العقد',
+                    'message'         => "قام ولي الأمر بتوقيع العقد رقم {$contract->contract_number}.",
+                    'contract_number' => $contract->contract_number,
+                    'contract_id'     => (string) $contract->id,
+                ]);
+            }
+
+            try {
+                $admins = \App\Models\User::whereIn('role_id', [1, 2])->get();
+                // withPush: false — إشعارات لوحة تحكم الأدمن تعتمد على DB + polling فقط،
+                // بلا Firebase Push (الأدمن يستخدم لوحة ويب، وتجنّباً لتسريب دفعات push
+                // لأي جهاز محمول مسجَّل مصادفة لنفس حساب الأدمن كسائق/ولي أمر).
+                $this->notificationService->sendToUsers($admins, 'contract_signed', [
+                    'title'           => 'تم توقيع عقد جديد',
+                    'message'         => "تم توقيع العقد رقم {$contract->contract_number}.",
+                    'contract_number' => $contract->contract_number,
+                    'contract_id'     => (string) $contract->id,
+                ], withPush: false);
+            } catch (\Throwable $e) {
+                Log::warning("فشل إرسال إشعار الأدمن عن توقيع العقد {$contract->contract_number}: " . $e->getMessage());
             }
 
             return $contract->fresh()->load(['parentUser', 'driverUser', 'activeSubscriptions']);
@@ -149,11 +169,12 @@ class ContractService
                 ->update(['status' => 'cancelled']);
 
             if ($contract->parentUser) {
-                $contract->parentUser->notify(new CustomDatabaseNotification([
-                    'title'   => 'تم رفض العقد',
-                    'message' => "تم رفض العقد رقم {$contract->contract_number}.",
-                    'type'    => 'contract_rejected',
-                ]));
+                $this->notificationService->sendToUser($contract->parentUser, 'contract_rejected', [
+                    'title'           => 'تم رفض العقد',
+                    'message'         => "تم رفض العقد رقم {$contract->contract_number}.",
+                    'contract_number' => $contract->contract_number,
+                    'contract_id'     => (string) $contract->id,
+                ]);
             }
 
             return $contract->fresh()->load(['parentUser', 'driverUser']);

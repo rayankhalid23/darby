@@ -41,10 +41,4 @@ return [
         'from'  => env('TWILIO_SMS_FROM'),
     ],
 
-    'fcm' => [
-        'key' => env('FCM_SERVER_KEY'),
-        'project_id' => env('FCM_PROJECT_ID'),
-        'credentials_file' => env('FCM_CREDENTIALS_FILE'),
-    ],
-
 ];
