@@ -5,6 +5,8 @@ namespace App\Http\Requests\Api\Driver;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use App\Enums\driver\DriverShift;
+use App\Enums\Shared\SchoolStage;
+use App\Enums\Shared\SubscriptionDuration;
 
 class UpdateDriverPreferencesRequest extends FormRequest
 {
@@ -26,7 +28,9 @@ class UpdateDriverPreferencesRequest extends FormRequest
             'morning_return'    => ['required', 'boolean'],
             'afternoon_go'      => ['required', 'boolean'],
             'afternoon_return'  => ['required', 'boolean'],
-            'subscription_type' => ['required', 'string', Rule::in(['daily', 'monthly', 'both'])],
+            'subscription_type' => ['required', 'string', Rule::in(SubscriptionDuration::driverValues())],
+            'school_stages'     => ['required', 'array', 'min:1'],
+            'school_stages.*'   => ['required', 'string', Rule::in(array_column(SchoolStage::cases(), 'value'))],
             'zones'             => ['required', 'array', 'min:1'],
             'zones.*'           => ['required', 'integer', 'exists:zones,id'],
         ];

@@ -5,8 +5,10 @@ namespace App\Services\Driver;
 use App\Models\Driver\Driver;
 use App\Models\Driver\DriverSeatSlot;
 use App\Enums\driver\DriverShift;
+use App\Enums\Shared\SchoolStage;
+use App\Enums\Shared\SubscriptionDuration;
 use App\Models\Shared\Zone;
-use App\Models\Shared\Municipality; // استبدل المسار بحسب المجلد الفعلي للموديل لديك
+use App\Models\Shared\Municipality;
 use Illuminate\Support\Facades\DB;
 use Exception;
 
@@ -27,13 +29,13 @@ class DriverPreferenceService
     {
         return DB::transaction(function () use ($driver, $data) {
 
-            // تحديث الأعمدة الأربعة الجديدة للفترات
             $driver->update([
                 'morning_go'        => (bool) ($data['morning_go']      ?? false),
                 'morning_return'    => (bool) ($data['morning_return']   ?? false),
                 'afternoon_go'      => (bool) ($data['afternoon_go']     ?? false),
                 'afternoon_return'  => (bool) ($data['afternoon_return'] ?? false),
                 'subscription_type' => $data['subscription_type'] ?? $driver->subscription_type,
+                'school_stages'     => $data['school_stages']     ?? $driver->school_stages,
             ]);
 
             $zoneIds = $data['zones'] ?? [];
@@ -138,11 +140,8 @@ class DriverPreferenceService
     {
         return [
             'available_shift_slots' => DriverShift::detailedSlots(),
-            'available_subscription_types' => [
-                ['value' => 'daily',   'label' => 'يومي فقط'],
-                ['value' => 'monthly', 'label' => 'شهري فقط'],
-                ['value' => 'both',    'label' => 'كلاهما (يومي وشهري)']
-            ],
+            'available_subscription_types' => SubscriptionDuration::driverOptions(),
+            'available_school_stages'      => SchoolStage::gradeRanges(),
             'geography_tree' => Municipality::with('subMunicipalities.zones')->get()->map(fn($municipality) => [
                 'id'   => $municipality->id,
                 'name' => $municipality->name,

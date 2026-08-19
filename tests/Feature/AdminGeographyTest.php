@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Admin\Admin;
+use App\Models\Driver\Driver;
 use App\Models\Shared\Municipality;
 use App\Models\Shared\SubMunicipality;
 use App\Models\Shared\Zone;
@@ -58,6 +59,30 @@ class AdminGeographyTest extends TestCase
         return Zone::create([
             'sub_municipality_id' => $s->id,
             'name'                => $name ?? ('منطقة اختبار ' . uniqid()),
+        ]);
+    }
+
+    /**
+     * سائق مخصص لهذا الاختبار فقط (بدل الاعتماد على وجود سائق عرضي في قاعدة
+     * البيانات المشتركة، وهو أمر هش لا يمكن ضمانه تحت DatabaseTransactions).
+     */
+    private function makeDriver(): Driver
+    {
+        $user = User::create([
+            'full_name'     => 'سائق منطقة للاختبار ' . uniqid(),
+            'email'         => 'geo.driver.' . uniqid() . '@darby.test',
+            'phone_number'  => '09' . rand(10000000, 99999999),
+            'password_hash' => Hash::make('password123'),
+            'role_id'       => 2,
+            'is_active'     => 1,
+        ]);
+
+        return Driver::create([
+            'user_id'        => $user->id,
+            'national_id'    => 'NAT' . rand(100000, 999999),
+            'license_number' => 'LIC' . rand(100000, 999999),
+            'license_expiry' => now()->addYears(2)->format('Y-m-d'),
+            'status'         => 'Approved',
         ]);
     }
 
@@ -186,8 +211,7 @@ class AdminGeographyTest extends TestCase
         $sub  = $this->makeSub($m);
         $zone = $this->makeZone($sub);
 
-        $driverId = DB::table('drivers')->value('id');
-        $this->assertNotNull($driverId, 'يحتاج الاختبار وجود سائق واحد على الأقل.');
+        $driverId = $this->makeDriver()->id;
         DB::table('driver_zone')->insert([
             'driver_id'  => $driverId,
             'zone_id'    => $zone->id,
@@ -473,8 +497,7 @@ class AdminGeographyTest extends TestCase
     public function test_cannot_delete_zone_that_has_drivers(): void
     {
         $zone     = $this->makeZone($this->makeSub($this->makeMunicipality()));
-        $driverId = DB::table('drivers')->value('id');
-        $this->assertNotNull($driverId, 'يحتاج الاختبار وجود سائق واحد على الأقل.');
+        $driverId = $this->makeDriver()->id;
 
         DB::table('driver_zone')->insert([
             'driver_id'  => $driverId,
@@ -494,7 +517,7 @@ class AdminGeographyTest extends TestCase
     public function test_zone_shows_can_delete_false_when_in_use(): void
     {
         $zone     = $this->makeZone($this->makeSub($this->makeMunicipality()));
-        $driverId = DB::table('drivers')->value('id');
+        $driverId = $this->makeDriver()->id;
 
         DB::table('driver_zone')->insert([
             'driver_id'  => $driverId,

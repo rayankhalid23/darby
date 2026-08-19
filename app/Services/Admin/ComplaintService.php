@@ -132,9 +132,10 @@ class ComplaintService
     }
 
     /**
-     * إيقاف السائق مباشرة وبشكل مستقل عند الضرورة القصوى من قبل الإدارة
+     * إيقاف السائق مباشرة وبشكل مستقل عند الضرورة القصوى من قبل الإدارة.
+     * $adminId = null يعني أن الإيقاف تم آلياً (نظام/ذكاء اصطناعي) وليس بقرار أدمن محدد.
      */
-    public function suspendDriver(int $driverId, int $adminId): Driver
+    public function suspendDriver(int $driverId, ?int $adminId = null): Driver
     {
         $driver = Driver::findOrFail($driverId);
         $driver->status = 'Suspended';

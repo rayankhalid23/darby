@@ -88,8 +88,7 @@ class SubscriptionRequest extends Model
                         'school_label',
                         'price_per_child',
                         'child_notes'
-                    ])
-                    ->withTimestamps();
+                    ]);
     }
 
     public function driver(): BelongsTo
@@ -160,9 +159,9 @@ class SubscriptionRequest extends Model
     public function getSubscriptionTypeTextAttribute(): string
     {
         return match($this->subscription_type) {
-            'monthly' => 'اشتراك شهري',
-            'daily'   => 'اشتراك يومي',
-            default   => $this->subscription_type,
+            'single_day' => 'اشتراك يوم واحد',
+            'multi_day'  => 'اشتراك عدة أيام',
+            default      => $this->subscription_type,
         };
     }
 

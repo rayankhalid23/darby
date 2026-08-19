@@ -27,7 +27,9 @@ class ChildResource extends JsonResource
             'birth_date'          => $this->birth_date ? $this->birth_date->format('Y-m-d') : null,
             'age'                 => $this->age,
             'grade'               => $this->grade,
-            
+            'school_stage'        => $this->school_stage,
+            'school_stage_label'  => $this->school_stage_label,
+
            // الحل الجذري والآمن للصورة الافتراضية أو المرفوعة
     'photo_url'           => $rawPhoto ? Storage::url($rawPhoto) : asset('assets/images/default-child.png'),
             'medical_notes'       => $this->medical_notes ?? 'لا توجد ملاحظات طبية',
@@ -41,7 +43,7 @@ class ChildResource extends JsonResource
                 return [
                     'id'           => $this->school->id,
                     'name'         => $this->school->name,
-                    'address_text' => $this->school->address_text,
+                    'address_text' => $this->school->address_text ?? $this->school->address,
                 ];
             }),
 

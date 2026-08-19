@@ -136,9 +136,9 @@ class Contract extends Model
     public function getSubscriptionTypeTextAttribute(): string
     {
         return match($this->subscription_type) {
-            'monthly' => 'اشتراك شهري',
-            'daily'   => 'اشتراك يومي',
-            default   => $this->subscription_type,
+            'single_day' => 'اشتراك يوم واحد',
+            'multi_day'  => 'اشتراك عدة أيام',
+            default      => $this->subscription_type,
         };
     }
 

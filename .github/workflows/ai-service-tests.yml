@@ -1,0 +1,37 @@
+name: ai_service tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ai_service/**'
+      - '.github/workflows/ai-service-tests.yml'
+  pull_request:
+    paths:
+      - 'ai_service/**'
+      - '.github/workflows/ai-service-tests.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai_service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Regenerate training data (leakage-resistant split)
+        run: python src/data_prep.py
+
+      - name: Train model
+        run: python src/train_model.py
+
+      - name: Run test suite
+        run: python -m pytest tests/ -v
