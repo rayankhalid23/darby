@@ -42,12 +42,8 @@ class ChildService
             $logisticsFields = ['preferred_time_slot', 'trip_direction', 'pickup_time', 'dropoff_time', 'start_date', 'end_date', 'subscription_type', 'is_active'];
             $logisticsData   = array_intersect_key($data, array_flip($logisticsFields));
             $childData       = array_diff_key($data, array_flip($logisticsFields));
-            $subType = $logisticsData['subscription_type'] ?? 'monthly';
-            if ($subType === 'multi_day') $subType = 'monthly';
-            if ($subType === 'single_day') $subType = 'daily';
-
             $child = Child::create($childData);
-    
+
             // 3. إضافة بيانات الـ Logistics مع الحقول الجديدة
             $child->logistics()->create([
                 'preferred_time_slot' => $logisticsData['preferred_time_slot'] ?? 'morning',
@@ -56,7 +52,7 @@ class ChildService
                 'dropoff_time'        => $logisticsData['dropoff_time'] ?? null,
                 'start_date'          => $logisticsData['start_date'] ?? now()->toDateString(),
                 'end_date'            => $logisticsData['end_date'] ?? now()->addMonth()->toDateString(),
-                'subscription_type'   => $subType,
+                'subscription_type'   => $logisticsData['subscription_type'] ?? 'multi_day',
                 'is_active'           => true,
             ]);
     
@@ -83,10 +79,6 @@ class ChildService
         $logisticsData   = array_intersect_key($data, array_flip($logisticsFields));
         $childData       = array_diff_key($data, array_flip($logisticsFields));
 
-        if (isset($logisticsData['subscription_type'])) {
-            if ($logisticsData['subscription_type'] === 'multi_day') $logisticsData['subscription_type'] = 'monthly';
-            if ($logisticsData['subscription_type'] === 'single_day') $logisticsData['subscription_type'] = 'daily';
-        }
 
         // 3. تحديث بيانات الطفل الأساسية
         if (!empty($childData)) {

@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api\Driver;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Driver\ProfileUpdateRequest;
+use App\Http\Requests\Api\Driver\UpdateLegalDocumentsRequest;
 use App\Services\Driver\DriverProfileService;
 use App\Http\Resources\Api\Driver\DriverResource;
+use App\Http\Resources\Api\Driver\DriverProfileResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -149,6 +151,25 @@ class ProfileController extends Controller
     }
 
     /**
+     * دالة عرض حالة اعتماد حساب السائق فقط (خفيفة، مخصصة لشاشة الانتظار بعد التسجيل)
+     * GET /api/v1/driver/status
+     */
+    public function status(Request $request): JsonResponse
+    {
+        try {
+            $data = $this->profileService->getDriverStatus($request->user()->id);
+
+            return response()->json(array_merge(['status' => true], $data), 200);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'status'  => false,
+                'message' => $e->getMessage() ?: 'تعذر جلب حالة الحساب.'
+            ], 404);
+        }
+    }
+
+    /**
      * 2. عرض بيانات الملف الشخصي للسائق بالكامل مع ملحقاته
      */
     public function show(): JsonResponse
@@ -168,7 +189,7 @@ class ProfileController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'تم جلب البيانات بنجاح.',
-                'data'    => new DriverResource($driver)
+                'data'    => new DriverProfileResource($driver)
             ], 200);
 
         } catch (Exception $e) {
@@ -222,21 +243,28 @@ class ProfileController extends Controller
     /**
      * 5. تحديث وتجديد المستندات والوثائق الرسمية للسائق
      */
-    public function updateLegalData(Request $request): JsonResponse
+    public function updateLegalData(UpdateLegalDocumentsRequest $request): JsonResponse
     {
+        $uploadedPaths = [];
         try {
-            $validatedData = $request->validate([
-                'national_id'               => 'required|string',
-                'license_number'             => 'required|string',
-                'license_expiry'             => 'required|date',
-                'doc_license_path'           => 'required|string',
-                'doc_logbook_path'           => 'required|string',
-                'doc_insurance_path'         => 'required|string',
-                'doc_criminal_record_path'   => 'required|string',
-            ]);
+            $data = $request->validated();
+
+            $docFileMap = [
+                'doc_license'   => 'doc_license_path',
+                'doc_logbook'   => 'doc_logbook_path',
+                'doc_insurance' => 'doc_insurance_path',
+            ];
+
+            foreach ($docFileMap as $fileField => $pathKey) {
+                if ($request->hasFile($fileField)) {
+                    $path = $request->file($fileField)->store('drivers/documents', 'public');
+                    $data[$pathKey] = 'storage/' . $path;
+                    $uploadedPaths[] = $path;
+                }
+            }
 
             $user = auth()->user();
-            $result = $this->profileService->updateLegalDocuments($user->id, $validatedData);
+            $result = $this->profileService->updateLegalDocuments($user->id, $data);
 
             return response()->json([
                 'status'  => true,
@@ -244,6 +272,9 @@ class ProfileController extends Controller
             ], 200);
 
         } catch (Exception $e) {
+            foreach ($uploadedPaths as $path) {
+                Storage::disk('public')->delete($path);
+            }
             Log::error("Driver Legal Data Update Error: " . $e->getMessage());
             return response()->json([
                 'status'  => false,
@@ -257,18 +288,25 @@ class ProfileController extends Controller
      */
     public function updateVehicle(Request $request, $vehicleId): JsonResponse
     {
+        $uploadedPaths = [];
         try {
             $validatedData = $request->validate([
-                'has_ac'             => 'nullable|boolean',
-                'plate_number'       => 'nullable|string',
-                'brand'              => 'nullable|string',
-                'model'              => 'nullable|string',
-                'year'               => 'nullable|integer',
-                'color'              => 'nullable|string',
-                'type'               => 'nullable|string',
-                'capacity_manual'    => 'nullable|integer',
-                'vehicle_image_path' => 'nullable|string',
+                'has_ac'          => 'nullable|boolean',
+                'plate_number'    => 'nullable|string',
+                'brand'           => 'nullable|string',
+                'model'           => 'nullable|string',
+                'year'            => 'nullable|integer',
+                'color'           => 'nullable|string',
+                'type'            => 'nullable|string',
+                'capacity_manual' => 'nullable|integer',
+                'vehicle_image'   => 'nullable|image|mimes:jpeg,png,jpg|max:4096',
             ]);
+
+            if ($request->hasFile('vehicle_image')) {
+                $path = $request->file('vehicle_image')->store('drivers/vehicles', 'public');
+                $validatedData['vehicle_image_path'] = 'storage/' . $path;
+                $uploadedPaths[] = $path;
+            }
 
             $user = auth()->user();
             $vehicle = $this->profileService->updateVehicleDetails($user->id, (int)$vehicleId, $validatedData);
@@ -276,10 +314,26 @@ class ProfileController extends Controller
             return response()->json([
                 'status'  => true,
                 'message' => 'تم تحديث تفاصيل المركبة بنجاح، وهي قيد المراجعة والتدقيق الآن من قبل الإدارة.',
-                'data'    => $vehicle
+                'data'    => [
+                    'id'                => $vehicle->id,
+                    'plate_number'      => $vehicle->plate_number,
+                    'brand'             => $vehicle->brand,
+                    'model'             => $vehicle->model,
+                    'year'              => $vehicle->year,
+                    'color'             => $vehicle->color,
+                    'type'              => $vehicle->type,
+                    'capacity_manual'   => $vehicle->capacity_manual,
+                    'vehicle_image_url' => $vehicle->vehicle_image_url ? url($vehicle->vehicle_image_url) : null,
+                    'has_ac'            => (bool) $vehicle->has_ac,
+                    'status'            => $vehicle->status,
+                    'is_verified'       => (bool) $vehicle->is_verified,
+                ]
             ], 200);
 
         } catch (Exception $e) {
+            foreach ($uploadedPaths as $path) {
+                Storage::disk('public')->delete($path);
+            }
             Log::error("Driver Vehicle Update Error: " . $e->getMessage());
             return response()->json([
                 'status'  => false,
@@ -319,7 +373,7 @@ public function showLegalData(Request $request)
                     'id'                    => $document->id,
                     'vehicle_id'            => $document->vehicle_id,
                     'doc_type'              => $document->doc_type,
-                    'file_url'              => $document->file_url,
+                    'file_url'              => $document->file_url ? url($document->file_url) : null,
                     'license_expiry_date'   => $document->license_expiry_date,
                     'insurance_expiry_date' => $document->insurance_expiry_date,
                     'document_status'       => $document->status,
@@ -369,7 +423,7 @@ public function showVehicle(Request $request)
             'capacity_manual'   => $vehicle->capacity_manual,
             'capacity_ai'       => $vehicle->capacity_ai,
             'is_verified'       => (bool) $vehicle->is_verified,
-            'vehicle_image_url' => $vehicle->vehicle_image_url,
+            'vehicle_image_url' => $vehicle->vehicle_image_url ? url($vehicle->vehicle_image_url) : null,
             'has_ac'            => (bool) $vehicle->has_ac,
             'status'            => $vehicle->status,
         ]

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace Database\Seeders;
 
@@ -34,22 +34,22 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
         $yesterday = Carbon::yesterday()->toDateString();
         $tomorrow = Carbon::tomorrow()->toDateString();
 
-        echo "🚀 بدء إنشاء وزرع بيانات سيناريوهات الرحلات والاشتراكات للسائق user_id = 11...\n";
+        echo "ًںڑ€ ط¨ط¯ط، ط¥ظ†ط´ط§ط، ظˆط²ط±ط¹ ط¨ظٹط§ظ†ط§طھ ط³ظٹظ†ط§ط±ظٹظˆظ‡ط§طھ ط§ظ„ط±ط­ظ„ط§طھ ظˆط§ظ„ط§ط´طھط±ط§ظƒط§طھ ظ„ظ„ط³ط§ط¦ظ‚ user_id = 11...\n";
 
         // =========================================================================
-        // 0. التأكد من وجود الأدوار الأساسية في النظام (Roles)
+        // 0. ط§ظ„طھط£ظƒط¯ ظ…ظ† ظˆط¬ظˆط¯ ط§ظ„ط£ط¯ظˆط§ط± ط§ظ„ط£ط³ط§ط³ظٹط© ظپظٹ ط§ظ„ظ†ط¸ط§ظ… (Roles)
         // =========================================================================
         DB::table('roles')->insertOrIgnore([
-            ['id' => 1, 'name' => 'super_admin', 'display_name' => 'سوبر أدمن'],
-            ['id' => 2, 'name' => 'admin',       'display_name' => 'مشرف النظام'],
-            ['id' => 3, 'name' => 'parent',      'display_name' => 'ولي أمر'],
-            ['id' => 4, 'name' => 'driver',      'display_name' => 'سائق'],
+            ['id' => 1, 'name' => 'super_admin', 'display_name' => 'ط³ظˆط¨ط± ط£ط¯ظ…ظ†'],
+            ['id' => 2, 'name' => 'admin',       'display_name' => 'ظ…ط´ط±ظپ ط§ظ„ظ†ط¸ط§ظ…'],
+            ['id' => 3, 'name' => 'parent',      'display_name' => 'ظˆظ„ظٹ ط£ظ…ط±'],
+            ['id' => 4, 'name' => 'driver',      'display_name' => 'ط³ط§ط¦ظ‚'],
         ]);
 
         // =========================================================================
-        // 1. تجهيز أو إنشاء حساب المستخدم للسائق user_id = 11 (User & Driver)
+        // 1. طھط¬ظ‡ظٹط² ط£ظˆ ط¥ظ†ط´ط§ط، ط­ط³ط§ط¨ ط§ظ„ظ…ط³طھط®ط¯ظ… ظ„ظ„ط³ط§ط¦ظ‚ user_id = 11 (User & Driver)
         // =========================================================================
-        // تحرير رقم الهاتف والبريد من أي حسابات أخرى لتفادي Duplicate Entry
+        // طھط­ط±ظٹط± ط±ظ‚ظ… ط§ظ„ظ‡ط§طھظپ ظˆط§ظ„ط¨ط±ظٹط¯ ظ…ظ† ط£ظٹ ط­ط³ط§ط¨ط§طھ ط£ط®ط±ظ‰ ظ„طھظپط§ط¯ظٹ Duplicate Entry
         DB::table('users')->where('phone_number', '0911111111')->where('id', '!=', 11)->update(['phone_number' => '0910000011']);
         DB::table('users')->where('email', 'driver11@darby.ly')->where('id', '!=', 11)->update(['email' => 'driver11_old@darby.ly']);
 
@@ -58,7 +58,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
         if (!$driverUser) {
             DB::table('users')->insert([
                 'id'                => 11,
-                'full_name'         => 'الكابتن عبد السلام المهدوي',
+                'full_name'         => 'ط§ظ„ظƒط§ط¨طھظ† ط¹ط¨ط¯ ط§ظ„ط³ظ„ط§ظ… ط§ظ„ظ…ظ‡ط¯ظˆظٹ',
                 'email'             => 'driver11@darby.ly',
                 'phone_number'      => '0911111111',
                 'password_hash'     => Hash::make('password123'),
@@ -70,18 +70,18 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
                 'updated_at'        => $now,
             ]);
             $driverUser = User::find(11);
-            echo "✅ تم إنشاء المستخدم المطلوب user_id = 11 (الكابتن عبد السلام المهدوي)\n";
+            echo "âœ… طھظ… ط¥ظ†ط´ط§ط، ط§ظ„ظ…ط³طھط®ط¯ظ… ط§ظ„ظ…ط·ظ„ظˆط¨ user_id = 11 (ط§ظ„ظƒط§ط¨طھظ† ط¹ط¨ط¯ ط§ظ„ط³ظ„ط§ظ… ط§ظ„ظ…ظ‡ط¯ظˆظٹ)\n";
         } else {
             $driverUser->update([
-                'full_name'    => 'الكابتن عبد السلام المهدوي',
+                'full_name'    => 'ط§ظ„ظƒط§ط¨طھظ† ط¹ط¨ط¯ ط§ظ„ط³ظ„ط§ظ… ط§ظ„ظ…ظ‡ط¯ظˆظٹ',
                 'email'        => 'driver11@darby.ly',
                 'phone_number' => '0911111111',
                 'is_active'    => 1,
             ]);
-            echo "ℹ️ تم التحديث على حساب المستخدم الموجود user_id = 11\n";
+            echo "â„¹ï¸ڈ طھظ… ط§ظ„طھط­ط¯ظٹط« ط¹ظ„ظ‰ ط­ط³ط§ط¨ ط§ظ„ظ…ط³طھط®ط¯ظ… ط§ظ„ظ…ظˆط¬ظˆط¯ user_id = 11\n";
         }
 
-        // إنشاء أو تحديث سجل السائق (Driver Profile)
+        // ط¥ظ†ط´ط§ط، ط£ظˆ طھط­ط¯ظٹط« ط³ط¬ظ„ ط§ظ„ط³ط§ط¦ظ‚ (Driver Profile)
         $driver = Driver::where('user_id', 11)->first();
 
         if (!$driver) {
@@ -117,20 +117,20 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
         }
 
         $driverId = $driver->id;
-        echo "✅ السائق جاهز (Driver ID: {$driverId}, User ID: 11)\n";
+        echo "âœ… ط§ظ„ط³ط§ط¦ظ‚ ط¬ط§ظ‡ط² (Driver ID: {$driverId}, User ID: 11)\n";
 
         // =========================================================================
-        // 2. إنشاء مركبة السائق وحجوزات المقاعد (Vehicle & Seat Slots)
+        // 2. ط¥ظ†ط´ط§ط، ظ…ط±ظƒط¨ط© ط§ظ„ط³ط§ط¦ظ‚ ظˆط­ط¬ظˆط²ط§طھ ط§ظ„ظ…ظ‚ط§ط¹ط¯ (Vehicle & Seat Slots)
         // =========================================================================
         $vehicleId = DB::table('vehicles')->where('driver_id', $driverId)->value('id');
         if (!$vehicleId) {
             $vehicleId = DB::table('vehicles')->insertGetId([
                 'driver_id'       => $driverId,
                 'plate_number'    => '5-88111',
-                'brand'           => 'تويوتا',
-                'model'           => 'هايس توين كابينة',
+                'brand'           => 'طھظˆظٹظˆطھط§',
+                'model'           => 'ظ‡ط§ظٹط³ طھظˆظٹظ† ظƒط§ط¨ظٹظ†ط©',
                 'year'            => '2023',
-                'color'           => 'أبيض ملكي',
+                'color'           => 'ط£ط¨ظٹط¶ ظ…ظ„ظƒظٹ',
                 'type'            => 'Van',
                 'capacity_manual' => 14,
                 'is_verified'     => 1,
@@ -141,7 +141,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             ]);
         }
 
-        // ضبط حجوزات المقاعد لكل الفترة
+        // ط¶ط¨ط· ط­ط¬ظˆط²ط§طھ ط§ظ„ظ…ظ‚ط§ط¹ط¯ ظ„ظƒظ„ ط§ظ„ظپطھط±ط©
         $seatSlots = [
             DriverSeatSlot::MORNING_GO       => ['total' => 14, 'reserved' => 5],
             DriverSeatSlot::MORNING_RETURN   => ['total' => 14, 'reserved' => 5],
@@ -157,30 +157,30 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
         }
 
         // =========================================================================
-        // 3. إنشاء المدارس الواقعية في طرابلس (Schools)
+        // 3. ط¥ظ†ط´ط§ط، ط§ظ„ظ…ط¯ط§ط±ط³ ط§ظ„ظˆط§ظ‚ط¹ظٹط© ظپظٹ ط·ط±ط§ط¨ظ„ط³ (Schools)
         // =========================================================================
         $schoolsSpecs = [
             'school_1' => [
-                'name'    => 'مدرسة الجيل الجديد الدولية (حي الأندلس)',
-                'address' => 'حي الأندلس - بالقرب من جامع الأندلس',
+                'name'    => 'ظ…ط¯ط±ط³ط© ط§ظ„ط¬ظٹظ„ ط§ظ„ط¬ط¯ظٹط¯ ط§ظ„ط¯ظˆظ„ظٹط© (ط­ظٹ ط§ظ„ط£ظ†ط¯ظ„ط³)',
+                'address' => 'ط­ظٹ ط§ظ„ط£ظ†ط¯ظ„ط³ - ط¨ط§ظ„ظ‚ط±ط¨ ظ…ظ† ط¬ط§ظ…ط¹ ط§ظ„ط£ظ†ط¯ظ„ط³',
                 'lat'     => 32.89000000,
                 'lng'     => 13.17000000,
             ],
             'school_2' => [
-                'name'    => 'مدرسة القدس النموذجية (شارع دمشق)',
-                'address' => 'شارع دمشق - طرابلس',
+                'name'    => 'ظ…ط¯ط±ط³ط© ط§ظ„ظ‚ط¯ط³ ط§ظ„ظ†ظ…ظˆط°ط¬ظٹط© (ط´ط§ط±ط¹ ط¯ظ…ط´ظ‚)',
+                'address' => 'ط´ط§ط±ط¹ ط¯ظ…ط´ظ‚ - ط·ط±ط§ط¨ظ„ط³',
                 'lat'     => 32.86500000,
                 'lng'     => 13.19000000,
             ],
             'school_3' => [
-                'name'    => 'مدرسة النواة الأولى (سوق الجمعة)',
-                'address' => 'سوق الجمعة - قرب مركز البريد',
+                'name'    => 'ظ…ط¯ط±ط³ط© ط§ظ„ظ†ظˆط§ط© ط§ظ„ط£ظˆظ„ظ‰ (ط³ظˆظ‚ ط§ظ„ط¬ظ…ط¹ط©)',
+                'address' => 'ط³ظˆظ‚ ط§ظ„ط¬ظ…ط¹ط© - ظ‚ط±ط¨ ظ…ط±ظƒط² ط§ظ„ط¨ط±ظٹط¯',
                 'lat'     => 32.89500000,
                 'lng'     => 13.22000000,
             ],
             'school_4' => [
-                'name'    => 'مدرسة ليبيا الحديثة (عين زارة)',
-                'address' => 'عين زارة - قرب الطرق الدائري',
+                'name'    => 'ظ…ط¯ط±ط³ط© ظ„ظٹط¨ظٹط§ ط§ظ„ط­ط¯ظٹط«ط© (ط¹ظٹظ† ط²ط§ط±ط©)',
+                'address' => 'ط¹ظٹظ† ط²ط§ط±ط© - ظ‚ط±ط¨ ط§ظ„ط·ط±ظ‚ ط§ظ„ط¯ط§ط¦ط±ظٹ',
                 'lat'     => 32.83500000,
                 'lng'     => 13.25000000,
             ],
@@ -202,16 +202,16 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
         }
 
         // =========================================================================
-        // 4. إنشاء أولياء الأمور والأطفال (Parents & Children)
+        // 4. ط¥ظ†ط´ط§ط، ط£ظˆظ„ظٹط§ط، ط§ظ„ط£ظ…ظˆط± ظˆط§ظ„ط£ط·ظپط§ظ„ (Parents & Children)
         // =========================================================================
         $parentsData = [
             [
                 'email'     => 'parent11_1@darby.ly',
-                'name'      => 'علي عبد الله الزوي',
+                'name'      => 'ط¹ظ„ظٹ ط¹ط¨ط¯ ط§ظ„ظ„ظ‡ ط§ظ„ط²ظˆظٹ',
                 'phone'     => '0912220011',
                 'children'  => [
                     [
-                        'name'          => 'طارق علي الزوي',
+                        'name'          => 'ط·ط§ط±ظ‚ ط¹ظ„ظٹ ط§ظ„ط²ظˆظٹ',
                         'gender'        => 'male',
                         'grade'         => 4,
                         'school_id'     => $schools['school_1']->id,
@@ -221,7 +221,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
                         'sub_scenario'  => 'active_full',
                     ],
                     [
-                        'name'          => 'سارة علي الزوي',
+                        'name'          => 'ط³ط§ط±ط© ط¹ظ„ظٹ ط§ظ„ط²ظˆظٹ',
                         'gender'        => 'female',
                         'grade'         => 2,
                         'school_id'     => $schools['school_1']->id,
@@ -234,11 +234,11 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             ],
             [
                 'email'     => 'parent11_2@darby.ly',
-                'name'      => 'محمد البشير الورفلي',
+                'name'      => 'ظ…ط­ظ…ط¯ ط§ظ„ط¨ط´ظٹط± ط§ظ„ظˆط±ظپظ„ظٹ',
                 'phone'     => '0912220022',
                 'children'  => [
                     [
-                        'name'          => 'عمر محمد الورفلي',
+                        'name'          => 'ط¹ظ…ط± ظ…ط­ظ…ط¯ ط§ظ„ظˆط±ظپظ„ظٹ',
                         'gender'        => 'male',
                         'grade'         => 5,
                         'school_id'     => $schools['school_1']->id,
@@ -251,11 +251,11 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             ],
             [
                 'email'     => 'parent11_3@darby.ly',
-                'name'      => 'عبد الله إبراهيم الترهوني',
+                'name'      => 'ط¹ط¨ط¯ ط§ظ„ظ„ظ‡ ط¥ط¨ط±ط§ظ‡ظٹظ… ط§ظ„طھط±ظ‡ظˆظ†ظٹ',
                 'phone'     => '0912220033',
                 'children'  => [
                     [
-                        'name'          => 'خديجة عبد الله الترهوني',
+                        'name'          => 'ط®ط¯ظٹط¬ط© ط¹ط¨ط¯ ط§ظ„ظ„ظ‡ ط§ظ„طھط±ظ‡ظˆظ†ظٹ',
                         'gender'        => 'female',
                         'grade'         => 3,
                         'school_id'     => $schools['school_2']->id,
@@ -265,7 +265,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
                         'sub_scenario'  => 'active_morning_only',
                     ],
                     [
-                        'name'          => 'أنس عبد الله الترهوني',
+                        'name'          => 'ط£ظ†ط³ ط¹ط¨ط¯ ط§ظ„ظ„ظ‡ ط§ظ„طھط±ظ‡ظˆظ†ظٹ',
                         'gender'        => 'male',
                         'grade'         => 1,
                         'school_id'     => $schools['school_2']->id,
@@ -278,11 +278,11 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             ],
             [
                 'email'     => 'parent11_4@darby.ly',
-                'name'      => 'طارق مصطفى القراماني',
+                'name'      => 'ط·ط§ط±ظ‚ ظ…طµط·ظپظ‰ ط§ظ„ظ‚ط±ط§ظ…ط§ظ†ظٹ',
                 'phone'     => '0912220044',
                 'children'  => [
                     [
-                        'name'          => 'ياسمين طارق القراماني',
+                        'name'          => 'ظٹط§ط³ظ…ظٹظ† ط·ط§ط±ظ‚ ط§ظ„ظ‚ط±ط§ظ…ط§ظ†ظٹ',
                         'gender'        => 'female',
                         'grade'         => 6,
                         'school_id'     => $schools['school_3']->id,
@@ -295,11 +295,11 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             ],
             [
                 'email'     => 'parent11_5@darby.ly',
-                'name'      => 'عمر فرج الكيلاني',
+                'name'      => 'ط¹ظ…ط± ظپط±ط¬ ط§ظ„ظƒظٹظ„ط§ظ†ظٹ',
                 'phone'     => '0912220055',
                 'children'  => [
                     [
-                        'name'          => 'مالك عمر الكيلاني',
+                        'name'          => 'ظ…ط§ظ„ظƒ ط¹ظ…ط± ط§ظ„ظƒظٹظ„ط§ظ†ظٹ',
                         'gender'        => 'male',
                         'grade'         => 4,
                         'school_id'     => $schools['school_4']->id,
@@ -312,11 +312,11 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             ],
             [
                 'email'     => 'parent11_6@darby.ly',
-                'name'      => 'خالد سعد الفيتوري',
+                'name'      => 'ط®ط§ظ„ط¯ ط³ط¹ط¯ ط§ظ„ظپظٹطھظˆط±ظٹ',
                 'phone'     => '0912220066',
                 'children'  => [
                     [
-                        'name'          => 'فاطمة خالد الفيتوري',
+                        'name'          => 'ظپط§ط·ظ…ط© ط®ط§ظ„ط¯ ط§ظ„ظپظٹطھظˆط±ظٹ',
                         'gender'        => 'female',
                         'grade'         => 3,
                         'school_id'     => $schools['school_1']->id,
@@ -332,7 +332,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
         $createdChildren = [];
 
         foreach ($parentsData as $pData) {
-            // تحرير رقم الهاتف إن كان مستخدماً من قبل حسـاب آخر
+            // طھط­ط±ظٹط± ط±ظ‚ظ… ط§ظ„ظ‡ط§طھظپ ط¥ظ† ظƒط§ظ† ظ…ط³طھط®ط¯ظ…ط§ظ‹ ظ…ظ† ظ‚ط¨ظ„ ط­ط³ظ€ط§ط¨ ط¢ط®ط±
             DB::table('users')->where('phone_number', $pData['phone'])->where('email', '!=', $pData['email'])->update(['phone_number' => '091000' . rand(1000, 9999)]);
 
             $pUser = User::where('email', $pData['email'])->first();
@@ -379,14 +379,14 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             }
         }
 
-        echo "✅ تم زرع أولياء الأمور والأطفال والرموز السرية QR بنجاح!\n";
+        echo "âœ… طھظ… ط²ط±ط¹ ط£ظˆظ„ظٹط§ط، ط§ظ„ط£ظ…ظˆط± ظˆط§ظ„ط£ط·ظپط§ظ„ ظˆط§ظ„ط±ظ…ظˆط² ط§ظ„ط³ط±ظٹط© QR ط¨ظ†ط¬ط§ط­!\n";
 
         // =========================================================================
-        // 5. إنشاء وتنوع سيناريوهات العقود والاشتراكات (Contracts & Subscriptions)
+        // 5. ط¥ظ†ط´ط§ط، ظˆطھظ†ظˆط¹ ط³ظٹظ†ط§ط±ظٹظˆظ‡ط§طھ ط§ظ„ط¹ظ‚ظˆط¯ ظˆط§ظ„ط§ط´طھط±ط§ظƒط§طھ (Contracts & Subscriptions)
         // =========================================================================
         
-        // أ) العقود والاشتراكات النشطة الكاملة (Active Full Subscriptions)
-        foreach (['طارق علي الزوي', 'سارة علي الزوي', 'عمر محمد الورفلي'] as $childName) {
+        // ط£) ط§ظ„ط¹ظ‚ظˆط¯ ظˆط§ظ„ط§ط´طھط±ط§ظƒط§طھ ط§ظ„ظ†ط´ط·ط© ط§ظ„ظƒط§ظ…ظ„ط© (Active Full Subscriptions)
+        foreach (['ط·ط§ط±ظ‚ ط¹ظ„ظٹ ط§ظ„ط²ظˆظٹ', 'ط³ط§ط±ط© ط¹ظ„ظٹ ط§ظ„ط²ظˆظٹ', 'ط¹ظ…ط± ظ…ط­ظ…ط¯ ط§ظ„ظˆط±ظپظ„ظٹ'] as $childName) {
             $ch = $createdChildren[$childName];
             $parentModel = $ch->parent;
 
@@ -394,7 +394,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
                 ['parent_id' => $parentModel->id, 'driver_id' => $driverId, 'status' => 'accepted'],
                 [
                     'school_id'         => $ch->school_id,
-                    'subscription_type' => 'monthly',
+                    'subscription_type' => 'multi_day',
                     'direction'         => 'both',
                     'timing'            => 'BOTH',
                     'start_date'        => Carbon::today()->startOfMonth()->toDateString(),
@@ -411,7 +411,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
                     'parent_id'         => $parentModel->id,
                     'driver_id'         => $driverUser->id,
                     'contract_number'   => Contract::generateContractNumber(),
-                    'subscription_type' => 'monthly',
+                    'subscription_type' => 'multi_day',
                     'direction'         => 'both',
                     'timing'            => 'BOTH',
                     'start_date'        => Carbon::today()->startOfMonth()->toDateString(),
@@ -433,7 +433,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
                     'parent_id'     => $parentModel->user_id,
                     'pickup_lat'    => $ch->home_lat,
                     'pickup_lng'    => $ch->home_lng,
-                    'pickup_label'  => 'المنزل - حي الأندلس / السياحية',
+                    'pickup_label'  => 'ط§ظ„ظ…ظ†ط²ظ„ - ط­ظٹ ط§ظ„ط£ظ†ط¯ظ„ط³ / ط§ظ„ط³ظٹط§ط­ظٹط©',
                     'dropoff_lat'   => $ch->school->lat,
                     'dropoff_lng'   => $ch->school->lng,
                     'dropoff_label' => $ch->school->name,
@@ -444,8 +444,8 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             );
         }
 
-        // ب) الاشتراكات الصباحية فقط (Active Morning Only)
-        foreach (['خديجة عبد الله الترهوني', 'أنس عبد الله الترهوني'] as $childName) {
+        // ط¨) ط§ظ„ط§ط´طھط±ط§ظƒط§طھ ط§ظ„طµط¨ط§ط­ظٹط© ظپظ‚ط· (Active Morning Only)
+        foreach (['ط®ط¯ظٹط¬ط© ط¹ط¨ط¯ ط§ظ„ظ„ظ‡ ط§ظ„طھط±ظ‡ظˆظ†ظٹ', 'ط£ظ†ط³ ط¹ط¨ط¯ ط§ظ„ظ„ظ‡ ط§ظ„طھط±ظ‡ظˆظ†ظٹ'] as $childName) {
             $ch = $createdChildren[$childName];
             $parentModel = $ch->parent;
 
@@ -453,7 +453,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
                 ['parent_id' => $parentModel->id, 'driver_id' => $driverId, 'direction' => 'go', 'status' => 'accepted'],
                 [
                     'school_id'         => $ch->school_id,
-                    'subscription_type' => 'monthly',
+                    'subscription_type' => 'multi_day',
                     'direction'         => 'go',
                     'timing'            => 'MORNING',
                     'start_date'        => Carbon::today()->startOfMonth()->toDateString(),
@@ -470,7 +470,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
                     'parent_id'         => $parentModel->id,
                     'driver_id'         => $driverUser->id,
                     'contract_number'   => Contract::generateContractNumber(),
-                    'subscription_type' => 'monthly',
+                    'subscription_type' => 'multi_day',
                     'direction'         => 'go',
                     'timing'            => 'MORNING',
                     'start_date'        => Carbon::today()->startOfMonth()->toDateString(),
@@ -492,7 +492,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
                     'parent_id'     => $parentModel->user_id,
                     'pickup_lat'    => $ch->home_lat,
                     'pickup_lng'    => $ch->home_lng,
-                    'pickup_label'  => 'المنزل - سوق الجمعة',
+                    'pickup_label'  => 'ط§ظ„ظ…ظ†ط²ظ„ - ط³ظˆظ‚ ط§ظ„ط¬ظ…ط¹ط©',
                     'dropoff_lat'   => $ch->school->lat,
                     'dropoff_lng'   => $ch->school->lng,
                     'dropoff_label' => $ch->school->name,
@@ -503,13 +503,13 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             );
         }
 
-        // ج) اشتراك ملغى / موقف (Cancelled Subscription)
-        $chPaused = $createdChildren['ياسمين طارق القراماني'];
+        // ط¬) ط§ط´طھط±ط§ظƒ ظ…ظ„ط؛ظ‰ / ظ…ظˆظ‚ظپ (Cancelled Subscription)
+        $chPaused = $createdChildren['ظٹط§ط³ظ…ظٹظ† ط·ط§ط±ظ‚ ط§ظ„ظ‚ط±ط§ظ…ط§ظ†ظٹ'];
         $subReqPaused = SubscriptionRequest::firstOrCreate(
             ['parent_id' => $chPaused->parent->id, 'driver_id' => $driverId, 'status' => 'cancelled'],
             [
                 'school_id'         => $chPaused->school_id,
-                'subscription_type' => 'monthly',
+                'subscription_type' => 'multi_day',
                 'direction'         => 'both',
                 'timing'            => 'BOTH',
                 'start_date'        => Carbon::today()->subMonth()->toDateString(),
@@ -525,7 +525,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
                 'parent_id'         => $chPaused->parent->id,
                 'driver_id'         => $driverUser->id,
                 'contract_number'   => Contract::generateContractNumber(),
-                'subscription_type' => 'monthly',
+                'subscription_type' => 'multi_day',
                 'direction'         => 'both',
                 'timing'            => 'BOTH',
                 'start_date'        => Carbon::today()->subMonth()->toDateString(),
@@ -546,7 +546,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
                 'parent_id'     => $chPaused->parent->user_id,
                 'pickup_lat'    => $chPaused->home_lat,
                 'pickup_lng'    => $chPaused->home_lng,
-                'pickup_label'  => 'المنزل - عين زارة',
+                'pickup_label'  => 'ط§ظ„ظ…ظ†ط²ظ„ - ط¹ظٹظ† ط²ط§ط±ط©',
                 'dropoff_lat'   => $chPaused->school->lat,
                 'dropoff_lng'   => $chPaused->school->lng,
                 'dropoff_label' => $chPaused->school->name,
@@ -554,13 +554,13 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             ]
         );
 
-        // د) اشتراك مكتمل / منتهي الصلاحية (Completed Subscription)
-        $chExpired = $createdChildren['مالك عمر الكيلاني'];
+        // ط¯) ط§ط´طھط±ط§ظƒ ظ…ظƒطھظ…ظ„ / ظ…ظ†طھظ‡ظٹ ط§ظ„طµظ„ط§ط­ظٹط© (Completed Subscription)
+        $chExpired = $createdChildren['ظ…ط§ظ„ظƒ ط¹ظ…ط± ط§ظ„ظƒظٹظ„ط§ظ†ظٹ'];
         $subReqExpired = SubscriptionRequest::firstOrCreate(
             ['parent_id' => $chExpired->parent->id, 'driver_id' => $driverId, 'status' => 'accepted'],
             [
                 'school_id'         => $chExpired->school_id,
-                'subscription_type' => 'monthly',
+                'subscription_type' => 'multi_day',
                 'direction'         => 'both',
                 'timing'            => 'BOTH',
                 'start_date'        => Carbon::today()->subMonths(2)->toDateString(),
@@ -576,7 +576,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
                 'parent_id'         => $chExpired->parent->id,
                 'driver_id'         => $driverUser->id,
                 'contract_number'   => Contract::generateContractNumber(),
-                'subscription_type' => 'monthly',
+                'subscription_type' => 'multi_day',
                 'direction'         => 'both',
                 'timing'            => 'BOTH',
                 'start_date'        => Carbon::today()->subMonths(2)->toDateString(),
@@ -597,7 +597,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
                 'parent_id'     => $chExpired->parent->user_id,
                 'pickup_lat'    => $chExpired->home_lat,
                 'pickup_lng'    => $chExpired->home_lng,
-                'pickup_label'  => 'المنزل - جنزور',
+                'pickup_label'  => 'ط§ظ„ظ…ظ†ط²ظ„ - ط¬ظ†ط²ظˆط±',
                 'dropoff_lat'   => $chExpired->school->lat,
                 'dropoff_lng'   => $chExpired->school->lng,
                 'dropoff_label' => $chExpired->school->name,
@@ -605,13 +605,13 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             ]
         );
 
-        // هـ) طلب اشتراك قيد الانتظار (Pending Request)
-        $chPending = $createdChildren['فاطمة خالد الفيتوري'];
+        // ظ‡ظ€) ط·ظ„ط¨ ط§ط´طھط±ط§ظƒ ظ‚ظٹط¯ ط§ظ„ط§ظ†طھط¸ط§ط± (Pending Request)
+        $chPending = $createdChildren['ظپط§ط·ظ…ط© ط®ط§ظ„ط¯ ط§ظ„ظپظٹطھظˆط±ظٹ'];
         SubscriptionRequest::firstOrCreate(
             ['parent_id' => $chPending->parent->id, 'driver_id' => $driverId, 'status' => 'pending'],
             [
                 'school_id'         => $chPending->school_id,
-                'subscription_type' => 'monthly',
+                'subscription_type' => 'multi_day',
                 'direction'         => 'both',
                 'timing'            => 'BOTH',
                 'start_date'        => Carbon::tomorrow()->toDateString(),
@@ -619,36 +619,36 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
                 'days_count'        => 20,
                 'total_price'       => 320.00,
                 'children_count'    => 1,
-                'notes'             => 'طلب اشتراك جديد لنهاية الفصل الدراسي',
+                'notes'             => 'ط·ظ„ط¨ ط§ط´طھط±ط§ظƒ ط¬ط¯ظٹط¯ ظ„ظ†ظ‡ط§ظٹط© ط§ظ„ظپطµظ„ ط§ظ„ط¯ط±ط§ط³ظٹ',
             ]
         );
 
-        echo "✅ تم إدخال جميع سيناريوهات الاشتراكات (نشط كامل، نشط صباحي، موقف، منتهي، قيد الانتظار)\n";
+        echo "âœ… طھظ… ط¥ط¯ط®ط§ظ„ ط¬ظ…ظٹط¹ ط³ظٹظ†ط§ط±ظٹظˆظ‡ط§طھ ط§ظ„ط§ط´طھط±ط§ظƒط§طھ (ظ†ط´ط· ظƒط§ظ…ظ„طŒ ظ†ط´ط· طµط¨ط§ط­ظٹطŒ ظ…ظˆظ‚ظپطŒ ظ…ظ†طھظ‡ظٹطŒ ظ‚ظٹط¯ ط§ظ„ط§ظ†طھط¸ط§ط±)\n";
 
         // =========================================================================
-        // 6. إنشاء المسارات الهيكلية المرجعية للسائق (Master Routes & RouteStops)
+        // 6. ط¥ظ†ط´ط§ط، ط§ظ„ظ…ط³ط§ط±ط§طھ ط§ظ„ظ‡ظٹظƒظ„ظٹط© ط§ظ„ظ…ط±ط¬ط¹ظٹط© ظ„ظ„ط³ط§ط¦ظ‚ (Master Routes & RouteStops)
         // =========================================================================
         
-        // المسار 1: الذهاب الصباحي (Morning Go)
+        // ط§ظ„ظ…ط³ط§ط± 1: ط§ظ„ط°ظ‡ط§ط¨ ط§ظ„طµط¨ط§ط­ظٹ (Morning Go)
         $routeMorning = RouteModel::updateOrCreate(
             ['driver_id' => $driverId, 'route_type' => 'Morning', 'shift_slot' => DriverSeatSlot::MORNING_GO],
             [
                 'vehicle_id'         => $vehicleId,
-                'route_name'         => 'مسار الذهاب الصباحي - حي الأندلس والسياحية إلى المدارس',
+                'route_name'         => 'ظ…ط³ط§ط± ط§ظ„ط°ظ‡ط§ط¨ ط§ظ„طµط¨ط§ط­ظٹ - ط­ظٹ ط§ظ„ط£ظ†ط¯ظ„ط³ ظˆط§ظ„ط³ظٹط§ط­ظٹط© ط¥ظ„ظ‰ ط§ظ„ظ…ط¯ط§ط±ط³',
                 'start_time'         => '07:00:00',
                 'estimated_duration' => 45,
                 'status'             => 'Active',
             ]
         );
 
-        // مسح محطات المسار القديمة لإعادة زرعها بانتظام
+        // ظ…ط³ط­ ظ…ط­ط·ط§طھ ط§ظ„ظ…ط³ط§ط± ط§ظ„ظ‚ط¯ظٹظ…ط© ظ„ط¥ط¹ط§ط¯ط© ط²ط±ط¹ظ‡ط§ ط¨ط§ظ†طھط¸ط§ظ…
         RouteStop::where('route_id', $routeMorning->id)->delete();
 
         $morningStops = [
-            ['type' => 'home',   'child' => 'طارق علي الزوي',          'school' => null,                   'lat' => 32.8875, 'lng' => 13.1720, 'label' => 'منزل عائلة الزوي', 'seq' => 1],
-            ['type' => 'home',   'child' => 'عمر محمد الورفلي',        'school' => null,                   'lat' => 32.8790, 'lng' => 13.1580, 'label' => 'منزل عائلة الورفلي', 'seq' => 2],
-            ['type' => 'home',   'child' => 'خديجة عبد الله الترهوني',  'school' => null,                   'lat' => 32.8950, 'lng' => 13.2200, 'label' => 'منزل عائلة الترهوني', 'seq' => 3],
-            ['type' => 'home',   'child' => 'أنس عبد الله الترهوني',   'school' => null,                   'lat' => 32.8950, 'lng' => 13.2200, 'label' => 'منزل عائلة الترهوني', 'seq' => 4],
+            ['type' => 'home',   'child' => 'ط·ط§ط±ظ‚ ط¹ظ„ظٹ ط§ظ„ط²ظˆظٹ',          'school' => null,                   'lat' => 32.8875, 'lng' => 13.1720, 'label' => 'ظ…ظ†ط²ظ„ ط¹ط§ط¦ظ„ط© ط§ظ„ط²ظˆظٹ', 'seq' => 1],
+            ['type' => 'home',   'child' => 'ط¹ظ…ط± ظ…ط­ظ…ط¯ ط§ظ„ظˆط±ظپظ„ظٹ',        'school' => null,                   'lat' => 32.8790, 'lng' => 13.1580, 'label' => 'ظ…ظ†ط²ظ„ ط¹ط§ط¦ظ„ط© ط§ظ„ظˆط±ظپظ„ظٹ', 'seq' => 2],
+            ['type' => 'home',   'child' => 'ط®ط¯ظٹط¬ط© ط¹ط¨ط¯ ط§ظ„ظ„ظ‡ ط§ظ„طھط±ظ‡ظˆظ†ظٹ',  'school' => null,                   'lat' => 32.8950, 'lng' => 13.2200, 'label' => 'ظ…ظ†ط²ظ„ ط¹ط§ط¦ظ„ط© ط§ظ„طھط±ظ‡ظˆظ†ظٹ', 'seq' => 3],
+            ['type' => 'home',   'child' => 'ط£ظ†ط³ ط¹ط¨ط¯ ط§ظ„ظ„ظ‡ ط§ظ„طھط±ظ‡ظˆظ†ظٹ',   'school' => null,                   'lat' => 32.8950, 'lng' => 13.2200, 'label' => 'ظ…ظ†ط²ظ„ ط¹ط§ط¦ظ„ط© ط§ظ„طھط±ظ‡ظˆظ†ظٹ', 'seq' => 4],
             ['type' => 'school', 'child' => null,                      'school' => $schools['school_1']->id, 'lat' => 32.8900, 'lng' => 13.1700, 'label' => $schools['school_1']->name, 'seq' => 5],
             ['type' => 'school', 'child' => null,                      'school' => $schools['school_2']->id, 'lat' => 32.8650, 'lng' => 13.1900, 'label' => $schools['school_2']->name, 'seq' => 6],
         ];
@@ -671,29 +671,29 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             }
         }
 
-        // ربط الاشتراكات النشطة بهذا المسار
+        // ط±ط¨ط· ط§ظ„ط§ط´طھط±ط§ظƒط§طھ ط§ظ„ظ†ط´ط·ط© ط¨ظ‡ط°ط§ ط§ظ„ظ…ط³ط§ط±
         ActiveSubscription::where('driver_id', $driverId)->update(['route_id' => $routeMorning->id]);
 
-        // المسار 2: العودة الصباحية (Morning Return)
+        // ط§ظ„ظ…ط³ط§ط± 2: ط§ظ„ط¹ظˆط¯ط© ط§ظ„طµط¨ط§ط­ظٹط© (Morning Return)
         $routeReturn = RouteModel::updateOrCreate(
             ['driver_id' => $driverId, 'route_type' => 'Morning', 'shift_slot' => DriverSeatSlot::MORNING_RETURN],
             [
                 'vehicle_id'         => $vehicleId,
-                'route_name'         => 'مسار العودة الصباحي - من المدارس إلى المنازل',
+                'route_name'         => 'ظ…ط³ط§ط± ط§ظ„ط¹ظˆط¯ط© ط§ظ„طµط¨ط§ط­ظٹ - ظ…ظ† ط§ظ„ظ…ط¯ط§ط±ط³ ط¥ظ„ظ‰ ط§ظ„ظ…ظ†ط§ط²ظ„',
                 'start_time'         => '13:30:00',
                 'estimated_duration' => 40,
                 'status'             => 'Active',
             ]
         );
 
-        echo "✅ تم إنشاء وتحديث المسارات الهيكلية ومحطاتها بنجاح!\n";
+        echo "âœ… طھظ… ط¥ظ†ط´ط§ط، ظˆطھط­ط¯ظٹط« ط§ظ„ظ…ط³ط§ط±ط§طھ ط§ظ„ظ‡ظٹظƒظ„ظٹط© ظˆظ…ط­ط·ط§طھظ‡ط§ ط¨ظ†ط¬ط§ط­!\n";
 
         // =========================================================================
-        // 7. زرع غياب مجدول لطفل وللسائق (Absence Scenarios)
+        // 7. ط²ط±ط¹ ط؛ظٹط§ط¨ ظ…ط¬ط¯ظˆظ„ ظ„ط·ظپظ„ ظˆظ„ظ„ط³ط§ط¦ظ‚ (Absence Scenarios)
         // =========================================================================
         
-        // غياب الطفل "أنس الترهوني" اليوم ومستقبلاً من ولي الأمر
-        $childAnas = $createdChildren['أنس عبد الله الترهوني'];
+        // ط؛ظٹط§ط¨ ط§ظ„ط·ظپظ„ "ط£ظ†ط³ ط§ظ„طھط±ظ‡ظˆظ†ظٹ" ط§ظ„ظٹظˆظ… ظˆظ…ط³طھظ‚ط¨ظ„ط§ظ‹ ظ…ظ† ظˆظ„ظٹ ط§ظ„ط£ظ…ط±
+        $childAnas = $createdChildren['ط£ظ†ط³ ط¹ط¨ط¯ ط§ظ„ظ„ظ‡ ط§ظ„طھط±ظ‡ظˆظ†ظٹ'];
         AbsenceLog::updateOrCreate(
             ['child_id' => $childAnas->id, 'absence_date' => $today],
             [
@@ -703,17 +703,17 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             ]
         );
 
-        // غياب السائق بعد 3 أيام (Driver Absence)
+        // ط؛ظٹط§ط¨ ط§ظ„ط³ط§ط¦ظ‚ ط¨ط¹ط¯ 3 ط£ظٹط§ظ… (Driver Absence)
         DriverAbsence::updateOrCreate(
             ['driver_id' => $driverId, 'absence_date' => Carbon::tomorrow()->addDays(3)->toDateString()]
         );
 
         // =========================================================================
-        // 8. زرع كافة سيناريوهات الرحلات التشغيلية (Trip Scenarios)
+        // 8. ط²ط±ط¹ ظƒط§ظپط© ط³ظٹظ†ط§ط±ظٹظˆظ‡ط§طھ ط§ظ„ط±ط­ظ„ط§طھ ط§ظ„طھط´ط؛ظٹظ„ظٹط© (Trip Scenarios)
         // =========================================================================
 
         // -------------------------------------------------------------------------
-        // السيناريو الأول: رحلة صباحية جارية حالياً اليوم (Ongoing Active Trip: status = started)
+        // ط§ظ„ط³ظٹظ†ط§ط±ظٹظˆ ط§ظ„ط£ظˆظ„: ط±ط­ظ„ط© طµط¨ط§ط­ظٹط© ط¬ط§ط±ظٹط© ط­ط§ظ„ظٹط§ظ‹ ط§ظ„ظٹظˆظ… (Ongoing Active Trip: status = started)
         // -------------------------------------------------------------------------
         $tripOngoing = Trip::updateOrCreate(
             [
@@ -735,74 +735,74 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             ]
         );
 
-        // تنظيف المحطات والأحداث القديمة لهذه الرحلة
+        // طھظ†ط¸ظٹظپ ط§ظ„ظ…ط­ط·ط§طھ ظˆط§ظ„ط£ط­ط¯ط§ط« ط§ظ„ظ‚ط¯ظٹظ…ط© ظ„ظ‡ط°ظ‡ ط§ظ„ط±ط­ظ„ط©
         TripStop::where('trip_id', $tripOngoing->id)->delete();
         TripEvent::where('trip_id', $tripOngoing->id)->delete();
         TripTracking::where('trip_id', $tripOngoing->id)->delete();
 
-        // محطات الرحلة الجارية مع تنوع كامل في الحالات الدقيقة (boarded, pending, skipped, absent_pre)
+        // ظ…ط­ط·ط§طھ ط§ظ„ط±ط­ظ„ط© ط§ظ„ط¬ط§ط±ظٹط© ظ…ط¹ طھظ†ظˆط¹ ظƒط§ظ…ظ„ ظپظٹ ط§ظ„ط­ط§ظ„ط§طھ ط§ظ„ط¯ظ‚ظٹظ‚ط© (boarded, pending, skipped, absent_pre)
         $ongoingStopsData = [
-            // طارق الزوي: صعد للحافلة وتم مسح الـ QR
+            // ط·ط§ط±ظ‚ ط§ظ„ط²ظˆظٹ: طµط¹ط¯ ظ„ظ„ط­ط§ظپظ„ط© ظˆطھظ… ظ…ط³ط­ ط§ظ„ظ€ QR
             [
-                'child'     => 'طارق علي الزوي',
+                'child'     => 'ط·ط§ط±ظ‚ ط¹ظ„ظٹ ط§ظ„ط²ظˆظٹ',
                 'school'    => null,
                 'type'      => TripStop::TYPE_HOME,
                 'status'    => TripStop::STATUS_BOARDED,
                 'lat'       => 32.8875,
                 'lng'       => 13.1720,
-                'label'     => 'منزل طارق الزوي (حي الأندلس)',
+                'label'     => 'ظ…ظ†ط²ظ„ ط·ط§ط±ظ‚ ط§ظ„ط²ظˆظٹ (ط­ظٹ ط§ظ„ط£ظ†ط¯ظ„ط³)',
                 'seq'       => 1,
                 'eta'       => '07:08',
             ],
-            // سارة الزوي: صعدت للحافلة أيضاً
+            // ط³ط§ط±ط© ط§ظ„ط²ظˆظٹ: طµط¹ط¯طھ ظ„ظ„ط­ط§ظپظ„ط© ط£ظٹط¶ط§ظ‹
             [
-                'child'     => 'سارة علي الزوي',
+                'child'     => 'ط³ط§ط±ط© ط¹ظ„ظٹ ط§ظ„ط²ظˆظٹ',
                 'school'    => null,
                 'type'      => TripStop::TYPE_HOME,
                 'status'    => TripStop::STATUS_BOARDED,
                 'lat'       => 32.8875,
                 'lng'       => 13.1720,
-                'label'     => 'منزل سارة الزوي (حي الأندلس)',
+                'label'     => 'ظ…ظ†ط²ظ„ ط³ط§ط±ط© ط§ظ„ط²ظˆظٹ (ط­ظٹ ط§ظ„ط£ظ†ط¯ظ„ط³)',
                 'seq'       => 2,
                 'eta'       => '07:09',
             ],
-            // عمر الورفلي: المحطة القادمة للسائق (قيد الانتظار)
+            // ط¹ظ…ط± ط§ظ„ظˆط±ظپظ„ظٹ: ط§ظ„ظ…ط­ط·ط© ط§ظ„ظ‚ط§ط¯ظ…ط© ظ„ظ„ط³ط§ط¦ظ‚ (ظ‚ظٹط¯ ط§ظ„ط§ظ†طھط¸ط§ط±)
             [
-                'child'     => 'عمر محمد الورفلي',
+                'child'     => 'ط¹ظ…ط± ظ…ط­ظ…ط¯ ط§ظ„ظˆط±ظپظ„ظٹ',
                 'school'    => null,
                 'type'      => TripStop::TYPE_HOME,
                 'status'    => TripStop::STATUS_PENDING,
                 'lat'       => 32.8790,
                 'lng'       => 13.1580,
-                'label'     => 'منزل عمر الورفلي (السياحية) - المحطة القادمة',
+                'label'     => 'ظ…ظ†ط²ظ„ ط¹ظ…ط± ط§ظ„ظˆط±ظپظ„ظٹ (ط§ظ„ط³ظٹط§ط­ظٹط©) - ط§ظ„ظ…ط­ط·ط© ط§ظ„ظ‚ط§ط¯ظ…ط©',
                 'seq'       => 3,
                 'eta'       => '07:22',
             ],
-            // خديجة الترهوني: تم تخطي محطتها لعدم الاستجابة عند الباب
+            // ط®ط¯ظٹط¬ط© ط§ظ„طھط±ظ‡ظˆظ†ظٹ: طھظ… طھط®ط·ظٹ ظ…ط­ط·طھظ‡ط§ ظ„ط¹ط¯ظ… ط§ظ„ط§ط³طھط¬ط§ط¨ط© ط¹ظ†ط¯ ط§ظ„ط¨ط§ط¨
             [
-                'child'     => 'خديجة عبد الله الترهوني',
+                'child'     => 'ط®ط¯ظٹط¬ط© ط¹ط¨ط¯ ط§ظ„ظ„ظ‡ ط§ظ„طھط±ظ‡ظˆظ†ظٹ',
                 'school'    => null,
                 'type'      => TripStop::TYPE_HOME,
                 'status'    => TripStop::STATUS_SKIPPED_UNRESPONSIVE,
                 'lat'       => 32.8950,
                 'lng'       => 13.2200,
-                'label'     => 'منزل خديجة الترهوني (تم التخطي)',
+                'label'     => 'ظ…ظ†ط²ظ„ ط®ط¯ظٹط¬ط© ط§ظ„طھط±ظ‡ظˆظ†ظٹ (طھظ… ط§ظ„طھط®ط·ظٹ)',
                 'seq'       => 4,
                 'eta'       => '07:30',
             ],
-            // أنس الترهوني: غائب بعلم مسبق من ولي الأمر
+            // ط£ظ†ط³ ط§ظ„طھط±ظ‡ظˆظ†ظٹ: ط؛ط§ط¦ط¨ ط¨ط¹ظ„ظ… ظ…ط³ط¨ظ‚ ظ…ظ† ظˆظ„ظٹ ط§ظ„ط£ظ…ط±
             [
-                'child'     => 'أنس عبد الله الترهوني',
+                'child'     => 'ط£ظ†ط³ ط¹ط¨ط¯ ط§ظ„ظ„ظ‡ ط§ظ„طھط±ظ‡ظˆظ†ظٹ',
                 'school'    => null,
                 'type'      => TripStop::TYPE_HOME,
                 'status'    => TripStop::STATUS_ABSENT_PRE,
                 'lat'       => 32.8950,
                 'lng'       => 13.2200,
-                'label'     => 'منزل أنس الترهوني (غائب مسبقاً)',
+                'label'     => 'ظ…ظ†ط²ظ„ ط£ظ†ط³ ط§ظ„طھط±ظ‡ظˆظ†ظٹ (ط؛ط§ط¦ط¨ ظ…ط³ط¨ظ‚ط§ظ‹)',
                 'seq'       => 0,
                 'eta'       => null,
             ],
-            // محطة الوصول للمدرسة الأولى
+            // ظ…ط­ط·ط© ط§ظ„ظˆطµظˆظ„ ظ„ظ„ظ…ط¯ط±ط³ط© ط§ظ„ط£ظˆظ„ظ‰
             [
                 'child'     => null,
                 'school'    => $schools['school_1']->id,
@@ -814,7 +814,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
                 'seq'       => 5,
                 'eta'       => '07:40',
             ],
-            // محطة الوصول للمدرسة الثانية
+            // ظ…ط­ط·ط© ط§ظ„ظˆطµظˆظ„ ظ„ظ„ظ…ط¯ط±ط³ط© ط§ظ„ط«ط§ظ†ظٹط©
             [
                 'child'     => null,
                 'school'    => $schools['school_2']->id,
@@ -848,10 +848,10 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             ]);
         }
 
-        // أحداث الرحلة الجارية (Trip Events: pickups, skip)
-        $chTareq = $createdChildren['طارق علي الزوي'];
-        $chSara  = $createdChildren['سارة علي الزوي'];
-        $chKhad  = $createdChildren['خديجة عبد الله الترهوني'];
+        // ط£ط­ط¯ط§ط« ط§ظ„ط±ط­ظ„ط© ط§ظ„ط¬ط§ط±ظٹط© (Trip Events: pickups, skip)
+        $chTareq = $createdChildren['ط·ط§ط±ظ‚ ط¹ظ„ظٹ ط§ظ„ط²ظˆظٹ'];
+        $chSara  = $createdChildren['ط³ط§ط±ط© ط¹ظ„ظٹ ط§ظ„ط²ظˆظٹ'];
+        $chKhad  = $createdChildren['ط®ط¯ظٹط¬ط© ط¹ط¨ط¯ ط§ظ„ظ„ظ‡ ط§ظ„طھط±ظ‡ظˆظ†ظٹ'];
 
         $subTareqId = ActiveSubscription::where('child_id', $chTareq->id)->value('id') ?? 1;
         $subSaraId  = ActiveSubscription::where('child_id', $chSara->id)->value('id') ?? 1;
@@ -862,7 +862,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             'child_id'        => $chTareq->id,
             'subscription_id' => $subTareqId,
             'action_type'     => 'picked_up',
-            'trip_type'       => 'ذهاب',
+            'trip_type'       => 'ط°ظ‡ط§ط¨',
             'location_lat'    => 32.88750000,
             'location_lng'    => 13.17200000,
             'scanned_at'      => Carbon::now()->subMinutes(15),
@@ -874,7 +874,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             'child_id'        => $chSara->id,
             'subscription_id' => $subSaraId,
             'action_type'     => 'picked_up',
-            'trip_type'       => 'ذهاب',
+            'trip_type'       => 'ط°ظ‡ط§ط¨',
             'location_lat'    => 32.88750000,
             'location_lng'    => 13.17200000,
             'scanned_at'      => Carbon::now()->subMinutes(14),
@@ -886,14 +886,14 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             'child_id'        => $chKhad->id,
             'subscription_id' => $subKhadId,
             'action_type'     => 'skipped',
-            'trip_type'       => 'ذهاب',
+            'trip_type'       => 'ط°ظ‡ط§ط¨',
             'location_lat'    => 32.89500000,
             'location_lng'    => 13.22000000,
             'scanned_at'      => Carbon::now()->subMinutes(5),
             'trip_cost'       => 0.00,
         ]);
 
-        // سجلات التتبع الحي المباشر بالحافلة (Trip Live Tracking GPS)
+        // ط³ط¬ظ„ط§طھ ط§ظ„طھطھط¨ط¹ ط§ظ„ط­ظٹ ط§ظ„ظ…ط¨ط§ط´ط± ط¨ط§ظ„ط­ط§ظپظ„ط© (Trip Live Tracking GPS)
         $trackingPoints = [
             ['lat' => 32.8872, 'lng' => 13.1713, 'speed' => 0.0,  'mins_ago' => 25],
             ['lat' => 32.8875, 'lng' => 13.1720, 'speed' => 12.5, 'mins_ago' => 15],
@@ -912,10 +912,10 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             ]);
         }
 
-        echo "✅ السيناريو 1: تم إيقاع رحلة جارية الآن (Trip ID: {$tripOngoing->id}) مع تتبع حي ومزيج حقيقي من حالات الطلاب!\n";
+        echo "âœ… ط§ظ„ط³ظٹظ†ط§ط±ظٹظˆ 1: طھظ… ط¥ظٹظ‚ط§ط¹ ط±ط­ظ„ط© ط¬ط§ط±ظٹط© ط§ظ„ط¢ظ† (Trip ID: {$tripOngoing->id}) ظ…ط¹ طھطھط¨ط¹ ط­ظٹ ظˆظ…ط²ظٹط¬ ط­ظ‚ظٹظ‚ظٹ ظ…ظ† ط­ط§ظ„ط§طھ ط§ظ„ط·ظ„ط§ط¨!\n";
 
         // -------------------------------------------------------------------------
-        // السيناريو الثاني: رحلة مكتملة بنجاح اليوم (Completed Trip Today: status = completed)
+        // ط§ظ„ط³ظٹظ†ط§ط±ظٹظˆ ط§ظ„ط«ط§ظ†ظٹ: ط±ط­ظ„ط© ظ…ظƒطھظ…ظ„ط© ط¨ظ†ط¬ط§ط­ ط§ظ„ظٹظˆظ… (Completed Trip Today: status = completed)
         // -------------------------------------------------------------------------
         $tripCompletedToday = Trip::create([
             'driver_id'            => $driverId,
@@ -932,7 +932,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             'created_at'           => $now,
         ]);
 
-        foreach (['طارق علي الزوي', 'سارة علي الزوي', 'عمر محمد الورفلي'] as $idx => $cName) {
+        foreach (['ط·ط§ط±ظ‚ ط¹ظ„ظٹ ط§ظ„ط²ظˆظٹ', 'ط³ط§ط±ط© ط¹ظ„ظٹ ط§ظ„ط²ظˆظٹ', 'ط¹ظ…ط± ظ…ط­ظ…ط¯ ط§ظ„ظˆط±ظپظ„ظٹ'] as $idx => $cName) {
             $chObj = $createdChildren[$cName];
             
             TripStop::create([
@@ -941,7 +941,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
                 'child_id'       => $chObj->id,
                 'lat'            => $chObj->home_lat,
                 'lng'            => $chObj->home_lng,
-                'label'          => "منزل {$chObj->full_name}",
+                'label'          => "ظ…ظ†ط²ظ„ {$chObj->full_name}",
                 'sequence_order' => $idx + 1,
                 'status'         => TripStop::STATUS_DELIVERED_HOME,
             ]);
@@ -953,7 +953,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
                 'child_id'        => $chObj->id,
                 'subscription_id' => $subId,
                 'action_type'     => 'dropped_off',
-                'trip_type'       => 'عودة',
+                'trip_type'       => 'ط¹ظˆط¯ط©',
                 'location_lat'    => $chObj->home_lat,
                 'location_lng'    => $chObj->home_lng,
                 'scanned_at'      => Carbon::now()->subHours(3)->addMinutes($idx * 10),
@@ -961,10 +961,10 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             ]);
         }
 
-        echo "✅ السيناريو 2: تم إيقاع رحلة مكتملة اليوم بنجاح (Trip ID: {$tripCompletedToday->id})\n";
+        echo "âœ… ط§ظ„ط³ظٹظ†ط§ط±ظٹظˆ 2: طھظ… ط¥ظٹظ‚ط§ط¹ ط±ط­ظ„ط© ظ…ظƒطھظ…ظ„ط© ط§ظ„ظٹظˆظ… ط¨ظ†ط¬ط§ط­ (Trip ID: {$tripCompletedToday->id})\n";
 
         // -------------------------------------------------------------------------
-        // السيناريو الثالث: رحلة قادمة/مجدولة لم تبدأ بعد (Pending Upcoming Trip: status = pending)
+        // ط§ظ„ط³ظٹظ†ط§ط±ظٹظˆ ط§ظ„ط«ط§ظ„ط«: ط±ط­ظ„ط© ظ‚ط§ط¯ظ…ط©/ظ…ط¬ط¯ظˆظ„ط© ظ„ظ… طھط¨ط¯ط£ ط¨ط¹ط¯ (Pending Upcoming Trip: status = pending)
         // -------------------------------------------------------------------------
         $tripPendingUpcoming = Trip::create([
             'driver_id'            => $driverId,
@@ -978,7 +978,7 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             'created_at'           => $now,
         ]);
 
-        foreach (['طارق علي الزوي', 'عمر محمد الورفلي'] as $idx => $cName) {
+        foreach (['ط·ط§ط±ظ‚ ط¹ظ„ظٹ ط§ظ„ط²ظˆظٹ', 'ط¹ظ…ط± ظ…ط­ظ…ط¯ ط§ظ„ظˆط±ظپظ„ظٹ'] as $idx => $cName) {
             $chObj = $createdChildren[$cName];
             TripStop::create([
                 'trip_id'        => $tripPendingUpcoming->id,
@@ -986,17 +986,17 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
                 'child_id'       => $chObj->id,
                 'lat'            => $chObj->home_lat,
                 'lng'            => $chObj->home_lng,
-                'label'          => "منزل {$chObj->full_name}",
+                'label'          => "ظ…ظ†ط²ظ„ {$chObj->full_name}",
                 'sequence_order' => $idx + 1,
                 'status'         => TripStop::STATUS_PENDING,
                 'eta_minutes'    => ($idx + 1) * 10,
             ]);
         }
 
-        echo "✅ السيناريو 3: تم إيقاع رحلة قادمة مجدولة لاختبار بدء الرحلة (Trip ID: {$tripPendingUpcoming->id})\n";
+        echo "âœ… ط§ظ„ط³ظٹظ†ط§ط±ظٹظˆ 3: طھظ… ط¥ظٹظ‚ط§ط¹ ط±ط­ظ„ط© ظ‚ط§ط¯ظ…ط© ظ…ط¬ط¯ظˆظ„ط© ظ„ط§ط®طھط¨ط§ط± ط¨ط¯ط، ط§ظ„ط±ط­ظ„ط© (Trip ID: {$tripPendingUpcoming->id})\n";
 
         // -------------------------------------------------------------------------
-        // السيناريو الرابع: رحلة تاريخية مكتملة البارحة (Historical Completed Trip Yesterday)
+        // ط§ظ„ط³ظٹظ†ط§ط±ظٹظˆ ط§ظ„ط±ط§ط¨ط¹: ط±ط­ظ„ط© طھط§ط±ظٹط®ظٹط© ظ…ظƒطھظ…ظ„ط© ط§ظ„ط¨ط§ط±ط­ط© (Historical Completed Trip Yesterday)
         // -------------------------------------------------------------------------
         $tripHistorical = Trip::create([
             'driver_id'            => $driverId,
@@ -1013,10 +1013,10 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             'created_at'           => Carbon::yesterday(),
         ]);
 
-        echo "✅ السيناريو 4: تم إيقاع رحلة سابقة مكتملة من يوم أمس (Trip ID: {$tripHistorical->id})\n";
+        echo "âœ… ط§ظ„ط³ظٹظ†ط§ط±ظٹظˆ 4: طھظ… ط¥ظٹظ‚ط§ط¹ ط±ط­ظ„ط© ط³ط§ط¨ظ‚ط© ظ…ظƒطھظ…ظ„ط© ظ…ظ† ظٹظˆظ… ط£ظ…ط³ (Trip ID: {$tripHistorical->id})\n";
 
         // -------------------------------------------------------------------------
-        // السيناريو الخامس: رحلة ملغاة لسبب طارئ (Cancelled Trip: status = cancelled)
+        // ط§ظ„ط³ظٹظ†ط§ط±ظٹظˆ ط§ظ„ط®ط§ظ…ط³: ط±ط­ظ„ط© ظ…ظ„ط؛ط§ط© ظ„ط³ط¨ط¨ ط·ط§ط±ط¦ (Cancelled Trip: status = cancelled)
         // -------------------------------------------------------------------------
         $tripCancelled = Trip::create([
             'driver_id'         => $driverId,
@@ -1024,44 +1024,44 @@ class Driver11TripsAndSubscriptionsSeeder extends Seeder
             'trip_type'         => 'Morning',
             'shift_slot'        => DriverSeatSlot::MORNING_RETURN,
             'status'            => 'suspended_breakdown',
-            'suspension_reason' => 'عطل طارئ في الحافلة وتم توفير حافلة بديلة لنقل الطلاب',
+            'suspension_reason' => 'ط¹ط·ظ„ ط·ط§ط±ط¦ ظپظٹ ط§ظ„ط­ط§ظپظ„ط© ظˆطھظ… طھظˆظپظٹط± ط­ط§ظپظ„ط© ط¨ط¯ظٹظ„ط© ظ„ظ†ظ‚ظ„ ط§ظ„ط·ظ„ط§ط¨',
             'scheduled_at'      => Carbon::yesterday()->setTime(13, 30, 0),
             'trip_date'         => $yesterday,
             'created_at'        => Carbon::yesterday(),
         ]);
 
-        echo "✅ السيناريو 5: تم إيقاع رحلة ملغاة لاختبار حالة الإلغاء (Trip ID: {$tripCancelled->id})\n";
+        echo "âœ… ط§ظ„ط³ظٹظ†ط§ط±ظٹظˆ 5: طھظ… ط¥ظٹظ‚ط§ط¹ ط±ط­ظ„ط© ظ…ظ„ط؛ط§ط© ظ„ط§ط®طھط¨ط§ط± ط­ط§ظ„ط© ط§ظ„ط¥ظ„ط؛ط§ط، (Trip ID: {$tripCancelled->id})\n";
 
         // =========================================================================
-        // 9. طباعة التقرير النهائي وسجل الملخص للاختبار
+        // 9. ط·ط¨ط§ط¹ط© ط§ظ„طھظ‚ط±ظٹط± ط§ظ„ظ†ظ‡ط§ط¦ظٹ ظˆط³ط¬ظ„ ط§ظ„ظ…ظ„ط®طµ ظ„ظ„ط§ط®طھط¨ط§ط±
         // =========================================================================
         echo "\n" . str_repeat("=", 75) . "\n";
-        echo "🎉 اكتمل زرع بيانات السائق user_id = 11 بجميع السيناريوهات والاشتراكات والرحلات!\n";
+        echo "ًںژ‰ ط§ظƒطھظ…ظ„ ط²ط±ط¹ ط¨ظٹط§ظ†ط§طھ ط§ظ„ط³ط§ط¦ظ‚ user_id = 11 ط¨ط¬ظ…ظٹط¹ ط§ظ„ط³ظٹظ†ط§ط±ظٹظˆظ‡ط§طھ ظˆط§ظ„ط§ط´طھط±ط§ظƒط§طھ ظˆط§ظ„ط±ط­ظ„ط§طھ!\n";
         echo str_repeat("=", 75) . "\n";
-        echo "👤 معلومات السائق:\n";
+        echo "ًں‘¤ ظ…ط¹ظ„ظˆظ…ط§طھ ط§ظ„ط³ط§ط¦ظ‚:\n";
         echo "   - User ID: 11\n";
         echo "   - Driver ID: {$driverId}\n";
-        echo "   - الاسم: الكابتن عبد السلام المهدوي\n";
-        echo "   - البريد الإلكتروني: driver11@darby.ly\n";
-        echo "   - رقم الهاتف: 0911111111\n";
-        echo "   - كلمة المرور: password123\n";
+        echo "   - ط§ظ„ط§ط³ظ…: ط§ظ„ظƒط§ط¨طھظ† ط¹ط¨ط¯ ط§ظ„ط³ظ„ط§ظ… ط§ظ„ظ…ظ‡ط¯ظˆظٹ\n";
+        echo "   - ط§ظ„ط¨ط±ظٹط¯ ط§ظ„ط¥ظ„ظƒطھط±ظˆظ†ظٹ: driver11@darby.ly\n";
+        echo "   - ط±ظ‚ظ… ط§ظ„ظ‡ط§طھظپ: 0911111111\n";
+        echo "   - ظƒظ„ظ…ط© ط§ظ„ظ…ط±ظˆط±: password123\n";
         echo "-------------------------------------------------------------------------\n";
-        echo "🚌 بيانات الرحلات الجاهزة للاختبار المباشر:\n";
-        echo "   1️⃣ رحلة جارية الآن (Started / Live Tracking): ID {$tripOngoing->id}\n";
-        echo "      -> طلاب صعدوا (boarded): طارق الزوي، سارة الزوي\n";
-        echo "      -> طفل قيد الانتظار (pending): عمر الورفلي\n";
-        echo "      -> طفل تم تخطيه (skipped): خديجة الترهوني\n";
-        echo "      -> طفل غائب مسبقاً (absent_pre): أنس الترهوني\n";
-        echo "   2️⃣ رحلة قادمة مجدولة (Pending - جاهزة لبدء الرحلة): ID {$tripPendingUpcoming->id}\n";
-        echo "   3️⃣ رحلة مكتملة اليوم (Completed Today): ID {$tripCompletedToday->id}\n";
-        echo "   4️⃣ رحلة تاريخية البارحة (Historical Completed): ID {$tripHistorical->id}\n";
-        echo "   5️⃣ رحلة ملغاة (Cancelled Trip): ID {$tripCancelled->id}\n";
+        echo "ًںڑŒ ط¨ظٹط§ظ†ط§طھ ط§ظ„ط±ط­ظ„ط§طھ ط§ظ„ط¬ط§ظ‡ط²ط© ظ„ظ„ط§ط®طھط¨ط§ط± ط§ظ„ظ…ط¨ط§ط´ط±:\n";
+        echo "   1ï¸ڈâƒ£ ط±ط­ظ„ط© ط¬ط§ط±ظٹط© ط§ظ„ط¢ظ† (Started / Live Tracking): ID {$tripOngoing->id}\n";
+        echo "      -> ط·ظ„ط§ط¨ طµط¹ط¯ظˆط§ (boarded): ط·ط§ط±ظ‚ ط§ظ„ط²ظˆظٹطŒ ط³ط§ط±ط© ط§ظ„ط²ظˆظٹ\n";
+        echo "      -> ط·ظپظ„ ظ‚ظٹط¯ ط§ظ„ط§ظ†طھط¸ط§ط± (pending): ط¹ظ…ط± ط§ظ„ظˆط±ظپظ„ظٹ\n";
+        echo "      -> ط·ظپظ„ طھظ… طھط®ط·ظٹظ‡ (skipped): ط®ط¯ظٹط¬ط© ط§ظ„طھط±ظ‡ظˆظ†ظٹ\n";
+        echo "      -> ط·ظپظ„ ط؛ط§ط¦ط¨ ظ…ط³ط¨ظ‚ط§ظ‹ (absent_pre): ط£ظ†ط³ ط§ظ„طھط±ظ‡ظˆظ†ظٹ\n";
+        echo "   2ï¸ڈâƒ£ ط±ط­ظ„ط© ظ‚ط§ط¯ظ…ط© ظ…ط¬ط¯ظˆظ„ط© (Pending - ط¬ط§ظ‡ط²ط© ظ„ط¨ط¯ط، ط§ظ„ط±ط­ظ„ط©): ID {$tripPendingUpcoming->id}\n";
+        echo "   3ï¸ڈâƒ£ ط±ط­ظ„ط© ظ…ظƒطھظ…ظ„ط© ط§ظ„ظٹظˆظ… (Completed Today): ID {$tripCompletedToday->id}\n";
+        echo "   4ï¸ڈâƒ£ ط±ط­ظ„ط© طھط§ط±ظٹط®ظٹط© ط§ظ„ط¨ط§ط±ط­ط© (Historical Completed): ID {$tripHistorical->id}\n";
+        echo "   5ï¸ڈâƒ£ ط±ط­ظ„ط© ظ…ظ„ط؛ط§ط© (Cancelled Trip): ID {$tripCancelled->id}\n";
         echo "-------------------------------------------------------------------------\n";
-        echo "🔑 الرموز السرية للاختبار (QR Code Tokens):\n";
-        echo "   - طارق الزوي:  QR_CHILD_1101_TAREQ\n";
-        echo "   - سارة الزوي:   QR_CHILD_1102_SARA\n";
-        echo "   - عمر الورفلي:  QR_CHILD_1103_OMAR\n";
-        echo "   - خديجة الترهوني: QR_CHILD_1104_KHADIJA\n";
+        echo "ًں”‘ ط§ظ„ط±ظ…ظˆط² ط§ظ„ط³ط±ظٹط© ظ„ظ„ط§ط®طھط¨ط§ط± (QR Code Tokens):\n";
+        echo "   - ط·ط§ط±ظ‚ ط§ظ„ط²ظˆظٹ:  QR_CHILD_1101_TAREQ\n";
+        echo "   - ط³ط§ط±ط© ط§ظ„ط²ظˆظٹ:   QR_CHILD_1102_SARA\n";
+        echo "   - ط¹ظ…ط± ط§ظ„ظˆط±ظپظ„ظٹ:  QR_CHILD_1103_OMAR\n";
+        echo "   - ط®ط¯ظٹط¬ط© ط§ظ„طھط±ظ‡ظˆظ†ظٹ: QR_CHILD_1104_KHADIJA\n";
         echo str_repeat("=", 75) . "\n\n";
     }
 }

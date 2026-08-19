@@ -13,9 +13,9 @@ use App\Models\Parent\School;
 use App\Models\Shared\SubscriptionRequest;
 
 /**
- * اختبار عرض واسترجاع طلبات الاشتراكات الخاصة بالسائق
+ * ط§ط®طھط¨ط§ط± ط¹ط±ط¶ ظˆط§ط³طھط±ط¬ط§ط¹ ط·ظ„ط¨ط§طھ ط§ظ„ط§ط´طھط±ط§ظƒط§طھ ط§ظ„ط®ط§طµط© ط¨ط§ظ„ط³ط§ط¦ظ‚
  *
- * يستخدم DatabaseTransactions: جميع العمليات تُلغى تلقائياً بعد الاختبار لحماية قاعدة البيانات الحقيقية.
+ * ظٹط³طھط®ط¯ظ… DatabaseTransactions: ط¬ظ…ظٹط¹ ط§ظ„ط¹ظ…ظ„ظٹط§طھ طھظڈظ„ط؛ظ‰ طھظ„ظ‚ط§ط¦ظٹط§ظ‹ ط¨ط¹ط¯ ط§ظ„ط§ط®طھط¨ط§ط± ظ„ط­ظ…ط§ظٹط© ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ ط§ظ„ط­ظ‚ظٹظ‚ظٹط©.
  */
 class DriverSubscriptionListingTest extends TestCase
 {
@@ -34,15 +34,15 @@ class DriverSubscriptionListingTest extends TestCase
     {
         parent::setUp();
 
-        // إدراج الأدوار
+        // ط¥ط¯ط±ط§ط¬ ط§ظ„ط£ط¯ظˆط§ط±
         DB::table('roles')->insertOrIgnore([
-            ['id' => 2, 'name' => 'Driver', 'display_name' => 'سائق'],
-            ['id' => 3, 'name' => 'Parent', 'display_name' => 'ولي أمر'],
+            ['id' => 2, 'name' => 'Driver', 'display_name' => 'ط³ط§ط¦ظ‚'],
+            ['id' => 3, 'name' => 'Parent', 'display_name' => 'ظˆظ„ظٹ ط£ظ…ط±'],
         ]);
 
-        // 1. حساب السائق
+        // 1. ط­ط³ط§ط¨ ط§ظ„ط³ط§ط¦ظ‚
         $this->driverUser = User::create([
-            'full_name'    => 'سائق العرض',
+            'full_name'    => 'ط³ط§ط¦ظ‚ ط§ظ„ط¹ط±ط¶',
             'email'        => 'driver.listing.' . uniqid() . '@darby.test',
             'phone_number' => '091' . rand(1000000, 9999999),
             'password_hash'=> bcrypt('password123'),
@@ -58,9 +58,9 @@ class DriverSubscriptionListingTest extends TestCase
             'status'         => 'Approved',
         ]);
 
-        // 2. حساب ولي الأمر
+        // 2. ط­ط³ط§ط¨ ظˆظ„ظٹ ط§ظ„ط£ظ…ط±
         $this->parentUser = User::create([
-            'full_name'    => 'ولي أمر العرض',
+            'full_name'    => 'ظˆظ„ظٹ ط£ظ…ط± ط§ظ„ط¹ط±ط¶',
             'email'        => 'parent.listing.' . uniqid() . '@darby.test',
             'phone_number' => '092' . rand(1000000, 9999999),
             'password_hash'=> bcrypt('password123'),
@@ -73,19 +73,19 @@ class DriverSubscriptionListingTest extends TestCase
             'is_trusted' => 1,
         ]);
 
-        // 3. مدرسة الاختبار
+        // 3. ظ…ط¯ط±ط³ط© ط§ظ„ط§ط®طھط¨ط§ط±
         $this->school = School::create([
-            'name'    => 'مدرسة النور',
-            'address' => 'حي الأندلس، طرابلس',
+            'name'    => 'ظ…ط¯ط±ط³ط© ط§ظ„ظ†ظˆط±',
+            'address' => 'ط­ظٹ ط§ظ„ط£ظ†ط¯ظ„ط³طŒ ط·ط±ط§ط¨ظ„ط³',
             'lat'     => 32.8870,
             'lng'     => 13.1890,
             'status'  => 'active',
         ]);
 
-        // 4. عنوان ولي الأمر
+        // 4. ط¹ظ†ظˆط§ظ† ظˆظ„ظٹ ط§ظ„ط£ظ…ط±
         $addressId = DB::table('addresses')->insertGetId([
             'parent_id'  => $this->parentUser->id,
-            'label'      => 'البيت الرئيسي',
+            'label'      => 'ط§ظ„ط¨ظٹطھ ط§ظ„ط±ط¦ظٹط³ظٹ',
             'lat'        => 32.8810,
             'lng'        => 13.1850,
             'is_default' => true,
@@ -93,22 +93,22 @@ class DriverSubscriptionListingTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        // 5. الطفل
+        // 5. ط§ظ„ط·ظپظ„
         $this->child = Child::create([
             'parent_id' => $this->parent->id,
-            'full_name' => 'سارة أحمد',
+            'full_name' => 'ط³ط§ط±ط© ط£ط­ظ…ط¯',
             'birth_date'=> '2017-03-15',
             'gender'    => 'female',
             'grade'     => 2,
             'notification_radius' => 500,
         ]);
 
-        // 6. طلب معلّق
+        // 6. ط·ظ„ط¨ ظ…ط¹ظ„ظ‘ظ‚
         $this->pendingRequest = SubscriptionRequest::create([
             'parent_id'         => $this->parent->id,
             'driver_id'         => $this->driver->id,
             'school_id'         => $this->school->id,
-            'subscription_type' => 'monthly',
+            'subscription_type' => 'multi_day',
             'direction'         => 'both',
             'timing'            => 'MORNING',
             'start_date'        => now()->addDays(1)->format('Y-m-d'),
@@ -129,19 +129,19 @@ class DriverSubscriptionListingTest extends TestCase
             'dropoff_address_id' => $this->school->id,
             'home_lat'           => 32.8810,
             'home_lng'           => 13.1850,
-            'home_label'         => 'البيت الرئيسي',
+            'home_label'         => 'ط§ظ„ط¨ظٹطھ ط§ظ„ط±ط¦ظٹط³ظٹ',
             'school_lat'         => 32.8870,
             'school_lng'         => 13.1890,
-            'school_label'       => 'مدرسة النور',
+            'school_label'       => 'ظ…ط¯ط±ط³ط© ط§ظ„ظ†ظˆط±',
             'price_per_child'    => 250.00,
         ]);
 
-        // 7. طلب مرفوض
+        // 7. ط·ظ„ط¨ ظ…ط±ظپظˆط¶
         $this->rejectedRequest = SubscriptionRequest::create([
             'parent_id'         => $this->parent->id,
             'driver_id'         => $this->driver->id,
             'school_id'         => $this->school->id,
-            'subscription_type' => 'monthly',
+            'subscription_type' => 'multi_day',
             'direction'         => 'go',
             'timing'            => 'EVENING',
             'start_date'        => now()->addDays(1)->format('Y-m-d'),
@@ -149,13 +149,13 @@ class DriverSubscriptionListingTest extends TestCase
             'days_count'        => 22,
             'total_price'       => 150.00,
             'status'            => SubscriptionRequest::STATUS_REJECTED,
-            'rejection_reason'  => 'خارج التغطية',
+            'rejection_reason'  => 'ط®ط§ط±ط¬ ط§ظ„طھط؛ط·ظٹط©',
             'children_count'    => 1,
         ]);
     }
 
     // =========================================================
-    // 1. اختبار عرض قائمة الطلبات للسائق
+    // 1. ط§ط®طھط¨ط§ط± ط¹ط±ط¶ ظ‚ط§ط¦ظ…ط© ط§ظ„ط·ظ„ط¨ط§طھ ظ„ظ„ط³ط§ط¦ظ‚
     // =========================================================
     public function test_driver_can_list_all_their_subscription_requests(): void
     {
@@ -186,11 +186,11 @@ class DriverSubscriptionListingTest extends TestCase
     }
 
     // =========================================================
-    // 2. اختبار فلترة الطلبات حسب الحالة (pending / rejected)
+    // 2. ط§ط®طھط¨ط§ط± ظپظ„طھط±ط© ط§ظ„ط·ظ„ط¨ط§طھ ط­ط³ط¨ ط§ظ„ط­ط§ظ„ط© (pending / rejected)
     // =========================================================
     public function test_driver_can_filter_subscription_requests(): void
     {
-        // فلترة الطلبات المعلقة
+        // ظپظ„طھط±ط© ط§ظ„ط·ظ„ط¨ط§طھ ط§ظ„ظ…ط¹ظ„ظ‚ط©
         $pendingResponse = $this->actingAs($this->driverUser)
             ->getJson('/api/driver/requests?filter=pending');
 
@@ -202,7 +202,7 @@ class DriverSubscriptionListingTest extends TestCase
             $this->assertEquals('pending', $item['status']);
         }
 
-        // فلترة الطلبات المرفوضة
+        // ظپظ„طھط±ط© ط§ظ„ط·ظ„ط¨ط§طھ ط§ظ„ظ…ط±ظپظˆط¶ط©
         $rejectedResponse = $this->actingAs($this->driverUser)
             ->getJson('/api/driver/requests?filter=rejected');
 
@@ -216,7 +216,7 @@ class DriverSubscriptionListingTest extends TestCase
     }
 
     // =========================================================
-    // 3. اختبار عرض تفاصيل طلب معين
+    // 3. ط§ط®طھط¨ط§ط± ط¹ط±ط¶ طھظپط§طµظٹظ„ ط·ظ„ط¨ ظ…ط¹ظٹظ†
     // =========================================================
     public function test_driver_can_view_single_request_details(): void
     {
@@ -226,16 +226,16 @@ class DriverSubscriptionListingTest extends TestCase
         $response->assertStatus(200);
         $response->assertJsonPath('success', true);
         $response->assertJsonPath('data.id', $this->pendingRequest->id);
-        $response->assertJsonPath('data.parent.name', 'ولي أمر العرض');
+        $response->assertJsonPath('data.parent.name', 'ظˆظ„ظٹ ط£ظ…ط± ط§ظ„ط¹ط±ط¶');
     }
 
     // =========================================================
-    // 4. اختبار منع السائق من عرض تفاصيل طلب غير مخصص له
+    // 4. ط§ط®طھط¨ط§ط± ظ…ظ†ط¹ ط§ظ„ط³ط§ط¦ظ‚ ظ…ظ† ط¹ط±ط¶ طھظپط§طµظٹظ„ ط·ظ„ط¨ ط؛ظٹط± ظ…ط®طµطµ ظ„ظ‡
     // =========================================================
     public function test_driver_cannot_view_request_belonging_to_another_driver(): void
     {
         $otherDriverUser = User::create([
-            'full_name'    => 'سائق ثاني',
+            'full_name'    => 'ط³ط§ط¦ظ‚ ط«ط§ظ†ظٹ',
             'email'        => 'other.driver.' . uniqid() . '@darby.test',
             'phone_number' => '096' . rand(1000000, 9999999),
             'password_hash'=> bcrypt('password123'),
@@ -259,7 +259,7 @@ class DriverSubscriptionListingTest extends TestCase
     }
 
     // =========================================================
-    // 5. اختبار عرض تفاصيل الرحلة لطلب الاشتراك
+    // 5. ط§ط®طھط¨ط§ط± ط¹ط±ط¶ طھظپط§طµظٹظ„ ط§ظ„ط±ط­ظ„ط© ظ„ط·ظ„ط¨ ط§ظ„ط§ط´طھط±ط§ظƒ
     // =========================================================
     public function test_driver_can_view_trip_details_of_request(): void
     {
@@ -269,14 +269,14 @@ class DriverSubscriptionListingTest extends TestCase
         $response->assertStatus(200);
         $response->assertJsonPath('success', true);
         $response->assertJsonPath('data.request_id', $this->pendingRequest->id);
-        $response->assertJsonPath('data.parent.name', 'ولي أمر العرض');
-        $response->assertJsonPath('data.school.name', 'مدرسة النور');
+        $response->assertJsonPath('data.parent.name', 'ظˆظ„ظٹ ط£ظ…ط± ط§ظ„ط¹ط±ط¶');
+        $response->assertJsonPath('data.school.name', 'ظ…ط¯ط±ط³ط© ط§ظ„ظ†ظˆط±');
         $response->assertJsonPath('data.school.latitude', 32.8870);
-        $response->assertJsonPath('data.children.0.name', 'سارة أحمد');
+        $response->assertJsonPath('data.children.0.name', 'ط³ط§ط±ط© ط£ط­ظ…ط¯');
     }
 
     // =========================================================
-    // 6. اختبار منع غير السائق من عرض قائمة الطلبات
+    // 6. ط§ط®طھط¨ط§ط± ظ…ظ†ط¹ ط؛ظٹط± ط§ظ„ط³ط§ط¦ظ‚ ظ…ظ† ط¹ط±ط¶ ظ‚ط§ط¦ظ…ط© ط§ظ„ط·ظ„ط¨ط§طھ
     // =========================================================
     public function test_non_driver_cannot_list_driver_requests(): void
     {
@@ -288,7 +288,7 @@ class DriverSubscriptionListingTest extends TestCase
     }
 
     // =========================================================
-    // 7. اختبار رفض الطلبات غير الموثوقة (Unauthenticated)
+    // 7. ط§ط®طھط¨ط§ط± ط±ظپط¶ ط§ظ„ط·ظ„ط¨ط§طھ ط؛ظٹط± ط§ظ„ظ…ظˆط«ظˆظ‚ط© (Unauthenticated)
     // =========================================================
     public function test_unauthenticated_user_cannot_list_requests(): void
     {

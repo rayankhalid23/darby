@@ -20,7 +20,7 @@ class RegisterAccountRequest extends FormRequest
             'email'        => 'required|email|unique:users,email',
             'phone_number' => 'required|digits:10|unique:users,phone_number|regex:/^09[0-9]{8}$/',
             'gender'       => 'required|in:male,female', // الحقل الجديد
-            'password'     => 'required|string|min:6',
+            'password'     => ['required', 'string', 'min:8', 'regex:/^(?=.*[a-zA-Z])(?=.*\d).+$/'],
             'avatar_url'   => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
 
             'alternative_phone' => 'nullable|string|min:7',
@@ -45,7 +45,8 @@ class RegisterAccountRequest extends FormRequest
             'gender.required'        => 'يرجى تحديد الجنس.',
             'gender.in'              => 'القيمة المختارة للجنس غير صحيحة.',
             'password.required'      => 'كلمة المرور مطلوبة.',
-            'password.min'           => 'يجب ألا تقل كلمة المرور عن 6 أحرف.',
+            'password.min'           => 'يجب ألا تقل كلمة المرور عن 8 أحرف.',
+            'password.regex'         => 'كلمة المرور يجب أن تحتوي على حرف إنجليزي ورقم على الأقل.',
             'avatar_url.image'       => 'الملف المرفوع يجب أن يكون صورة.',
             'avatar_url.mimes'       => 'يسمح فقط بالصور بصيغ jpeg, png, jpg.',
             'avatar_url.max'         => 'حجم الصورة يجب ألا يتجاوز 2 ميجابايت.',

@@ -27,37 +27,37 @@ class DriverPreferencesTest extends TestCase
         parent::setUp();
 
         DB::table('roles')->insertOrIgnore([
-            ['id' => 2, 'name' => 'Driver', 'display_name' => 'سائق'],
+            ['id' => 2, 'name' => 'Driver', 'display_name' => 'ط³ط§ط¦ظ‚'],
         ]);
 
-        // 1. إنشاء بلدية فرعية ومناطق للاختبار
+        // 1. ط¥ظ†ط´ط§ط، ط¨ظ„ط¯ظٹط© ظپط±ط¹ظٹط© ظˆظ…ظ†ط§ط·ظ‚ ظ„ظ„ط§ط®طھط¨ط§ط±
         $municipality = Municipality::firstOrCreate(
-            ['name' => 'بلدية طرابلس الكبرى الاختيارية']
+            ['name' => 'ط¨ظ„ط¯ظٹط© ط·ط±ط§ط¨ظ„ط³ ط§ظ„ظƒط¨ط±ظ‰ ط§ظ„ط§ط®طھظٹط§ط±ظٹط©']
         );
 
         $subMuni1 = SubMunicipality::firstOrCreate(
-            ['name' => 'منطقة الفرعية 1', 'municipality_id' => $municipality->id]
+            ['name' => 'ظ…ظ†ط·ظ‚ط© ط§ظ„ظپط±ط¹ظٹط© 1', 'municipality_id' => $municipality->id]
         );
 
         $subMuni2 = SubMunicipality::firstOrCreate(
-            ['name' => 'منطقة الفرعية 2 مختلفة', 'municipality_id' => $municipality->id]
+            ['name' => 'ظ…ظ†ط·ظ‚ط© ط§ظ„ظپط±ط¹ظٹط© 2 ظ…ط®طھظ„ظپط©', 'municipality_id' => $municipality->id]
         );
 
         $this->zone1 = Zone::firstOrCreate(
-            ['name' => 'منطقة 1-أ', 'sub_municipality_id' => $subMuni1->id]
+            ['name' => 'ظ…ظ†ط·ظ‚ط© 1-ط£', 'sub_municipality_id' => $subMuni1->id]
         );
 
         $this->zone2 = Zone::firstOrCreate(
-            ['name' => 'منطقة 1-ب', 'sub_municipality_id' => $subMuni1->id]
+            ['name' => 'ظ…ظ†ط·ظ‚ط© 1-ط¨', 'sub_municipality_id' => $subMuni1->id]
         );
 
         $this->otherSubZone = Zone::firstOrCreate(
-            ['name' => 'منطقة 2-أ (مختلفة)', 'sub_municipality_id' => $subMuni2->id]
+            ['name' => 'ظ…ظ†ط·ظ‚ط© 2-ط£ (ظ…ط®طھظ„ظپط©)', 'sub_municipality_id' => $subMuni2->id]
         );
 
-        // 2. إنشاء مستخدم وسائق
+        // 2. ط¥ظ†ط´ط§ط، ظ…ط³طھط®ط¯ظ… ظˆط³ط§ط¦ظ‚
         $this->driverUser = User::create([
-            'full_name'     => 'سائق تفضيلات الاختبار',
+            'full_name'     => 'ط³ط§ط¦ظ‚ طھظپط¶ظٹظ„ط§طھ ط§ظ„ط§ط®طھط¨ط§ط±',
             'email'         => 'driver.pref.' . uniqid() . '@darby.test',
             'phone_number'  => '091' . rand(1000000, 9999999),
             'password_hash' => bcrypt('password123'),
@@ -75,15 +75,15 @@ class DriverPreferencesTest extends TestCase
             'morning_return'    => true,
             'afternoon_go'      => false,
             'afternoon_return'  => false,
-            'subscription_type' => 'monthly',
+            'subscription_type' => 'multi_day', // ENUM صحيح: single_day | multi_day | both
         ]);
 
-        // إضافة منطقة ابتدائية للسائق
+        // ط¥ط¶ط§ظپط© ظ…ظ†ط·ظ‚ط© ط§ط¨طھط¯ط§ط¦ظٹط© ظ„ظ„ط³ط§ط¦ظ‚
         $this->driver->zones()->sync([$this->zone1->id]);
     }
 
     /**
-     * Test 1: GET /api/v1/driver/preferences (عرض التفضيلات)
+     * Test 1: GET /api/v1/driver/preferences (ط¹ط±ط¶ ط§ظ„طھظپط¶ظٹظ„ط§طھ)
      */
     public function test_get_driver_preferences_show(): void
     {
@@ -107,7 +107,7 @@ class DriverPreferencesTest extends TestCase
     }
 
     /**
-     * Test 2: PUT /api/v1/driver/preferences (تحديث شامل ناجح)
+     * Test 2: PUT /api/v1/driver/preferences (طھط­ط¯ظٹط« ط´ط§ظ…ظ„ ظ†ط§ط¬ط­)
      */
     public function test_update_driver_preferences_success(): void
     {
@@ -133,7 +133,7 @@ class DriverPreferencesTest extends TestCase
     }
 
     /**
-     * Test 3: PUT /api/v1/driver/preferences (فشل عند عدم اختيار أي فترة)
+     * Test 3: PUT /api/v1/driver/preferences (ظپط´ظ„ ط¹ظ†ط¯ ط¹ط¯ظ… ط§ط®طھظٹط§ط± ط£ظٹ ظپطھط±ط©)
      */
     public function test_update_driver_preferences_validation_fails_without_shift_slots(): void
     {
@@ -142,7 +142,7 @@ class DriverPreferencesTest extends TestCase
             'morning_return'    => false,
             'afternoon_go'      => false,
             'afternoon_return'  => false,
-            'subscription_type' => 'multi_day',
+            'subscription_type' => 'multi_day', // قيمة ENUM صحيحة — الـ 422 سببه كل الـ shifts false
             'school_stages'     => ['primary'],
             'zones'             => [$this->zone1->id],
         ];
@@ -154,7 +154,7 @@ class DriverPreferencesTest extends TestCase
     }
 
     /**
-     * Test 4: PUT /api/v1/driver/preferences (فشل عند اختيار مناطق تتبع بلديات فرعية مختلفة)
+     * Test 4: PUT /api/v1/driver/preferences (ظپط´ظ„ ط¹ظ†ط¯ ط§ط®طھظٹط§ط± ظ…ظ†ط§ط·ظ‚ طھطھط¨ط¹ ط¨ظ„ط¯ظٹط§طھ ظپط±ط¹ظٹط© ظ…ط®طھظ„ظپط©)
      */
     public function test_update_driver_preferences_fails_when_zones_belong_to_different_sub_municipalities(): void
     {
@@ -163,19 +163,19 @@ class DriverPreferencesTest extends TestCase
             'morning_return'    => true,
             'afternoon_go'      => false,
             'afternoon_return'  => false,
-            'subscription_type' => 'multi_day',
+            'subscription_type' => 'multi_day', // قيمة ENUM صحيحة — الـ 422 سببه مناطق ببلديات مختلفة
             'school_stages'     => ['primary'],
-            'zones'             => [$this->zone1->id, $this->otherSubZone->id], // بلديات مختلفة!
+            'zones'             => [$this->zone1->id, $this->otherSubZone->id], // ط¨ظ„ط¯ظٹط§طھ ظ…ط®طھظ„ظپط©!
         ];
 
         $response = $this->actingAs($this->driverUser)
             ->putJson('/api/v1/driver/preferences', $payload);
 
-        $response->assertStatus(500); // Exception مرفوع في الخدمة
+        $response->assertStatus(422); // Exception مُعالج بالـ catch في الـ controller
     }
 
     /**
-     * Test 5: POST /api/v1/driver/preferences/zones/add (إضافة منطقة منفردة بنجاح)
+     * Test 5: POST /api/v1/driver/preferences/zones/add (ط¥ط¶ط§ظپط© ظ…ظ†ط·ظ‚ط© ظ…ظ†ظپط±ط¯ط© ط¨ظ†ط¬ط§ط­)
      */
     public function test_add_zone_to_driver_preferences_success(): void
     {
@@ -193,7 +193,7 @@ class DriverPreferencesTest extends TestCase
     }
 
     /**
-     * Test 6: POST /api/v1/driver/preferences/zones/add (فشل عند اختيار منطقة ببلدية مختلفة)
+     * Test 6: POST /api/v1/driver/preferences/zones/add (ظپط´ظ„ ط¹ظ†ط¯ ط§ط®طھظٹط§ط± ظ…ظ†ط·ظ‚ط© ط¨ط¨ظ„ط¯ظٹط© ظ…ط®طھظ„ظپط©)
      */
     public function test_add_zone_fails_when_different_sub_municipality(): void
     {
@@ -208,7 +208,7 @@ class DriverPreferencesTest extends TestCase
     }
 
     /**
-     * Test 7: POST /api/v1/driver/preferences/zones/remove (إزالة منطقة بنجاح)
+     * Test 7: POST /api/v1/driver/preferences/zones/remove (ط¥ط²ط§ظ„ط© ظ…ظ†ط·ظ‚ط© ط¨ظ†ط¬ط§ط­)
      */
     public function test_remove_zone_from_driver_preferences_success(): void
     {
@@ -226,7 +226,7 @@ class DriverPreferencesTest extends TestCase
     }
 
     /**
-     * Test 8: GET /api/v1/driver/preferences/defaults (إرجاع الخيارات الافتراضية للنظام)
+     * Test 8: GET /api/v1/driver/preferences/defaults (ط¥ط±ط¬ط§ط¹ ط§ظ„ط®ظٹط§ط±ط§طھ ط§ظ„ط§ظپطھط±ط§ط¶ظٹط© ظ„ظ„ظ†ط¸ط§ظ…)
      */
     public function test_get_driver_preference_system_defaults(): void
     {

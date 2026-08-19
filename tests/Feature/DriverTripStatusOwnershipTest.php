@@ -16,7 +16,7 @@ use App\Models\Shared\SubscriptionRequest;
 use App\Models\Shared\Trip;
 
 /**
- * اختبار أمني: يجب ألا يستطيع سائق تحديث حالة (صعود/نزول/غياب) طفل مشترك مع سائق آخر (IDOR).
+ * ط§ط®طھط¨ط§ط± ط£ظ…ظ†ظٹ: ظٹط¬ط¨ ط£ظ„ط§ ظٹط³طھط·ظٹط¹ ط³ط§ط¦ظ‚ طھط­ط¯ظٹط« ط­ط§ظ„ط© (طµط¹ظˆط¯/ظ†ط²ظˆظ„/ط؛ظٹط§ط¨) ط·ظپظ„ ظ…ط´طھط±ظƒ ظ…ط¹ ط³ط§ط¦ظ‚ ط¢ط®ط± (IDOR).
  * GET/POST /api/v1/driver/trips/{tripId}/pickup|dropoff|absent
  */
 class DriverTripStatusOwnershipTest extends TestCase
@@ -36,12 +36,12 @@ class DriverTripStatusOwnershipTest extends TestCase
         parent::setUp();
 
         DB::table('roles')->insertOrIgnore([
-            ['id' => 2, 'name' => 'Driver', 'display_name' => 'سائق'],
-            ['id' => 3, 'name' => 'Parent', 'display_name' => 'ولي أمر'],
+            ['id' => 2, 'name' => 'Driver', 'display_name' => 'ط³ط§ط¦ظ‚'],
+            ['id' => 3, 'name' => 'Parent', 'display_name' => 'ظˆظ„ظٹ ط£ظ…ط±'],
         ]);
 
         $this->driverAUser = User::create([
-            'full_name' => 'السائق أ', 'email' => 'driver.a.' . uniqid() . '@darby.test',
+            'full_name' => 'ط§ظ„ط³ط§ط¦ظ‚ ط£', 'email' => 'driver.a.' . uniqid() . '@darby.test',
             'phone_number' => '091' . rand(1000000, 9999999), 'password_hash' => bcrypt('password123'),
             'role_id' => 2, 'is_active' => 1,
         ]);
@@ -52,7 +52,7 @@ class DriverTripStatusOwnershipTest extends TestCase
         ]);
 
         $this->driverBUser = User::create([
-            'full_name' => 'السائق ب', 'email' => 'driver.b.' . uniqid() . '@darby.test',
+            'full_name' => 'ط§ظ„ط³ط§ط¦ظ‚ ط¨', 'email' => 'driver.b.' . uniqid() . '@darby.test',
             'phone_number' => '093' . rand(1000000, 9999999), 'password_hash' => bcrypt('password123'),
             'role_id' => 2, 'is_active' => 1,
         ]);
@@ -63,25 +63,25 @@ class DriverTripStatusOwnershipTest extends TestCase
         ]);
 
         $parentUser = User::create([
-            'full_name' => 'ولي الأمر', 'email' => 'parent.own.' . uniqid() . '@darby.test',
+            'full_name' => 'ظˆظ„ظٹ ط§ظ„ط£ظ…ط±', 'email' => 'parent.own.' . uniqid() . '@darby.test',
             'phone_number' => '092' . rand(1000000, 9999999), 'password_hash' => bcrypt('password123'),
             'role_id' => 3, 'is_active' => 1,
         ]);
         $parent = ParentModel::create(['user_id' => $parentUser->id, 'is_trusted' => 1]);
 
         $school = School::create([
-            'name' => 'مدرسة اختبار الملكية', 'address' => 'شارع الاختبار',
+            'name' => 'ظ…ط¯ط±ط³ط© ط§ط®طھط¨ط§ط± ط§ظ„ظ…ظ„ظƒظٹط©', 'address' => 'ط´ط§ط±ط¹ ط§ظ„ط§ط®طھط¨ط§ط±',
             'lat' => 32.90, 'lng' => 13.20, 'status' => 'active',
         ]);
 
         $child = Child::create([
-            'parent_id' => $parent->id, 'school_id' => $school->id, 'full_name' => 'طفل', 'birth_date' => '2018-05-10',
+            'parent_id' => $parent->id, 'school_id' => $school->id, 'full_name' => 'ط·ظپظ„', 'birth_date' => '2018-05-10',
             'gender' => 'male', 'grade' => 1, 'notification_radius' => 500,
         ]);
 
         $subscriptionRequest = SubscriptionRequest::create([
             'parent_id' => $parent->id, 'driver_id' => $this->driverA->id, 'school_id' => $school->id,
-            'subscription_type' => 'monthly', 'direction' => 'go', 'timing' => 'MORNING',
+            'subscription_type' => 'multi_day', 'direction' => 'go', 'timing' => 'MORNING',
             'start_date' => now()->format('Y-m-d'), 'end_date' => now()->addMonths(1)->format('Y-m-d'),
             'days_count' => 22, 'total_price' => 100, 'status' => SubscriptionRequest::STATUS_ACCEPTED,
             'children_count' => 1,
@@ -90,7 +90,7 @@ class DriverTripStatusOwnershipTest extends TestCase
         $contract = Contract::create([
             'subscription_request_id' => $subscriptionRequest->id,
             'parent_id' => $parentUser->id, 'driver_id' => $this->driverAUser->id,
-            'contract_number' => 'DRBY-OWN-' . rand(100000, 999999), 'subscription_type' => 'monthly',
+            'contract_number' => 'DRBY-OWN-' . rand(100000, 999999), 'subscription_type' => 'multi_day',
             'direction' => 'go', 'timing' => 'MORNING', 'pickup_time' => '07:00:00', 'dropoff_time' => '14:00:00',
             'max_waiting_time' => 15, 'start_date' => now()->format('Y-m-d'), 'end_date' => now()->addMonths(1)->format('Y-m-d'),
             'days_count' => 22, 'total_price' => 100, 'clauses' => [], 'status' => 'active', 'signed_at' => now(),
@@ -99,8 +99,8 @@ class DriverTripStatusOwnershipTest extends TestCase
         $this->subA = ActiveSubscription::create([
             'contract_id' => $contract->id, 'status' => 'active', 'child_id' => $child->id,
             'driver_id' => $this->driverA->id, 'parent_id' => $parentUser->id,
-            'pickup_lat' => 32.88, 'pickup_lng' => 13.19, 'pickup_label' => 'منزل', 'pickup_time' => '07:00:00',
-            'dropoff_lat' => 32.90, 'dropoff_lng' => 13.20, 'dropoff_label' => 'مدرسة', 'dropoff_time' => '14:00:00',
+            'pickup_lat' => 32.88, 'pickup_lng' => 13.19, 'pickup_label' => 'ظ…ظ†ط²ظ„', 'pickup_time' => '07:00:00',
+            'dropoff_lat' => 32.90, 'dropoff_lng' => 13.20, 'dropoff_label' => 'ظ…ط¯ط±ط³ط©', 'dropoff_time' => '14:00:00',
         ]);
 
         $this->tripA = Trip::create([

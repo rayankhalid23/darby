@@ -341,9 +341,9 @@ class ReportService
         $totalContracts = (clone $contractsQuery)->count();
 
         // أ) توزيع أنواع الاشتراكات
-        $monthlyCount = (clone $contractsQuery)->whereRaw('LOWER(subscription_type) = ?', ['monthly'])->count();
-        $dailyCount   = (clone $contractsQuery)->whereRaw('LOWER(subscription_type) = ?', ['daily'])->count();
-        $bothCount    = (clone $contractsQuery)->whereRaw('LOWER(subscription_type) = ?', ['both'])->count();
+        $monthlyCount = (clone $contractsQuery)->whereIn('subscription_type', ['multi_day', 'monthly'])->count();
+        $dailyCount   = (clone $contractsQuery)->whereIn('subscription_type', ['single_day', 'daily'])->count();
+        $bothCount    = (clone $contractsQuery)->where('subscription_type', 'both')->count();
 
         $monthlyPct = $totalContracts > 0 ? round(($monthlyCount / $totalContracts) * 100, 1) : 0;
         $dailyPct   = $totalContracts > 0 ? round(($dailyCount / $totalContracts) * 100, 1) : 0;
@@ -384,13 +384,13 @@ class ReportService
                 'date_to'   => $dateTo->toDateTimeString(),
             ],
             'subscription_types' => [
-                'total_contracts'    => $totalContracts,
-                'monthly_count'      => $monthlyCount,
-                'daily_count'        => $dailyCount,
-                'both_count'         => $bothCount,
-                'monthly_percentage' => $monthlyPct,
-                'daily_percentage'   => $dailyPct,
-                'both_percentage'    => $bothPct,
+                'total_contracts'       => $totalContracts,
+                'multi_day_count'       => $monthlyCount,
+                'single_day_count'      => $dailyCount,
+                'both_count'            => $bothCount,
+                'multi_day_percentage'  => $monthlyPct,
+                'single_day_percentage' => $dailyPct,
+                'both_percentage'       => $bothPct,
             ],
             'status_breakdown' => [
                 'active_count'    => $activeSubsCount,

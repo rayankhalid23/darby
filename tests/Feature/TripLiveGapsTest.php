@@ -18,10 +18,10 @@ use App\Models\Shared\TripStop;
 use App\Services\Trip\DailyTripGenerationService;
 
 /**
- * اختبار إغلاق الفجوات المُبلَّغ عنها في دليل ربط الفرونت:
- * 1) GET /trips/{tripId}/stops و دقة الحالة في show()/live()
- * 2) POST /trips/register-absence + أثرها الفعلي على توليد الرحلات
- * 3) الإبلاغ عن عطل واستئناف الرحلة
+ * ط§ط®طھط¨ط§ط± ط¥ط؛ظ„ط§ظ‚ ط§ظ„ظپط¬ظˆط§طھ ط§ظ„ظ…ظڈط¨ظ„ظژظ‘ط؛ ط¹ظ†ظ‡ط§ ظپظٹ ط¯ظ„ظٹظ„ ط±ط¨ط· ط§ظ„ظپط±ظˆظ†طھ:
+ * 1) GET /trips/{tripId}/stops ظˆ ط¯ظ‚ط© ط§ظ„ط­ط§ظ„ط© ظپظٹ show()/live()
+ * 2) POST /trips/register-absence + ط£ط«ط±ظ‡ط§ ط§ظ„ظپط¹ظ„ظٹ ط¹ظ„ظ‰ طھظˆظ„ظٹط¯ ط§ظ„ط±ط­ظ„ط§طھ
+ * 3) ط§ظ„ط¥ط¨ظ„ط§ط؛ ط¹ظ† ط¹ط·ظ„ ظˆط§ط³طھط¦ظ†ط§ظپ ط§ظ„ط±ط­ظ„ط©
  */
 class TripLiveGapsTest extends TestCase
 {
@@ -38,12 +38,12 @@ class TripLiveGapsTest extends TestCase
         parent::setUp();
 
         DB::table('roles')->insertOrIgnore([
-            ['id' => 2, 'name' => 'Driver', 'display_name' => 'سائق'],
-            ['id' => 3, 'name' => 'Parent', 'display_name' => 'ولي أمر'],
+            ['id' => 2, 'name' => 'Driver', 'display_name' => 'ط³ط§ط¦ظ‚'],
+            ['id' => 3, 'name' => 'Parent', 'display_name' => 'ظˆظ„ظٹ ط£ظ…ط±'],
         ]);
 
         $this->driverUser = User::create([
-            'full_name'    => 'سائق فجوات الرحلات',
+            'full_name'    => 'ط³ط§ط¦ظ‚ ظپط¬ظˆط§طھ ط§ظ„ط±ط­ظ„ط§طھ',
             'email'        => 'driver.gaps.' . uniqid() . '@darby.test',
             'phone_number' => '091' . rand(1000000, 9999999),
             'password_hash' => bcrypt('password123'),
@@ -61,10 +61,10 @@ class TripLiveGapsTest extends TestCase
 
         $vehicleId = DB::table('vehicles')->insertGetId([
             'driver_id'       => $this->driver->id,
-            'brand'           => 'تويوتا',
-            'model'           => 'هايس',
+            'brand'           => 'طھظˆظٹظˆطھط§',
+            'model'           => 'ظ‡ط§ظٹط³',
             'year'            => 2022,
-            'color'           => 'أبيض',
+            'color'           => 'ط£ط¨ظٹط¶',
             'plate_number'    => 'GAP-' . rand(1000, 9999),
             'capacity_manual' => 10,
             'capacity_ai'     => 10,
@@ -75,7 +75,7 @@ class TripLiveGapsTest extends TestCase
         ]);
 
         $parentUser = User::create([
-            'full_name'    => 'ولي أمر فجوات الرحلات',
+            'full_name'    => 'ظˆظ„ظٹ ط£ظ…ط± ظپط¬ظˆط§طھ ط§ظ„ط±ط­ظ„ط§طھ',
             'email'        => 'parent.gaps.' . uniqid() . '@darby.test',
             'phone_number' => '092' . rand(1000000, 9999999),
             'password_hash' => bcrypt('password123'),
@@ -85,32 +85,32 @@ class TripLiveGapsTest extends TestCase
         $parent = ParentModel::create(['user_id' => $parentUser->id, 'is_trusted' => 1]);
 
         $this->school = School::create([
-            'name' => 'مدرسة فجوات الرحلات', 'address' => 'شارع الاختبار',
+            'name' => 'ظ…ط¯ط±ط³ط© ظپط¬ظˆط§طھ ط§ظ„ط±ط­ظ„ط§طھ', 'address' => 'ط´ط§ط±ط¹ ط§ظ„ط§ط®طھط¨ط§ط±',
             'lat' => 32.90, 'lng' => 13.20, 'status' => 'active',
         ]);
 
         $this->child = Child::create([
             'parent_id' => $parent->id, 'school_id' => $this->school->id,
-            'full_name' => 'طفل فجوات الرحلات', 'birth_date' => '2018-05-10',
+            'full_name' => 'ط·ظپظ„ ظپط¬ظˆط§طھ ط§ظ„ط±ط­ظ„ط§طھ', 'birth_date' => '2018-05-10',
             'gender' => 'male', 'grade' => 1, 'notification_radius' => 500,
         ]);
 
         $this->route = RouteModel::create([
             'driver_id'  => $this->driver->id,
             'vehicle_id' => $vehicleId,
-            'route_name' => 'مسار اختبار الفجوات',
+            'route_name' => 'ظ…ط³ط§ط± ط§ط®طھط¨ط§ط± ط§ظ„ظپط¬ظˆط§طھ',
             'route_type' => 'Morning',
             'shift_slot' => 'morning_go',
             'start_time' => Carbon::now()->addMinutes(20)->format('H:i:s'),
             'status'     => 'Active',
         ]);
 
-        RouteStop::create(['route_id' => $this->route->id, 'stop_type' => 'home', 'child_id' => $this->child->id, 'lat' => 32.881, 'lng' => 13.191, 'label' => 'المنزل', 'sequence_order' => 1]);
-        RouteStop::create(['route_id' => $this->route->id, 'stop_type' => 'school', 'school_id' => $this->school->id, 'lat' => 32.90, 'lng' => 13.20, 'label' => 'المدرسة', 'sequence_order' => 2]);
+        RouteStop::create(['route_id' => $this->route->id, 'stop_type' => 'home', 'child_id' => $this->child->id, 'lat' => 32.881, 'lng' => 13.191, 'label' => 'ط§ظ„ظ…ظ†ط²ظ„', 'sequence_order' => 1]);
+        RouteStop::create(['route_id' => $this->route->id, 'stop_type' => 'school', 'school_id' => $this->school->id, 'lat' => 32.90, 'lng' => 13.20, 'label' => 'ط§ظ„ظ…ط¯ط±ط³ط©', 'sequence_order' => 2]);
     }
 
     // =========================================================
-    // فجوة 1+4: GET /trips/{tripId}/stops ودقة الحالة في show()
+    // ظپط¬ظˆط© 1+4: GET /trips/{tripId}/stops ظˆط¯ظ‚ط© ط§ظ„ط­ط§ظ„ط© ظپظٹ show()
     // =========================================================
 
     public function test_trip_stops_endpoint_returns_ordered_stops_with_status(): void
@@ -136,14 +136,14 @@ class TripLiveGapsTest extends TestCase
 
         $subscriptionRequest = \App\Models\Shared\SubscriptionRequest::create([
             'parent_id' => $this->child->parent_id, 'driver_id' => $this->driver->id, 'school_id' => $this->school->id,
-            'subscription_type' => 'monthly', 'direction' => 'go', 'timing' => 'MORNING',
+            'subscription_type' => 'multi_day', 'direction' => 'go', 'timing' => 'MORNING',
             'start_date' => now()->format('Y-m-d'), 'end_date' => now()->addMonths(1)->format('Y-m-d'),
             'days_count' => 22, 'total_price' => 100, 'status' => 'accepted', 'children_count' => 1,
         ]);
         $contract = \App\Models\Shared\Contract::create([
             'subscription_request_id' => $subscriptionRequest->id,
             'parent_id' => $parentRecord->user_id, 'driver_id' => $this->driverUser->id,
-            'contract_number' => 'DRBY-GAP-' . rand(100000, 999999), 'subscription_type' => 'monthly',
+            'contract_number' => 'DRBY-GAP-' . rand(100000, 999999), 'subscription_type' => 'multi_day',
             'direction' => 'go', 'timing' => 'MORNING', 'pickup_time' => '07:00:00', 'dropoff_time' => '14:00:00',
             'max_waiting_time' => 15, 'start_date' => now()->format('Y-m-d'), 'end_date' => now()->addMonths(1)->format('Y-m-d'),
             'days_count' => 22, 'total_price' => 100, 'clauses' => [], 'status' => 'active', 'signed_at' => now(),
@@ -151,25 +151,25 @@ class TripLiveGapsTest extends TestCase
         $sub = \App\Models\Shared\ActiveSubscription::create([
             'contract_id' => $contract->id, 'status' => 'active', 'child_id' => $this->child->id,
             'driver_id' => $this->driver->id, 'route_id' => $this->route->id, 'parent_id' => $parentRecord->user_id,
-            'pickup_lat' => 32.881, 'pickup_lng' => 13.191, 'pickup_label' => 'المنزل', 'pickup_time' => '07:00:00',
-            'dropoff_lat' => 32.90, 'dropoff_lng' => 13.20, 'dropoff_label' => 'المدرسة', 'dropoff_time' => '14:00:00',
+            'pickup_lat' => 32.881, 'pickup_lng' => 13.191, 'pickup_label' => 'ط§ظ„ظ…ظ†ط²ظ„', 'pickup_time' => '07:00:00',
+            'dropoff_lat' => 32.90, 'dropoff_lng' => 13.20, 'dropoff_label' => 'ط§ظ„ظ…ط¯ط±ط³ط©', 'dropoff_time' => '14:00:00',
         ]);
 
         $today = $this->actingAs($this->driverUser)->getJson('/api/v1/driver/trips/today');
         $tripId = $today->json('data.0.trip_id');
 
-        // قبل الصعود: pending
+        // ظ‚ط¨ظ„ ط§ظ„طµط¹ظˆط¯: pending
         $show = $this->actingAs($this->driverUser)->getJson("/api/v1/driver/trips/{$tripId}");
         $show->assertJsonPath('data.children.0.status', 'pending');
         $show->assertJsonPath('data.children.0.pickup_status', 'pending');
 
-        // تأكيد الصعود عبر QR (يتجاوز فحص الموقع)
+        // طھط£ظƒظٹط¯ ط§ظ„طµط¹ظˆط¯ ط¹ط¨ط± QR (ظٹطھط¬ط§ظˆط² ظپط­طµ ط§ظ„ظ…ظˆظ‚ط¹)
         $this->actingAs($this->driverUser)->postJson(
             "/api/v1/driver/trips/{$tripId}/verify-qr/{$sub->id}",
             ['qr_code_token' => $this->child->qr_code_token]
         )->assertStatus(200);
 
-        // بعد الصعود: boarded (وليس القيمة القديمة picked_up)
+        // ط¨ط¹ط¯ ط§ظ„طµط¹ظˆط¯: boarded (ظˆظ„ظٹط³ ط§ظ„ظ‚ظٹظ…ط© ط§ظ„ظ‚ط¯ظٹظ…ط© picked_up)
         $showAfter = $this->actingAs($this->driverUser)->getJson("/api/v1/driver/trips/{$tripId}");
         $showAfter->assertJsonPath('data.children.0.status', 'boarded');
         $showAfter->assertJsonPath('data.children.0.pickup_status', 'picked_up');
@@ -181,7 +181,7 @@ class TripLiveGapsTest extends TestCase
     }
 
     // =========================================================
-    // فجوة 2: تسجيل غياب السائق + أثره على توليد الرحلات
+    // ظپط¬ظˆط© 2: طھط³ط¬ظٹظ„ ط؛ظٹط§ط¨ ط§ظ„ط³ط§ط¦ظ‚ + ط£ط«ط±ظ‡ ط¹ظ„ظ‰ طھظˆظ„ظٹط¯ ط§ظ„ط±ط­ظ„ط§طھ
     // =========================================================
 
     public function test_driver_can_register_absence(): void
@@ -224,7 +224,7 @@ class TripLiveGapsTest extends TestCase
     }
 
     // =========================================================
-    // فجوة 3: الإبلاغ عن عطل واستئناف الرحلة
+    // ظپط¬ظˆط© 3: ط§ظ„ط¥ط¨ظ„ط§ط؛ ط¹ظ† ط¹ط·ظ„ ظˆط§ط³طھط¦ظ†ط§ظپ ط§ظ„ط±ط­ظ„ط©
     // =========================================================
 
     public function test_driver_can_report_breakdown_on_in_progress_trip(): void
@@ -236,11 +236,11 @@ class TripLiveGapsTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->driverUser)
-            ->postJson("/api/v1/driver/trips/{$trip->id}/report-breakdown", ['reason' => 'إطار مثقوب']);
+            ->postJson("/api/v1/driver/trips/{$trip->id}/report-breakdown", ['reason' => 'ط¥ط·ط§ط± ظ…ط«ظ‚ظˆط¨']);
 
         $response->assertStatus(200);
         $this->assertDatabaseHas('trips', [
-            'id' => $trip->id, 'status' => 'suspended_breakdown', 'suspension_reason' => 'إطار مثقوب',
+            'id' => $trip->id, 'status' => 'suspended_breakdown', 'suspension_reason' => 'ط¥ط·ط§ط± ظ…ط«ظ‚ظˆط¨',
         ]);
     }
 
@@ -263,7 +263,7 @@ class TripLiveGapsTest extends TestCase
         $trip = Trip::create([
             'driver_id' => $this->driver->id, 'route_id' => $this->route->id,
             'trip_type' => 'Morning', 'shift_slot' => 'morning_go', 'status' => 'suspended_breakdown',
-            'suspension_reason' => 'عطل مؤقت',
+            'suspension_reason' => 'ط¹ط·ظ„ ظ…ط¤ظ‚طھ',
             'trip_date' => now()->toDateString(), 'scheduled_at' => now(),
         ]);
 

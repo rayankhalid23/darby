@@ -60,7 +60,19 @@ class DriverProfileResource extends JsonResource
                 ];
             }),
 
-            // 🚀 هندسة ذكية لواجهة التطبيق: إعلام التطبيق بوجود تحديثات بانتظار موافقة الأدمن
+            'documents' => $this->whenLoaded('documents', function () {
+                return $this->documents->map(fn ($doc) => [
+                    'id'                    => $doc->id,
+                    'doc_type'              => $doc->doc_type,
+                    'file_url'              => $doc->file_url ? url($doc->file_url) : null,
+                    'insurance_expiry_date' => $doc->insurance_expiry_date,
+                    'status'                => $doc->status,
+                    'feedback'              => $doc->feedback,
+                    'uploaded_at'           => $doc->uploaded_at,
+                ]);
+            }),
+
+            // هندسة ذكية لواجهة التطبيق: إعلام التطبيق بوجود تحديثات بانتظار موافقة الأدمن
             'meta_sync' => [
                 'has_pending_changes' => !empty($pendingChange),
                 'email_change_pending' => (bool) ($user->email_change_pending ?? false),

@@ -27,13 +27,13 @@ class DriverFinancialEndpointsTest extends TestCase
         parent::setUp();
 
         DB::table('roles')->insertOrIgnore([
-            ['id' => 2, 'name' => 'Driver', 'display_name' => 'سائق'],
-            ['id' => 3, 'name' => 'Parent', 'display_name' => 'ولي أمر'],
+            ['id' => 2, 'name' => 'Driver', 'display_name' => 'ط³ط§ط¦ظ‚'],
+            ['id' => 3, 'name' => 'Parent', 'display_name' => 'ظˆظ„ظٹ ط£ظ…ط±'],
         ]);
 
         // 1. Driver user and model
         $this->driverUser = User::create([
-            'full_name'     => 'سائق مالية الاختبار',
+            'full_name'     => 'ط³ط§ط¦ظ‚ ظ…ط§ظ„ظٹط© ط§ظ„ط§ط®طھط¨ط§ط±',
             'email'         => 'driver.fin.' . uniqid() . '@darby.test',
             'phone_number'  => '091' . rand(1000000, 9999999),
             'password_hash' => bcrypt('password123'),
@@ -54,7 +54,7 @@ class DriverFinancialEndpointsTest extends TestCase
 
         // 2. Parent user
         $this->parentUser = User::create([
-            'full_name'     => 'ولي أمر مالية الاختبار',
+            'full_name'     => 'ظˆظ„ظٹ ط£ظ…ط± ظ…ط§ظ„ظٹط© ط§ظ„ط§ط®طھط¨ط§ط±',
             'email'         => 'parent.fin.' . uniqid() . '@darby.test',
             'phone_number'  => '092' . rand(1000000, 9999999),
             'password_hash' => bcrypt('password123'),
@@ -67,7 +67,7 @@ class DriverFinancialEndpointsTest extends TestCase
             'is_trusted' => 1,
         ]);
 
-        // 3. SubscriptionRequest (مطلوب كـ FK للعقد — نعطّل FK مؤقتاً في بيئة الاختبار)
+        // 3. SubscriptionRequest (ظ…ط·ظ„ظˆط¨ ظƒظ€ FK ظ„ظ„ط¹ظ‚ط¯ â€” ظ†ط¹ط·ظ‘ظ„ FK ظ…ط¤ظ‚طھط§ظ‹ ظپظٹ ط¨ظٹط¦ط© ط§ظ„ط§ط®طھط¨ط§ط±)
         DB::statement('SET FOREIGN_KEY_CHECKS=0');
         $subscriptionRequestId = DB::table('requests')->insertGetId([
             'parent_id'         => $parentModel->id,
@@ -76,7 +76,7 @@ class DriverFinancialEndpointsTest extends TestCase
             'timing'            => 'MORNING',
             'direction'         => 'both',
             'status'            => 'accepted',
-            'subscription_type' => 'monthly',
+            'subscription_type' => 'multi_day',
             'children_count'    => 1,
             'created_at'        => now(),
         ]);
@@ -88,7 +88,7 @@ class DriverFinancialEndpointsTest extends TestCase
             'parent_id'               => $this->parentUser->id,
             'driver_id'               => $this->driverUser->id,
             'contract_number'         => 'DRBY-FIN-' . rand(100000, 999999),
-            'subscription_type'       => 'monthly',
+            'subscription_type' => 'multi_day',
             'direction'               => 'both',
             'timing'                  => 'MORNING',
             'pickup_time'             => '07:00:00',
@@ -112,7 +112,7 @@ class DriverFinancialEndpointsTest extends TestCase
             'type'              => 'proforma',
             'status'            => 'pending',
             'due_date'          => now()->addDays(30),
-            'subscription_type' => 'monthly',
+            'subscription_type' => 'multi_day',
             'total_trips'       => 22,
             'completed_trips'   => 0,
             'driver_absences'   => 0,
@@ -164,9 +164,9 @@ class DriverFinancialEndpointsTest extends TestCase
         $payload = [
             'amount' => 50.0,
             'payment_method_details' => [
-                'bank_name' => 'مصرف الجمهورية',
+                'bank_name' => 'ظ…طµط±ظپ ط§ظ„ط¬ظ…ظ‡ظˆط±ظٹط©',
                 'account_number' => '123456789',
-                'account_name' => 'سائق مالية الاختبار',
+                'account_name' => 'ط³ط§ط¦ظ‚ ظ…ط§ظ„ظٹط© ط§ظ„ط§ط®طھط¨ط§ط±',
                 'mobile_number' => '0910000000'
             ]
         ];

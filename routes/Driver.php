@@ -82,6 +82,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // عرض بيانات الملف الشخصي للسائق وعلاقاته
     Route::get('profile', [ProfileController::class, 'show'])
         ->name('api.driver.profile.show');
+
+    // عرض حالة اعتماد الحساب فقط (Pending/Approved/Rejected) — لشاشة انتظار المراجعة
+    Route::get('status', [ProfileController::class, 'status'])
+        ->name('api.driver.status');
     
     // تحديث البيانات الشخصية والمظهر
     Route::match(['post', 'put'], 'preferences', [DriverPreferenceController::class, 'update'])

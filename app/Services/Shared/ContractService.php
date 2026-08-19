@@ -52,7 +52,7 @@ class ContractService
         'parent_id'               => $parentUserId,
         'driver_id'               => $driverUserId,
         'contract_number'         => $contractNumber,
-        'subscription_type'       => $req->subscription_type ?? $req->type ?? 'monthly',
+        'subscription_type'       => $req->subscription_type ?? $req->type ?? 'multi_day',
         'direction'               => $req->direction ?? $req->trip_type ?? 'both',
         'timing'                  => $req->timing ?? 'MORNING',
         'pickup_time'             => $req->pickup_time ?? '07:00:00',

@@ -15,7 +15,7 @@ use App\Models\Shared\SubscriptionRequest;
 use App\Services\Trip\RouteFeasibilityService;
 
 /**
- * اختبار فحص إمكانية إضافة طلب اشتراك جديد (Feasibility Check) دون حفظ أي بيانات.
+ * ط§ط®طھط¨ط§ط± ظپط­طµ ط¥ظ…ظƒط§ظ†ظٹط© ط¥ط¶ط§ظپط© ط·ظ„ط¨ ط§ط´طھط±ط§ظƒ ط¬ط¯ظٹط¯ (Feasibility Check) ط¯ظˆظ† ط­ظپط¸ ط£ظٹ ط¨ظٹط§ظ†ط§طھ.
  * GET /api/driver/requests/{id}/feasibility-check
  */
 class RouteFeasibilityCheckTest extends TestCase
@@ -33,12 +33,12 @@ class RouteFeasibilityCheckTest extends TestCase
         parent::setUp();
 
         DB::table('roles')->insertOrIgnore([
-            ['id' => 2, 'name' => 'Driver', 'display_name' => 'سائق'],
-            ['id' => 3, 'name' => 'Parent', 'display_name' => 'ولي أمر'],
+            ['id' => 2, 'name' => 'Driver', 'display_name' => 'ط³ط§ط¦ظ‚'],
+            ['id' => 3, 'name' => 'Parent', 'display_name' => 'ظˆظ„ظٹ ط£ظ…ط±'],
         ]);
 
         $this->driverUser = User::create([
-            'full_name'    => 'سائق فحص الإمكانية',
+            'full_name'    => 'ط³ط§ط¦ظ‚ ظپط­طµ ط§ظ„ط¥ظ…ظƒط§ظ†ظٹط©',
             'email'        => 'driver.feas.' . uniqid() . '@darby.test',
             'phone_number' => '091' . rand(1000000, 9999999),
             'password_hash' => bcrypt('password123'),
@@ -62,7 +62,7 @@ class RouteFeasibilityCheckTest extends TestCase
         ]);
 
         $this->parentUser = User::create([
-            'full_name'    => 'ولي أمر فحص الإمكانية',
+            'full_name'    => 'ظˆظ„ظٹ ط£ظ…ط± ظپط­طµ ط§ظ„ط¥ظ…ظƒط§ظ†ظٹط©',
             'email'        => 'parent.feas.' . uniqid() . '@darby.test',
             'phone_number' => '092' . rand(1000000, 9999999),
             'password_hash' => bcrypt('password123'),
@@ -76,8 +76,8 @@ class RouteFeasibilityCheckTest extends TestCase
         ]);
 
         $this->school = School::create([
-            'name'    => 'مدرسة فحص الإمكانية',
-            'address' => 'شارع الاختبار',
+            'name'    => 'ظ…ط¯ط±ط³ط© ظپط­طµ ط§ظ„ط¥ظ…ظƒط§ظ†ظٹط©',
+            'address' => 'ط´ط§ط±ط¹ ط§ظ„ط§ط®طھط¨ط§ط±',
             'lat'     => 32.9000,
             'lng'     => 13.2000,
             'status'  => 'active',
@@ -89,7 +89,7 @@ class RouteFeasibilityCheckTest extends TestCase
         $child = Child::create([
             'parent_id'            => $this->parent->id,
             'school_id'            => $this->school->id,
-            'full_name'            => 'طفل فحص الإمكانية',
+            'full_name'            => 'ط·ظپظ„ ظپط­طµ ط§ظ„ط¥ظ…ظƒط§ظ†ظٹط©',
             'birth_date'           => '2018-05-10',
             'gender'               => 'male',
             'grade'                => 1,
@@ -98,7 +98,7 @@ class RouteFeasibilityCheckTest extends TestCase
 
         $addressId = DB::table('addresses')->insertGetId([
             'parent_id'  => $this->parentUser->id,
-            'label'      => 'منزل',
+            'label'      => 'ظ…ظ†ط²ظ„',
             'lat'        => $homeLat,
             'lng'        => $homeLng,
             'is_default' => true,
@@ -110,7 +110,7 @@ class RouteFeasibilityCheckTest extends TestCase
             'parent_id'         => $this->parent->id,
             'driver_id'         => $this->driver->id,
             'school_id'         => $this->school->id,
-            'subscription_type' => 'monthly',
+            'subscription_type' => 'multi_day',
             'direction'         => 'go',
             'timing'            => 'MORNING',
             'start_date'        => now()->addDay()->format('Y-m-d'),
@@ -128,10 +128,10 @@ class RouteFeasibilityCheckTest extends TestCase
             'dropoff_address_id' => $this->school->id,
             'home_lat'           => $homeLat,
             'home_lng'           => $homeLng,
-            'home_label'         => 'المنزل',
+            'home_label'         => 'ط§ظ„ظ…ظ†ط²ظ„',
             'school_lat'         => 32.90,
             'school_lng'         => 13.20,
-            'school_label'       => 'المدرسة',
+            'school_label'       => 'ط§ظ„ظ…ط¯ط±ط³ط©',
             'price_per_child'    => 100.00,
         ]);
 
@@ -187,7 +187,7 @@ class RouteFeasibilityCheckTest extends TestCase
     public function test_driver_cannot_check_feasibility_for_another_drivers_request(): void
     {
         $otherDriverUser = User::create([
-            'full_name'    => 'سائق آخر',
+            'full_name'    => 'ط³ط§ط¦ظ‚ ط¢ط®ط±',
             'email'        => 'driver.other.feas.' . uniqid() . '@darby.test',
             'phone_number' => '093' . rand(1000000, 9999999),
             'password_hash' => bcrypt('password123'),

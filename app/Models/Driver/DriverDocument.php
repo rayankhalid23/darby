@@ -14,8 +14,8 @@ class DriverDocument extends Model
     public $timestamps = false;
 
     protected $fillable = [
-        'driver_id', 'vehicle_id', 'doc_type', 'file_url', 
-        'license_expiry_date', 'insurance_expiry_date', 'status', 
+        'driver_id', 'vehicle_id', 'doc_type', 'file_url',
+        'license_expiry_date', 'insurance_expiry_date', 'expiry_notified_milestone', 'status',
         'reviewed_by', 'feedback', 'uploaded_at' // أضفنا uploaded_at
     ];
 

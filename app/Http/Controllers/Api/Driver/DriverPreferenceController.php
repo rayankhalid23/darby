@@ -9,6 +9,7 @@ use App\Http\Resources\Api\Driver\DriverPreferenceResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
 use Illuminate\Http\Request;
+use Exception;
 
 class DriverPreferenceController extends Controller
 {
@@ -45,15 +46,27 @@ class DriverPreferenceController extends Controller
      */
     public function update(UpdateDriverPreferencesRequest $request): JsonResponse
     {
-        // نمرر البيانات كما هي (الـ Service هي المسؤولة عن تحويل الـ Enum إذا لزم الأمر)
-        $driver = $request->user()->driver;
-        $updatedDriver = $this->preferenceService->updatePreferences($driver, $request->validated());
-    
-        return response()->json([
-            'status'  => true,
-            'message' => 'تم تحديث التفضيلات بنجاح.',
-            'data'    => new DriverPreferenceResource($updatedDriver)
-        ]);
+        try {
+            $driver = $request->user()->driver;
+            if (!$driver) {
+                return response()->json(['status' => false, 'message' => 'ملف التعريف غير موجود.'], 404);
+            }
+
+            $updatedDriver = $this->preferenceService->updatePreferences($driver, $request->validated());
+
+            return response()->json([
+                'status'  => true,
+                'message' => 'تم تحديث التفضيلات بنجاح.',
+                'data'    => new DriverPreferenceResource($updatedDriver)
+            ]);
+
+        } catch (Exception $e) {
+            \Log::error('Driver Preference Update Error: ' . $e->getMessage(), [
+                'driver_id' => $request->user()->driver?->id,
+                'trace'     => $e->getTraceAsString()
+            ]);
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 422);
+        }
     }
 
     /**

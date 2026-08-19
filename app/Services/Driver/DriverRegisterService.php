@@ -59,7 +59,7 @@ class DriverRegisterService
                 'alternative_phone' => $data['alternative_phone'] ?? null,
                 'password_hash'     => Hash::make($data['password']),
                 'role_id'           => 4,
-                'is_active'         => 0, // مفعل مباشرة
+                'is_active'         => 0, // معلّق — يتفعل فقط عند موافقة الأدمن
             ]);
 
             // 2. إنشاء ملف السائق الأساسي
@@ -124,21 +124,22 @@ class DriverRegisterService
 
                 // 3. إدخال المستندات
                 $documents = [
-                    'LICENSE'         => $data['doc_license_path'],
-                    'VEHICLE_LOGBOOK' => $data['doc_logbook_path'],
-                    'INSURANCE'       => $data['doc_insurance_path'],
-                    'CRIMINAL_RECORD' => $data['doc_criminal_record_path'],
+                    'LICENSE'         => ['file_url' => $data['doc_license_path']],
+                    'VEHICLE_LOGBOOK' => ['file_url' => $data['doc_logbook_path']],
+                    'INSURANCE'       => [
+                        'file_url'               => $data['doc_insurance_path'],
+                        'insurance_expiry_date'   => $data['insurance_expiry'],
+                    ],
                 ];
 
-                foreach ($documents as $type => $path) {
-                    DriverDocument::create([
+                foreach ($documents as $type => $fields) {
+                    DriverDocument::create(array_merge([
                         'driver_id'   => $driver->id,
                         'vehicle_id'  => $vehicle->id,
                         'doc_type'    => $type,
-                        'file_url'    => $path,
                         'status'      => 'Pending',
                         'uploaded_at' => now(),
-                    ]);
+                    ], $fields));
                 }
 
                 // الكود الجديد البديل لمنع استعلام الحذف الناعم المنهار

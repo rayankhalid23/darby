@@ -42,12 +42,11 @@ class UpdateDriverPreferencesRequest extends FormRequest
     public function withValidator($validator): void
     {
         $validator->after(function ($v) {
-            $data = $this->validated();
             if (
-                empty($data['morning_go']) &&
-                empty($data['morning_return']) &&
-                empty($data['afternoon_go']) &&
-                empty($data['afternoon_return'])
+                !$this->boolean('morning_go') &&
+                !$this->boolean('morning_return') &&
+                !$this->boolean('afternoon_go') &&
+                !$this->boolean('afternoon_return')
             ) {
                 $v->errors()->add('shift_slots', 'يجب اختيار فترة عمل واحدة على الأقل (صباحي ذهاب أو إياب أو مسائي ذهاب أو إياب).');
             }

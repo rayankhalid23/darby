@@ -46,7 +46,7 @@ class ActiveSubscriptionResource extends JsonResource
             ],
 
             'billing' => [
-                'subscriptionType' => $this->subscription_type ?? 'monthly',
+                'subscriptionType' => $this->subscription_type ?? 'multi_day',
                 // السعر الإجمالي
                 'totalPrice' => (float) ($this->price ?? 89),
                 // سعر كل طفل (في حال كان الطلب يحتوي على سعر أساسي للطفل أو مخصص)

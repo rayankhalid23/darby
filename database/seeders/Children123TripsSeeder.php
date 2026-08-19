@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace Database\Seeders;
 
@@ -17,23 +17,23 @@ class Children123TripsSeeder extends Seeder
 {
     public function run(): void
     {
-        echo "🚀 بدء إضافة الاشتراكات والرحلات النشطة لجميع أيام الأسبوع للأطفال (IDs: 1, 2, 3)...\n";
+        echo "ًںڑ€ ط¨ط¯ط، ط¥ط¶ط§ظپط© ط§ظ„ط§ط´طھط±ط§ظƒط§طھ ظˆط§ظ„ط±ط­ظ„ط§طھ ط§ظ„ظ†ط´ط·ط© ظ„ط¬ظ…ظٹط¹ ط£ظٹط§ظ… ط§ظ„ط£ط³ط¨ظˆط¹ ظ„ظ„ط£ط·ظپط§ظ„ (IDs: 1, 2, 3)...\n";
 
-        // 1. التأكد من وجود الأطفال 1, 2, 3
+        // 1. ط§ظ„طھط£ظƒط¯ ظ…ظ† ظˆط¬ظˆط¯ ط§ظ„ط£ط·ظپط§ظ„ 1, 2, 3
         $children = Child::whereIn('id', [1, 2, 3])->get();
         if ($children->isEmpty()) {
-            echo "❌ الأطفال غير موجودين في الداتابيز.\n";
+            echo "â‌Œ ط§ظ„ط£ط·ظپط§ظ„ ط؛ظٹط± ظ…ظˆط¬ظˆط¯ظٹظ† ظپظٹ ط§ظ„ط¯ط§طھط§ط¨ظٹط².\n";
             return;
         }
 
-        // 2. جلب السائق (عبد السلام المصراتي ID: 36 أو أول سائق)
+        // 2. ط¬ظ„ط¨ ط§ظ„ط³ط§ط¦ظ‚ (ط¹ط¨ط¯ ط§ظ„ط³ظ„ط§ظ… ط§ظ„ظ…طµط±ط§طھظٹ ID: 36 ط£ظˆ ط£ظˆظ„ ط³ط§ط¦ظ‚)
         $driver = Driver::find(36) ?? Driver::first();
         if (!$driver) {
-            echo "❌ لا يوجد سائق لربط الأطفال به.\n";
+            echo "â‌Œ ظ„ط§ ظٹظˆط¬ط¯ ط³ط§ط¦ظ‚ ظ„ط±ط¨ط· ط§ظ„ط£ط·ظپط§ظ„ ط¨ظ‡.\n";
             return;
         }
 
-        // 3. الحصول على عقد لولي الأمر طه القمودي (User ID: 93)
+        // 3. ط§ظ„ط­طµظˆظ„ ط¹ظ„ظ‰ ط¹ظ‚ط¯ ظ„ظˆظ„ظٹ ط§ظ„ط£ظ…ط± ط·ظ‡ ط§ظ„ظ‚ظ…ظˆط¯ظٹ (User ID: 93)
         $parentId = 93;
         $contract = Contract::where('parent_id', $parentId)->first();
         if (!$contract) {
@@ -42,7 +42,7 @@ class Children123TripsSeeder extends Seeder
                 'parent_id'               => $parentId,
                 'driver_id'               => $driver->user_id ?? $driver->id,
                 'contract_number'         => 'CNT-2026-CHILD123',
-                'subscription_type'       => 'monthly',
+                'subscription_type' => 'multi_day',
                 'direction'               => 'two_way',
                 'timing'                  => 'morning',
                 'pickup_time'             => '07:00:00',
@@ -57,7 +57,7 @@ class Children123TripsSeeder extends Seeder
             ]);
         }
 
-        // 4. إنشاء الاشتراكات النشطة في active_subscriptions لكل طفل (1, 2, 3)
+        // 4. ط¥ظ†ط´ط§ط، ط§ظ„ط§ط´طھط±ط§ظƒط§طھ ط§ظ„ظ†ط´ط·ط© ظپظٹ active_subscriptions ظ„ظƒظ„ ط·ظپظ„ (1, 2, 3)
         foreach ($children as $child) {
             ActiveSubscription::updateOrCreate(
                 ['child_id' => $child->id, 'driver_id' => $driver->id],
@@ -66,10 +66,10 @@ class Children123TripsSeeder extends Seeder
                     'parent_id'     => $parentId,
                     'pickup_lat'    => 32.89200000,
                     'pickup_lng'    => 13.17500000,
-                    'pickup_label'  => 'منزل طه القمودي - حي الأندلس',
+                    'pickup_label'  => 'ظ…ظ†ط²ظ„ ط·ظ‡ ط§ظ„ظ‚ظ…ظˆط¯ظٹ - ط­ظٹ ط§ظ„ط£ظ†ط¯ظ„ط³',
                     'dropoff_lat'   => 32.89000000,
                     'dropoff_lng'   => 13.17000000,
-                    'dropoff_label' => 'مدرسة الجيل الجديد الدولية',
+                    'dropoff_label' => 'ظ…ط¯ط±ط³ط© ط§ظ„ط¬ظٹظ„ ط§ظ„ط¬ط¯ظٹط¯ ط§ظ„ط¯ظˆظ„ظٹط©',
                     'pickup_time'   => '07:00:00',
                     'dropoff_time'  => '14:00:00',
                     'status'        => 'active'
@@ -77,16 +77,16 @@ class Children123TripsSeeder extends Seeder
             );
         }
 
-        // 5. التأكد من وجود مركبة ومسار للسائق
+        // 5. ط§ظ„طھط£ظƒط¯ ظ…ظ† ظˆط¬ظˆط¯ ظ…ط±ظƒط¨ط© ظˆظ…ط³ط§ط± ظ„ظ„ط³ط§ط¦ظ‚
         $vehicleId = DB::table('vehicles')->where('driver_id', $driver->id)->value('id');
         if (!$vehicleId) {
             $vehicleId = DB::table('vehicles')->insertGetId([
                 'driver_id'       => $driver->id,
                 'plate_number'    => '5-99887',
-                'brand'           => 'تويوتا',
-                'model'           => 'كوستر',
+                'brand'           => 'طھظˆظٹظˆطھط§',
+                'model'           => 'ظƒظˆط³طھط±',
                 'year'            => 2023,
-                'color'           => 'أبيض',
+                'color'           => 'ط£ط¨ظٹط¶',
                 'type'            => 'Bus',
                 'capacity_manual' => 20,
                 'is_verified'     => 1,
@@ -101,7 +101,7 @@ class Children123TripsSeeder extends Seeder
             $route = Route::create([
                 'driver_id'          => $driver->id,
                 'vehicle_id'         => $vehicleId,
-                'route_name'         => 'مسار أطفال طه القمودي - حي الأندلس',
+                'route_name'         => 'ظ…ط³ط§ط± ط£ط·ظپط§ظ„ ط·ظ‡ ط§ظ„ظ‚ظ…ظˆط¯ظٹ - ط­ظٹ ط§ظ„ط£ظ†ط¯ظ„ط³',
                 'route_type'         => 'Morning',
                 'start_time'         => '07:00:00',
                 'estimated_duration' => 40,
@@ -109,7 +109,7 @@ class Children123TripsSeeder extends Seeder
             ]);
         }
 
-        // 6. تحديد أيام الأسبوع الحالي (الأحد إلى الخميس)
+        // 6. طھط­ط¯ظٹط¯ ط£ظٹط§ظ… ط§ظ„ط£ط³ط¨ظˆط¹ ط§ظ„ط­ط§ظ„ظٹ (ط§ظ„ط£ط­ط¯ ط¥ظ„ظ‰ ط§ظ„ط®ظ…ظٹط³)
         $startOfWeek = Carbon::today()->startOfWeek(Carbon::SUNDAY);
         $weekDays = [];
         for ($i = 0; $i < 5; $i++) {
@@ -135,7 +135,7 @@ class Children123TripsSeeder extends Seeder
                 $completedAt = null;
             }
 
-            // إنشاء أو تحديث سجل الرحلة
+            // ط¥ظ†ط´ط§ط، ط£ظˆ طھط­ط¯ظٹط« ط³ط¬ظ„ ط§ظ„ط±ط­ظ„ط©
             $trip = Trip::updateOrCreate(
                 [
                     'driver_id' => $driver->id,
@@ -155,24 +155,24 @@ class Children123TripsSeeder extends Seeder
                 ]
             );
 
-            // ربط حضور الأبناء والأحداث والتتبع لكل طفل (1, 2, 3)
+            // ط±ط¨ط· ط­ط¶ظˆط± ط§ظ„ط£ط¨ظ†ط§ط، ظˆط§ظ„ط£ط­ط¯ط§ط« ظˆط§ظ„طھطھط¨ط¹ ظ„ظƒظ„ ط·ظپظ„ (1, 2, 3)
             foreach ($children as $child) {
                 $subRec = ActiveSubscription::where('child_id', $child->id)->where('driver_id', $driver->id)->first();
 
-                // 1. تسجيل الحضور
+                // 1. طھط³ط¬ظٹظ„ ط§ظ„ط­ط¶ظˆط±
                 DB::table('trip_student_attendance')->updateOrInsert(
                     ['trip_id' => $trip->id, 'child_id' => $child->id],
                     ['attendance_status' => 'present', 'updated_at' => now(), 'created_at' => now()]
                 );
 
-                // 2. إيقاع حدث صعود الطفل للحافلة للرحلات القائمة والمكتملة
+                // 2. ط¥ظٹظ‚ط§ط¹ ط­ط¯ط« طµط¹ظˆط¯ ط§ظ„ط·ظپظ„ ظ„ظ„ط­ط§ظپظ„ط© ظ„ظ„ط±ط­ظ„ط§طھ ط§ظ„ظ‚ط§ط¦ظ…ط© ظˆط§ظ„ظ…ظƒطھظ…ظ„ط©
                 if ($tripStatus !== 'planned' && $subRec) {
                     DB::table('trip_events')->updateOrInsert(
                         ['trip_id' => $trip->id, 'child_id' => $child->id],
                         [
                             'subscription_id' => $subRec->id,
                             'action_type'     => 'picked_up',
-                            'trip_type'       => 'ذهاب',
+                            'trip_type'       => 'ط°ظ‡ط§ط¨',
                             'location_lat'    => 32.89200000,
                             'location_lng'    => 13.17500000,
                             'scanned_at'      => $startedAt ? $startedAt->copy()->addMinutes(5) : now(),
@@ -182,7 +182,7 @@ class Children123TripsSeeder extends Seeder
                 }
             }
 
-            // 3. إدخال إحداثيات التتبع الجغرافي الحي للرحلة النشطة والمكتملة
+            // 3. ط¥ط¯ط®ط§ظ„ ط¥ط­ط¯ط§ط«ظٹط§طھ ط§ظ„طھطھط¨ط¹ ط§ظ„ط¬ط؛ط±ط§ظپظٹ ط§ظ„ط­ظٹ ظ„ظ„ط±ط­ظ„ط© ط§ظ„ظ†ط´ط·ط© ظˆط§ظ„ظ…ظƒطھظ…ظ„ط©
             if ($tripStatus !== 'planned') {
                 DB::table('trip_tracking')->insert([
                     'trip_id'     => $trip->id,
@@ -194,9 +194,9 @@ class Children123TripsSeeder extends Seeder
                 ]);
             }
 
-            echo "✅ يوم {$dateStr}: تم إنشاء الرحلة (Status: {$tripStatus} - ID: {$trip->id}) للأطفال 1, 2, 3 بنجاح!\n";
+            echo "âœ… ظٹظˆظ… {$dateStr}: طھظ… ط¥ظ†ط´ط§ط، ط§ظ„ط±ط­ظ„ط© (Status: {$tripStatus} - ID: {$trip->id}) ظ„ظ„ط£ط·ظپط§ظ„ 1, 2, 3 ط¨ظ†ط¬ط§ط­!\n";
         }
 
-        echo "🎉 اكتمل زرع الرحلات النشطة لجميع أطفال طه القمودي (IDs: 1, 2, 3) طوال الأسبوع بنجاح تام!\n";
+        echo "ًںژ‰ ط§ظƒطھظ…ظ„ ط²ط±ط¹ ط§ظ„ط±ط­ظ„ط§طھ ط§ظ„ظ†ط´ط·ط© ظ„ط¬ظ…ظٹط¹ ط£ط·ظپط§ظ„ ط·ظ‡ ط§ظ„ظ‚ظ…ظˆط¯ظٹ (IDs: 1, 2, 3) ط·ظˆط§ظ„ ط§ظ„ط£ط³ط¨ظˆط¹ ط¨ظ†ط¬ط§ط­ طھط§ظ…!\n";
     }
 }

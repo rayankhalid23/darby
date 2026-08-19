@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" type="device">
+  <diagram name="البحث عن سائق مطابق وإرسال طلب الاشتراك" id="driver-search-subscription">
+    <mxGraphModel dx="1400" dy="900" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="3900" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        
+        <!-- عنوان المخطط والتذييل -->
+        <mxCell id="ttl" value="مخطط تسلسلي — البحث عن سائق مطابق للأطفال، الفلترة وإرسال طلب الاشتراك" style="text;html=1;align=center;verticalAlign=middle;fontSize=19;fontStyle=1;fontColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="300" y="10" width="900" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="sub" value="مسار البحث: POST /api/parent/drivers/search | مسار إرسال الطلب: POST /api/parent | منطق المطابقة والتسعير: DriverMatchingService &amp; SubscriptionRequestService" style="text;html=1;align=center;verticalAlign=middle;fontSize=12;fontStyle=2;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="35" y="3790" width="1240" height="24" as="geometry"/>
+        </mxCell>
+
+        <!-- خطوط الحياة (Lifelines) -->
+        <mxCell id="n175" value="ولي الأمر (Parent)" style="shape=umlLifeline;participant=umlActor;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;verticalAlign=top;spacingTop=42;outlineConnect=0;fontSize=13;fontStyle=1;strokeColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="95" y="60" width="30" height="3700" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="n176" value="الواجهة (Frontend Client)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#b0e3e6;strokeColor=#0e8088;rounded=1;fontSize=13;fontStyle=1;size=50;" vertex="1" parent="1">
+          <mxGeometry x="290" y="60" width="220" height="3700" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="n177" value="المتحكم والخدمة (API Controller / Service)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#b0e3e6;strokeColor=#0e8088;rounded=1;fontSize=13;fontStyle=1;size=50;" vertex="1" parent="1">
+          <mxGeometry x="630" y="60" width="280" height="3700" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="n178" value="قاعدة البيانات (Database)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#b0e3e6;strokeColor=#0e8088;rounded=1;fontSize=13;fontStyle=1;size=50;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="60" width="230" height="3700" as="geometry"/>
+        </mxCell>
+
+        <!-- أطر العمل (Frames / Fragments) -->
+        <mxCell id="n128" value="alt" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;fillColor=#fad7ac;strokeColor=#b46504;width=70;height=28;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="35" y="415" width="1240" height="1055" as="geometry"/>
+        </mxCell>
+        <mxCell id="n123" value="alt" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;fillColor=#fff2cc;strokeColor=#d6b656;width=70;height=28;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="75" y="930" width="1180" height="265" as="geometry"/>
+        </mxCell>
+        <mxCell id="n146" value="loop" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;fillColor=#d5e8d4;strokeColor=#82b366;width=70;height=28;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="35" y="1560" width="1240" height="810" as="geometry"/>
+        </mxCell>
+        <mxCell id="n145" value="alt" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;fillColor=#fad7ac;strokeColor=#b46504;width=70;height=28;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="75" y="2020" width="1180" height="325" as="geometry"/>
+        </mxCell>
+        <mxCell id="n174" value="alt" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;fillColor=#fad7ac;strokeColor=#b46504;width=70;height=28;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="35" y="2970" width="1240" height="755" as="geometry"/>
+        </mxCell>
+
+        <!-- أعمدة التنشيط (Execution Perimeters) -->
+        <mxCell id="n179" value="" style="html=1;points=[[0,0,0,0,5],[0,1,0,0,-5]];perimeter=orthogonalPerimeter;outlineConnect=0;targetShapes=umlLifeline;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="765" y="271" width="10" height="1180" as="geometry"/>
+        </mxCell>
+        <mxCell id="n180" value="" style="html=1;points=[[0,0,0,0,5],[0,1,0,0,-5]];perimeter=orthogonalPerimeter;outlineConnect=0;targetShapes=umlLifeline;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="765" y="1745" width="10" height="605" as="geometry"/>
+        </mxCell>
+        <mxCell id="n181" value="" style="html=1;points=[[0,0,0,0,5],[0,1,0,0,-5]];perimeter=orthogonalPerimeter;outlineConnect=0;targetShapes=umlLifeline;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="765" y="2825" width="10" height="885" as="geometry"/>
+        </mxCell>
+
+        <!-- ======================================================== -->
+        <!-- المرحلة 1: تحديد الأطفال والبحث التلقائي عن السائقين المطابقين -->
+        <!-- ======================================================== -->
+        <mxCell id="n101" value="المرحلة 1: تحديد الأطفال وعرض السائقين المطابقين مع الأسعار التقديرية" style="text;html=1;align=center;verticalAlign=middle;fontSize=15;fontStyle=1;fillColor=#d5e8d4;strokeColor=#82b366;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="65" y="171" width="560" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="n102" value="1) اختيار الأطفال المراد الاشتراك لهم" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="110" y="223" as="sourcePoint"/><mxPoint x="400" y="223" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n103" value="2) POST /api/parent/drivers/search (child_ids: [1, 2])" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=13;fontColor=#004c6d;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="400" y="271" as="sourcePoint"/><mxPoint x="765" y="271" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n104" value="3) التحقق من تبعية الأطفال لـ parent_id الحالي" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="775" y="319" as="sourcePoint"/><mxPoint x="1145" y="319" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n105" value="4) نتيجة التحقق (Validation Result)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="1145" y="367" as="sourcePoint"/><mxPoint x="775" y="367" as="targetPoint"/></mxGeometry>
+        </mxCell>
+
+        <!-- فرع الخطأ 1 -->
+        <mxCell id="n106" value="[أحد الأطفال لا ينتمي لولي الأمر أو معرفات غير صالحة]" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontStyle=2;fontColor=#b80000;" vertex="1" parent="1">
+          <mxGeometry x="53" y="445" width="600" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="n107" value="5) 422 Unprocessable (child_ids.*.exists failed)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;fontColor=#b80000;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="765" y="479" as="sourcePoint"/><mxPoint x="400" y="479" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n108" value="6) عرض رسالة تنبيه لولي الأمر" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="400" y="527" as="sourcePoint"/><mxPoint x="110" y="527" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n109" style="endArrow=none;dashed=1;html=1;strokeColor=#808080;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="35" y="575" as="sourcePoint"/><mxPoint x="1275" y="575" as="targetPoint"/></mxGeometry>
+        </mxCell>
+
+        <!-- فرع النجاح 1 -->
+        <mxCell id="n110" value="[البيانات صالحة والأطفال معتمدون]" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontStyle=2;fontColor=#007a3d;" vertex="1" parent="1">
+          <mxGeometry x="53" y="578" width="600" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="n111" value="7) استعلام بيانات الأطفال (المدرسة، موقع المنزل، المرحلة، واللوجستيات)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="775" y="612" as="sourcePoint"/><mxPoint x="1145" y="612" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n112" value="8) كائنات الأطفال (Schools, Addresses, Logistics, SchoolStages)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="1145" y="660" as="sourcePoint"/><mxPoint x="775" y="660" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n113" value="9) اشتقاق الفلاتر الصارمة تلقائياً:&amp;#10;المنطقة الجغرافية + جنس القبول + نوع الاشتراك + الفترة والاتجاه + السعة المطلوبة" style="html=1;align=left;spacingLeft=6;endArrow=block;rounded=0;edgeStyle=orthogonalEdgeStyle;curved=0;fontSize=13;verticalAlign=middle;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="775" y="705" as="sourcePoint"/><mxPoint x="775" y="739" as="targetPoint"/><Array as="points"><mxPoint x="850" y="705"/><mxPoint x="850" y="739"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="n114" value="فلاتر أمان إجبارية يفرضها النظام تلقائياً لحماية الأطفال، ولا تعتمد على مدخلات المستخدم." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=right;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="800" y="755" width="450" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="n115" value="10) استعلام السائقين المعتمدين المطابقين لمنطقة المدرسة (Primary Zone)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="775" y="825" as="sourcePoint"/><mxPoint x="1145" y="825" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n116" value="11) قائمة السائقين (Drivers, Vehicles, SeatSlots)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="1145" y="873" as="sourcePoint"/><mxPoint x="775" y="873" as="targetPoint"/></mxGeometry>
+        </mxCell>
+
+        <!-- التوسيع الذكي (Fallback) -->
+        <mxCell id="n117" value="[لا يوجد سائقون متاحون في نطاق منطقة المدرسة المباشر]" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontStyle=2;fontColor=#b46504;" vertex="1" parent="1">
+          <mxGeometry x="90" y="955" width="650" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="n118" value="12) التوسيع الجغرافي: استعلام السائقين في جميع مناطق البلدية الفرعية (Sub-Municipality Zones)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="775" y="990" as="sourcePoint"/><mxPoint x="1145" y="990" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n119" value="13) قائمة السائقين الموسعة" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="1145" y="1038" as="sourcePoint"/><mxPoint x="775" y="1038" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n120" style="endArrow=none;dashed=1;html=1;strokeColor=#808080;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="75" y="1090" as="sourcePoint"/><mxPoint x="1255" y="1090" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n121" value="[وُجد سائقون مطابقون في نطاق المدرسة]" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontStyle=2;fontColor=#007a3d;" vertex="1" parent="1">
+          <mxGeometry x="90" y="1092" width="650" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="n122" value="تعتمد نتائج المنطقة المباشرة فوراً مع دقة مطابقة 100% دون الحاجة للتوسيع." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=right;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="800" y="1120" width="430" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- معادلة التسعير -->
+        <mxCell id="n124" value="14) حساب السعر التقديري لكل طفل وسائق:&amp;#10;المسافة (Km) × تسعيرة الكيلومتر (مكيف / عادي) × أيام العمل × عدد الرحلات اليومية" style="html=1;align=left;spacingLeft=6;endArrow=block;rounded=0;edgeStyle=orthogonalEdgeStyle;curved=0;fontSize=13;verticalAlign=middle;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="775" y="1225" as="sourcePoint"/><mxPoint x="775" y="1259" as="targetPoint"/><Array as="points"><mxPoint x="850" y="1225"/><mxPoint x="850" y="1259"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="n125" value="سعر الكيلومتر: 1.5 د.ل بدون مكيف | 2.0 د.ل مع مكيف&#10;أيام العمل: تُحسب آلياً باستثناء الجمعة والسبت." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=right;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="800" y="1275" width="430" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="n126" value="15) 200 OK: قائمة السائقين مع بيانات المركبة والأسعار التقديرية (DriverMatchResource)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;fontColor=#007a3d;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="765" y="1360" as="sourcePoint"/><mxPoint x="400" y="1360" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n127" value="16) عرض بطاقات السائقين مع الأسعار والمقاعد الشاغرة ومواصفات المركبة" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="400" y="1408" as="sourcePoint"/><mxPoint x="110" y="1408" as="targetPoint"/></mxGeometry>
+        </mxCell>
+
+        <!-- ======================================================== -->
+        <!-- المرحلة 2: فلترة إضافية اختيارية على النتائج (المكيف / الجنس) -->
+        <!-- ======================================================== -->
+        <mxCell id="n129" value="المرحلة 2: فلترة إضافية اختيارية على النتائج (جنس السائق و/أو تكييف المركبة)" style="text;html=1;align=center;verticalAlign=middle;fontSize=15;fontStyle=1;fillColor=#d5e8d4;strokeColor=#82b366;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="65" y="1510" width="560" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="n130" value="[كلما اختار ولي الأمر فلتراً: تكييف المركبة has_ac أو جنس السائق driver_gender أو كلاهما]" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontStyle=2;fontColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="53" y="1590" width="750" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="n131" value="خطوة اختيارية في الواجهة: يتم استخدام نفس الـ Endpoint تماماً مع إضافة بارامترات الفلترة." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=right;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="450" y="1625" width="520" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="n132" value="17) تفعيل فلتر (تكييف المركبة: has_ac=true / جنس السائق: driver_gender=female)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="110" y="1695" as="sourcePoint"/><mxPoint x="400" y="1695" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n133" value="18) POST /api/parent/drivers/search (child_ids, driver_gender, has_ac)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=13;fontColor=#004c6d;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="400" y="1745" as="sourcePoint"/><mxPoint x="765" y="1745" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n134" value="نفس مسار المتحكم والخدمة DriverMatchingService مع تطبيق شروط WHERE الإضافية." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=right;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="800" y="1780" width="440" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="n135" value="19) استعلام السائقين مع دمج فلاتر المركبة (vehicles.has_ac) وجنس السائق (drivers.gender)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="775" y="1855" as="sourcePoint"/><mxPoint x="1145" y="1855" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n136" value="20) قائمة السائقين المفلترة" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="1145" y="1903" as="sourcePoint"/><mxPoint x="775" y="1903" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n137" value="21) إعادة حساب التسعيرة المخصصة للسائقين المتبقين" style="html=1;align=left;spacingLeft=6;endArrow=block;rounded=0;edgeStyle=orthogonalEdgeStyle;curved=0;fontSize=13;verticalAlign=middle;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="775" y="1948" as="sourcePoint"/><mxPoint x="775" y="1982" as="targetPoint"/><Array as="points"><mxPoint x="850" y="1948"/><mxPoint x="850" y="1982"/></Array></mxGeometry>
+        </mxCell>
+
+        <!-- فرع نتائج الفلترة -->
+        <mxCell id="n138" value="[لا يوجد سائق يطابق الفلاتر الإضافية المطلوبة]" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontStyle=2;fontColor=#b80000;" vertex="1" parent="1">
+          <mxGeometry x="90" y="2045" width="600" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="n139" value="22) 200 OK: data: [] (قائمة فارغة مع message: لم يتم العثور على سائقين مطابقين)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;fontColor=#b80000;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="765" y="2080" as="sourcePoint"/><mxPoint x="400" y="2080" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n140" value="23) عرض شاشة فارغة مع خيار إعادة ضبط الفلاتر" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="400" y="2128" as="sourcePoint"/><mxPoint x="110" y="2128" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n141" style="endArrow=none;dashed=1;html=1;strokeColor=#808080;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="75" y="2185" as="sourcePoint"/><mxPoint x="1255" y="2185" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n142" value="[توجد نتائج مطابقة]" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontStyle=2;fontColor=#007a3d;" vertex="1" parent="1">
+          <mxGeometry x="90" y="2187" width="600" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="n143" value="24) 200 OK: قائمة السائقين المفلترة مع الأسعار وبيانات التكييف" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;fontColor=#007a3d;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="765" y="2225" as="sourcePoint"/><mxPoint x="400" y="2225" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n144" value="25) تحديث قائمة السائقين في واجهة التطبيق" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="400" y="2273" as="sourcePoint"/><mxPoint x="110" y="2273" as="targetPoint"/></mxGeometry>
+        </mxCell>
+
+        <!-- ======================================================== -->
+        <!-- المرحلة 3: استعراض تفاصيل وبروفايل السائق المختار -->
+        <!-- ======================================================== -->
+        <mxCell id="n147" value="المرحلة 3: استعراض تفاصيل وبروفايل السائق المختار (Driver Profile)" style="text;html=1;align=center;verticalAlign=middle;fontSize=15;fontStyle=1;fillColor=#d5e8d4;strokeColor=#82b366;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="65" y="2425" width="560" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="n148" value="26) النقر على بطاقة السائق لعرض بروفايله وتفاصيل عرضه" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="110" y="2480" as="sourcePoint"/><mxPoint x="400" y="2480" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n149" value="27) استعراض التفاصيل الكاملة من كائن السائق المحمل مسبقاً في الذاكرة (Client State)" style="html=1;align=left;spacingLeft=6;endArrow=block;rounded=0;edgeStyle=orthogonalEdgeStyle;curved=0;fontSize=13;verticalAlign=middle;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="400" y="2525" as="sourcePoint"/><mxPoint x="400" y="2559" as="targetPoint"/><Array as="points"><mxPoint x="475" y="2525"/><mxPoint x="475" y="2559"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="n150" value="لا يتطلب طلباً إضافياً للسيرفر — يتضمن: مواصفات المركبة، المقاعد المتاحة لكل فترة، التقييم، وتفصيل السعر لكل طفل." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=right;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="450" y="2575" width="540" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="n151" value="28) عرض شاشة تفاصيل السائق وملخص الاشتراك والسعر الإجمالي" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="400" y="2660" as="sourcePoint"/><mxPoint x="110" y="2660" as="targetPoint"/></mxGeometry>
+        </mxCell>
+
+        <!-- ======================================================== -->
+        <!-- المرحلة 4: إرسال طلب الاشتراك إلى السائق -->
+        <!-- ======================================================== -->
+        <mxCell id="n152" value="المرحلة 4: إرسال طلب الاشتراك إلى السائق (Create Subscription Request)" style="text;html=1;align=center;verticalAlign=middle;fontSize=15;fontStyle=1;fillColor=#d5e8d4;strokeColor=#82b366;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="65" y="2725" width="560" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="n153" value="29) الضغط على زر &quot;إرسال طلب الاشتراك&quot;" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="110" y="2778" as="sourcePoint"/><mxPoint x="400" y="2778" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n154" value="30) POST /api/parent (driver_id, school_id, subscription_type, timing, direction, children[])" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=13;fontColor=#004c6d;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="400" y="2825" as="sourcePoint"/><mxPoint x="765" y="2825" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n155" value="31) جلب حساب ولي الأمر وبيانات السائق ومقاعده الشاغرة (DriverSeatSlot)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="775" y="2870" as="sourcePoint"/><mxPoint x="1145" y="2870" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n156" value="32) سجلات السائق والمقاعد (morning_go, morning_return, available_seats)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="1145" y="2918" as="sourcePoint"/><mxPoint x="775" y="2918" as="targetPoint"/></mxGeometry>
+        </mxCell>
+
+        <!-- التحقق 1: التوافق مع فترة السائق -->
+        <mxCell id="n157" value="[السائق لا يعمل في الفترة أو الاتجاه المطلوب]" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontStyle=2;fontColor=#b80000;" vertex="1" parent="1">
+          <mxGeometry x="53" y="3000" width="600" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="n158" value="33) 500/422: رفض الطلب (السائق لا يعمل في فترة [صباحي - ذهاب])" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;fontColor=#b80000;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="765" y="3035" as="sourcePoint"/><mxPoint x="400" y="3035" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n159" value="34) إظهار رسالة عدم توافق فترات العمل" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="400" y="3083" as="sourcePoint"/><mxPoint x="110" y="3083" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n160" style="endArrow=none;dashed=1;html=1;strokeColor=#808080;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="35" y="3140" as="sourcePoint"/><mxPoint x="1275" y="3140" as="targetPoint"/></mxGeometry>
+        </mxCell>
+
+        <!-- التحقق 2: السعة والمقاعد -->
+        <mxCell id="n161" value="[المقاعد الشاغرة في الفترة أقل من عدد الأطفال المطلوبين]" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontStyle=2;fontColor=#b80000;" vertex="1" parent="1">
+          <mxGeometry x="53" y="3142" width="600" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="n162" value="35) 500/422: رفض الطلب (لا توجد مقاعد كافية في فترة [صباحي - ذهاب]. المتاح: 1، المطلوب: 2)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;fontColor=#b80000;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="765" y="3175" as="sourcePoint"/><mxPoint x="400" y="3175" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n163" value="36) إظهار تنبيه بعدم كفاية المقاعد" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="400" y="3223" as="sourcePoint"/><mxPoint x="110" y="3223" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n164" style="endArrow=none;dashed=1;html=1;strokeColor=#808080;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="35" y="3280" as="sourcePoint"/><mxPoint x="1275" y="3280" as="targetPoint"/></mxGeometry>
+        </mxCell>
+
+        <!-- فرع النجاح والإدراج في المعاملة -->
+        <mxCell id="n165" value="[جميع الشروط مستوفاة: التوقيت + السعة + الصلاحيات]" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontStyle=2;fontColor=#007a3d;" vertex="1" parent="1">
+          <mxGeometry x="53" y="3282" width="600" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="n166" value="37) بدء معاملة قاعدة البيانات (DB::beginTransaction)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="775" y="3315" as="sourcePoint"/><mxPoint x="1145" y="3315" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n167" value="38) حساب عدد أيام العمل الفعلية (باستثناء الجمعة والسبت) وإجمالي السعر" style="html=1;align=left;spacingLeft=6;endArrow=block;rounded=0;edgeStyle=orthogonalEdgeStyle;curved=0;fontSize=13;verticalAlign=middle;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="775" y="3360" as="sourcePoint"/><mxPoint x="775" y="3394" as="targetPoint"/><Array as="points"><mxPoint x="850" y="3360"/><mxPoint x="850" y="3394"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="n168" value="39) INSERT INTO requests (parent_id, driver_id, school_id, timing, direction, status=&#39;pending&#39;)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="775" y="3420" as="sourcePoint"/><mxPoint x="1145" y="3420" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n169" value="40) INSERT INTO request_children (request_id, child_id, pickup_address_id, dropoff_address_id, price_per_child)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="775" y="3468" as="sourcePoint"/><mxPoint x="1145" y="3468" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n170" value="41) INSERT INTO notifications (driver_user_id, title=&#39;طلب اشتراك جديد&#39;, type=&#39;new_subscription_request&#39;)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="775" y="3516" as="sourcePoint"/><mxPoint x="1145" y="3516" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n171" value="42) تأكيد المعاملة (DB::commit)" style="html=1;verticalAlign=bottom;endArrow=block;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="775" y="3564" as="sourcePoint"/><mxPoint x="1145" y="3564" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n172" value="43) 201 Created: تفاصيل الطلب وحالته المعلقة (SubscriptionRequestResource)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;fontColor=#007a3d;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="765" y="3612" as="sourcePoint"/><mxPoint x="400" y="3612" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="n173" value="44) عرض شاشة نجاح إرسال الطلب وحالة &quot;بانتظار موافقة السائق&quot;" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;endSize=8;rounded=0;fontSize=13;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="400" y="3660" as="sourcePoint"/><mxPoint x="110" y="3660" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

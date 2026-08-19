@@ -4,7 +4,6 @@ namespace App\Models\Driver;
 
 use App\Models\Driver; // أو مسار موديل السائق الحالي عندك
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\開extends;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 

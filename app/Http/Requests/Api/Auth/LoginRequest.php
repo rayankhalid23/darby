@@ -21,34 +21,24 @@ class LoginRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'phone_number' => ['required', 'regex:/^09[0-9]{8}$/'],
-            'password'     => ['required', 'string'],
-            'device_name'  => ['nullable', 'string'], // تحول إلى nullable لضمان عدم انهيار التطبيق
-            'platform'     => ['required', 'string', 'in:ios,android,web'] // فحص المنصات المدعومة بدقة
+            'email'       => ['required', 'email'],
+            'password'    => ['required', 'string'],
+            'device_name' => ['nullable', 'string'],
+            'platform'    => ['required', 'string', 'in:ios,android,web'],
+            'fcm_token'   => ['nullable', 'string'],
         ];
     }
 
-    /**
-     * تخصيص رسالة فريدة لكل وجه من أوجه الخطأ (كل شرط بروحه).
-     */
     public function messages(): array
     {
         return [
-            // --- تدقيق حقل رقم الهاتف ---
-            'phone_number.required' => 'يرجى إدخال حقل رقم الهاتف.',
-            'phone_number.regex'    => 'رقم الهاتف يجب أن يبدأ بـ 09 ويتكون من 10 أرقام فقط بدون حروف أو رموز.',
-
-            // --- تدقيق حقل كلمة المرور ---
-            'password.required' => 'يرجى إدخال حقل الرقم السري.',
+            'email.required'    => 'يرجى إدخال البريد الإلكتروني.',
+            'email.email'       => 'صيغة البريد الإلكتروني غير صحيحة.',
+            'password.required' => 'يرجى إدخال كلمة المرور.',
             'password.string'   => 'كلمة المرور يجب أن تكون نصاً صالحاً.',
-            
-          
-            // --- تدقيق حقل اسم الجهاز ---
-            'device_name.string'   => 'اسم الجهاز خطأ.',
-
-            // --- تدقيق حقل المنصة ---
-            'platform.required' => 'حدث خطأ في تحديد نوع التطبيق، يرجى إعادة تشغيل التطبيق أو تحديث الصفحة.',
-            'platform.in'       => 'منصة الدخول غير مدعومة في النظام حالياً! نتحمل فقط (ios, android, web).'
+            'device_name.string'=> 'اسم الجهاز غير صالح.',
+            'platform.required' => 'حدث خطأ في تحديد نوع التطبيق، يرجى إعادة تشغيل التطبيق.',
+            'platform.in'       => 'منصة الدخول غير مدعومة (ios, android, web فقط).',
         ];
     }
 }

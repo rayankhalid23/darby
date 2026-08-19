@@ -31,6 +31,7 @@ class Driver extends Model implements Wallet
         'national_id',
         'license_number',
         'license_expiry',
+        'license_expiry_notified_milestone',
         'status',
         'current_lat',
         'current_lng',

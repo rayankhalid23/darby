@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\Driver\Driver;
 use App\Models\Driver\Vehicle;
 use App\Models\Driver\DriverDocument;
+use App\Models\Driver\DriverApproval;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\URL;
@@ -209,6 +210,150 @@ class DriverProfileService
         );
 
         return true;
+    }
+
+    /**
+     * جلب حالة اعتماد حساب السائق الحالية (للاستخدام أثناء انتظار مراجعة الإدارة)
+     */
+    public function getDriverStatus(int $userId): array
+    {
+        $user = User::where('id', $userId)->where('role_id', 4)->firstOrFail();
+        $driver = $user->driver;
+
+        if (!$driver) {
+            throw new Exception("لم يتم العثور على ملف السائق.");
+        }
+
+        $rejectionReason = null;
+        if ($driver->status === 'Rejected') {
+            $latestApproval = DriverApproval::where('driver_id', $driver->id)
+                ->latest('created_at')
+                ->first();
+            $rejectionReason = $latestApproval->rejection_reason ?? null;
+        }
+
+        return [
+            'is_active'        => (bool) $user->is_active,
+            'driver_status'    => $driver->status,
+            'rejection_reason' => $rejectionReason,
+        ];
+    }
+
+    /**
+     * تحديث البيانات القانونية والوثائق الرسمية للسائق
+     */
+    public function updateLegalDocuments(int $userId, array $data): array
+    {
+        return DB::transaction(function () use ($userId, $data) {
+            $user = User::where('id', $userId)->where('role_id', 4)->firstOrFail();
+            $driver = $user->driver;
+
+            if (!$driver) {
+                throw new Exception("لم يتم العثور على ملف السائق.");
+            }
+
+            $driverUpdate = [];
+            foreach (['national_id', 'license_number', 'license_expiry'] as $field) {
+                if (array_key_exists($field, $data)) {
+                    $driverUpdate[$field] = $data[$field];
+                }
+            }
+
+            if (array_key_exists('license_expiry', $data)) {
+                // تجديد تاريخ انتهاء الرخصة يُعيد ضبط عدّاد التذكيرات ويُلغي علامة "منتهية" إن وُجدت
+                $driverUpdate['license_expiry_notified_milestone'] = null;
+
+                DriverDocument::where('driver_id', $driver->id)
+                    ->where('doc_type', 'LICENSE')
+                    ->where('status', 'Expired')
+                    ->update(['status' => 'Pending']);
+            }
+
+            if (!empty($driverUpdate)) {
+                $driver->update($driverUpdate);
+            }
+
+            $docMap = [
+                'doc_license_path'   => 'LICENSE',
+                'doc_logbook_path'   => 'VEHICLE_LOGBOOK',
+                'doc_insurance_path' => 'INSURANCE',
+            ];
+
+            foreach ($docMap as $pathKey => $docType) {
+                if (!empty($data[$pathKey])) {
+                    $updateFields = [
+                        'file_url'    => $data[$pathKey],
+                        'status'      => 'Pending',
+                        'uploaded_at' => now(),
+                    ];
+
+                    if ($docType === 'INSURANCE') {
+                        // رفع صورة تأمين جديدة يُعيد ضبط عدّاد تذكيرات هذه الوثيقة تحديداً
+                        $updateFields['expiry_notified_milestone'] = null;
+                        if (array_key_exists('insurance_expiry', $data)) {
+                            $updateFields['insurance_expiry_date'] = $data['insurance_expiry'];
+                        }
+                    }
+
+                    DriverDocument::updateOrCreate(
+                        ['driver_id' => $driver->id, 'doc_type' => $docType],
+                        $updateFields
+                    );
+                }
+            }
+
+            // السماح بتحديث تاريخ انتهاء التأمين بشكل مستقل دون رفع صورة جديدة
+            if (array_key_exists('insurance_expiry', $data) && empty($data['doc_insurance_path'])) {
+                DriverDocument::where('driver_id', $driver->id)
+                    ->where('doc_type', 'INSURANCE')
+                    ->update([
+                        'insurance_expiry_date'     => $data['insurance_expiry'],
+                        'expiry_notified_milestone' => null,
+                        'status'                    => 'Pending',
+                    ]);
+            }
+
+            return [
+                'message' => 'تم تحديث البيانات القانونية والوثائق بنجاح، وهي بانتظار مراجعة الإدارة.'
+            ];
+        });
+    }
+
+    /**
+     * تحديث بيانات مركبة محددة مع التحقق من ملكيتها للسائق
+     */
+    public function updateVehicleDetails(int $userId, int $vehicleId, array $data): Vehicle
+    {
+        return DB::transaction(function () use ($userId, $vehicleId, $data) {
+            $driver = Driver::where('user_id', $userId)->first();
+
+            if (!$driver) {
+                throw new Exception("لم يتم العثور على ملف السائق.");
+            }
+
+            $vehicle = Vehicle::where('driver_id', $driver->id)->where('id', $vehicleId)->first();
+
+            if (!$vehicle) {
+                throw new Exception("المركبة غير موجودة أو لا تخص هذا السائق.");
+            }
+
+            $updateData = [];
+            foreach (['has_ac', 'plate_number', 'brand', 'model', 'year', 'color', 'type', 'capacity_manual'] as $field) {
+                if (array_key_exists($field, $data)) {
+                    $updateData[$field] = $data[$field];
+                }
+            }
+
+            if (array_key_exists('vehicle_image_path', $data)) {
+                $updateData['vehicle_image_url'] = $data['vehicle_image_path'];
+            }
+
+            if (!empty($updateData)) {
+                $vehicle->update($updateData);
+            }
+
+            return $vehicle->fresh();
+        });
     }
 
    /**

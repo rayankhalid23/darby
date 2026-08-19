@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace Database\Seeders;
 
@@ -21,12 +21,12 @@ class E2eTestSeeder extends Seeder
         $this->password = Hash::make('12345678');
 
         if (DB::table('users')->where('email', 'parent.e2e@test.com')->exists()) {
-            $this->command->warn('⚠️ بيانات الاختبار موجودة مسبقاً. يتم تخطي التهيئة.');
+            $this->command->warn('âڑ ï¸ڈ ط¨ظٹط§ظ†ط§طھ ط§ظ„ط§ط®طھط¨ط§ط± ظ…ظˆط¬ظˆط¯ط© ظ…ط³ط¨ظ‚ط§ظ‹. ظٹطھظ… طھط®ط·ظٹ ط§ظ„طھظ‡ظٹط¦ط©.');
             $this->printSummary();
             return;
         }
 
-        $this->command->info('🧪 بدء تهيئة بيانات اختبار E2E للمسارات والرحلات...');
+        $this->command->info('ًں§ھ ط¨ط¯ط، طھظ‡ظٹط¦ط© ط¨ظٹط§ظ†ط§طھ ط§ط®طھط¨ط§ط± E2E ظ„ظ„ظ…ط³ط§ط±ط§طھ ظˆط§ظ„ط±ط­ظ„ط§طھ...');
 
         $this->resolveGeography();
         $this->resolveSchool();
@@ -34,7 +34,7 @@ class E2eTestSeeder extends Seeder
         $this->createDriver();
         $this->createSubscriptionRequest();
 
-        $this->command->info('✅ اكتمل! البيانات جاهزة لاختبار سيناريو القبول → العقد → المسار → الرحلة.');
+        $this->command->info('âœ… ط§ظƒطھظ…ظ„! ط§ظ„ط¨ظٹط§ظ†ط§طھ ط¬ط§ظ‡ط²ط© ظ„ط§ط®طھط¨ط§ط± ط³ظٹظ†ط§ط±ظٹظˆ ط§ظ„ظ‚ط¨ظˆظ„ â†’ ط§ظ„ط¹ظ‚ط¯ â†’ ط§ظ„ظ…ط³ط§ط± â†’ ط§ظ„ط±ط­ظ„ط©.');
         $this->printSummary();
     }
 
@@ -45,13 +45,13 @@ class E2eTestSeeder extends Seeder
             $subMuni = DB::table('sub_municipalities')->first();
             if (!$subMuni) {
                 $muniId = DB::table('municipalities')->insertGetId([
-                    'name' => 'بلدية الاختبار',
+                    'name' => 'ط¨ظ„ط¯ظٹط© ط§ظ„ط§ط®طھط¨ط§ط±',
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
                 $subMuniId = DB::table('sub_municipalities')->insertGetId([
                     'municipality_id' => $muniId,
-                    'name' => 'بلدية الاختبار المركز',
+                    'name' => 'ط¨ظ„ط¯ظٹط© ط§ظ„ط§ط®طھط¨ط§ط± ط§ظ„ظ…ط±ظƒط²',
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
@@ -60,7 +60,7 @@ class E2eTestSeeder extends Seeder
             }
             $this->zoneId = DB::table('zones')->insertGetId([
                 'sub_municipality_id' => $subMuniId,
-                'name' => 'منطقة الاختبار',
+                'name' => 'ظ…ظ†ط·ظ‚ط© ط§ظ„ط§ط®طھط¨ط§ط±',
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -74,11 +74,11 @@ class E2eTestSeeder extends Seeder
         $school = DB::table('schools')->first();
         if (!$school) {
             $this->schoolId = DB::table('schools')->insertGetId([
-                'name'    => 'مدرسة الاختبار',
+                'name'    => 'ظ…ط¯ط±ط³ط© ط§ظ„ط§ط®طھط¨ط§ط±',
                 'zone_id' => $this->zoneId,
                 'lat'     => 32.8872,
                 'lng'     => 13.1913,
-                'address' => 'طرابلس',
+                'address' => 'ط·ط±ط§ط¨ظ„ط³',
                 'status'  => 'approved',
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -91,7 +91,7 @@ class E2eTestSeeder extends Seeder
     private function createParentAndChild(): void
     {
         $parentUserId = DB::table('users')->insertGetId([
-            'full_name'     => 'ولي أمر الاختبار',
+            'full_name'     => 'ظˆظ„ظٹ ط£ظ…ط± ط§ظ„ط§ط®طھط¨ط§ط±',
             'email'         => 'parent.e2e@test.com',
             'phone_number'  => '0911111111',
             'password_hash' => $this->password,
@@ -108,7 +108,7 @@ class E2eTestSeeder extends Seeder
 
         $addressId = DB::table('addresses')->insertGetId([
             'parent_id'  => $parentUserId,
-            'label'      => 'منزل الاختبار',
+            'label'      => 'ظ…ظ†ط²ظ„ ط§ظ„ط§ط®طھط¨ط§ط±',
             'lat'        => 32.9014,
             'lng'        => 13.2000,
             'is_default' => true,
@@ -121,7 +121,7 @@ class E2eTestSeeder extends Seeder
             'parent_id'           => $parentUserId,
             'school_id'           => $this->schoolId,
             'address_id'          => $addressId,
-            'full_name'           => 'طفل الاختبار',
+            'full_name'           => 'ط·ظپظ„ ط§ظ„ط§ط®طھط¨ط§ط±',
             'birth_date'          => '2015-03-10',
             'gender'              => 'male',
             'grade'               => 4,
@@ -137,7 +137,7 @@ class E2eTestSeeder extends Seeder
             'pickup_time'         => '07:00:00',
             'dropoff_time'        => '13:30:00',
             'trip_direction'      => 'both',
-            'subscription_type'   => 'monthly',
+            'subscription_type' => 'multi_day',
             'start_date'          => Carbon::now()->startOfMonth()->toDateString(),
             'end_date'            => Carbon::now()->endOfMonth()->toDateString(),
             'is_active'           => true,
@@ -147,7 +147,7 @@ class E2eTestSeeder extends Seeder
 
         DB::table('addresses')->insert([
             'parent_id'  => $parentUserId,
-            'label'      => 'منزل الاختبار - دومين',
+            'label'      => 'ظ…ظ†ط²ظ„ ط§ظ„ط§ط®طھط¨ط§ط± - ط¯ظˆظ…ظٹظ†',
             'lat'        => 32.8760,
             'lng'        => 13.2350,
             'is_default' => false,
@@ -160,7 +160,7 @@ class E2eTestSeeder extends Seeder
     private function createDriver(): void
     {
         $driverUserId = DB::table('users')->insertGetId([
-            'full_name'     => 'سائق الاختبار',
+            'full_name'     => 'ط³ط§ط¦ظ‚ ط§ظ„ط§ط®طھط¨ط§ط±',
             'email'         => 'driver.e2e@test.com',
             'phone_number'  => '0922222222',
             'password_hash' => $this->password,
@@ -201,7 +201,7 @@ class E2eTestSeeder extends Seeder
             'brand'           => 'Toyota',
             'model'           => 'Hiace',
             'year'            => '2025',
-            'color'           => 'أبيض',
+            'color'           => 'ط£ط¨ظٹط¶',
             'type'            => 'Van',
             'capacity_manual' => 12,
             'has_ac'          => 1,
@@ -250,7 +250,7 @@ class E2eTestSeeder extends Seeder
             'parent_id'         => $parent->parent_id,
             'driver_id'         => $driver->driver_id,
             'school_id'         => $child->school_id,
-            'subscription_type' => 'monthly',
+            'subscription_type' => 'multi_day',
             'direction'         => 'both',
             'timing'            => 'MORNING',
             'start_date'        => Carbon::now()->startOfMonth()->toDateString(),
@@ -277,7 +277,7 @@ class E2eTestSeeder extends Seeder
             'school_lng'         => DB::table('schools')->where('id', $child->school_id)->value('lng'),
             'school_label'       => DB::table('schools')->where('id', $child->school_id)->value('name'),
             'price_per_child'    => 440.00,
-            'child_notes'        => 'اختبار E2E',
+            'child_notes'        => 'ط§ط®طھط¨ط§ط± E2E',
         ]);
     }
 
@@ -301,19 +301,19 @@ class E2eTestSeeder extends Seeder
             ->first();
 
         $this->command->newLine();
-        $this->command->info('══════════════════════════════════════════════');
-        $this->command->info('  📋 بيانات اختبار E2E');
-        $this->command->info('══════════════════════════════════════════════');
-        $this->command->info("  👤 ولي الأمر : {$parent->full_name}");
+        $this->command->info('â•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گ');
+        $this->command->info('  ًں“‹ ط¨ظٹط§ظ†ط§طھ ط§ط®طھط¨ط§ط± E2E');
+        $this->command->info('â•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گ');
+        $this->command->info("  ًں‘¤ ظˆظ„ظٹ ط§ظ„ط£ظ…ط± : {$parent->full_name}");
         $this->command->info("     ID (users): {$parent->uid} | parent_id: {$parent->pid}");
-        $this->command->info("     📧 parent.e2e@test.com  /  🔑 12345678");
+        $this->command->info("     ًں“§ parent.e2e@test.com  /  ًں”‘ 12345678");
         $this->command->newLine();
-        $this->command->info("  🚗 السائق    : {$driver->full_name}");
+        $this->command->info("  ًںڑ— ط§ظ„ط³ط§ط¦ظ‚    : {$driver->full_name}");
         $this->command->info("     ID (drivers): {$driver->did} | user_id: {$driver->uid}");
-        $this->command->info("     📧 driver.e2e@test.com   /  🔑 12345678");
+        $this->command->info("     ًں“§ driver.e2e@test.com   /  ًں”‘ 12345678");
         $this->command->newLine();
-        $this->command->info("  📄 الطلب ID  : {$request->id}");
-        $this->command->info("     الحالة    : {$request->status}");
-        $this->command->info('══════════════════════════════════════════════');
+        $this->command->info("  ًں“„ ط§ظ„ط·ظ„ط¨ ID  : {$request->id}");
+        $this->command->info("     ط§ظ„ط­ط§ظ„ط©    : {$request->status}");
+        $this->command->info('â•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گ');
     }
 }

@@ -55,12 +55,12 @@ class DashboardController extends Controller
 
             // 5. إجمالي الاشتراكات اليومية النشطة
             $dailySubscriptions = ActiveSubscription::where('status', 'active')
-                ->whereHas('contract', fn($q) => $q->whereRaw('LOWER(subscription_type) = ?', ['daily']))
+                ->whereHas('contract', fn($q) => $q->whereIn('subscription_type', ['single_day', 'daily']))
                 ->count();
 
-            // 6. إجمالي الاشتراكات الشهرية النشطة
+            // 6. إجمالي الاشتراكات متعددة الأيام النشطة
             $monthlySubscriptions = ActiveSubscription::where('status', 'active')
-                ->whereHas('contract', fn($q) => $q->whereRaw('LOWER(subscription_type) = ?', ['monthly']))
+                ->whereHas('contract', fn($q) => $q->whereIn('subscription_type', ['multi_day', 'monthly']))
                 ->count();
 
             // 7. إجمالي السائقين الذين عندهم رحلات جارية حالياً

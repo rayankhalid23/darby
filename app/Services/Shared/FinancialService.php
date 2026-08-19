@@ -61,7 +61,7 @@ class FinancialService
         'type'              => 'proforma',
         'status'            => 'pending',
         'due_date'          => $contract->end_date ?? now()->addDays(30),
-        'subscription_type' => $contract->subscription_type ?? 'monthly',
+        'subscription_type' => $contract->subscription_type ?? 'multi_day',
         'total_trips'       => $totalTrips,
         'completed_trips'   => 0,
         'driver_absences'   => 0,

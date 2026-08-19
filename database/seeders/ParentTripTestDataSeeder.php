@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace Database\Seeders;
 
@@ -57,7 +57,7 @@ class ParentTripTestDataSeeder extends Seeder
             'current_lng' => 13.185,
             'status' => 'Approved',
             'shift' => 1, // Morning
-            'subscription_type' => 'monthly',
+            'subscription_type' => 'multi_day',
             'national_id' => rand(100000000000, 999999999999),
             'license_number' => 'LIC-' . rand(100000, 999999),
             'license_expiry' => '2030-01-01',
@@ -86,7 +86,7 @@ class ParentTripTestDataSeeder extends Seeder
             'parent_id' => $parentModel->id,
             'driver_id' => $driver->id,
             'school_id' => $school->id,
-            'subscription_type' => 'monthly',
+            'subscription_type' => 'multi_day',
             'direction' => 'both',
             'timing' => 'Morning',
             'children_count' => 1,
@@ -101,7 +101,7 @@ class ParentTripTestDataSeeder extends Seeder
             'parent_id' => $user->id,
             'driver_id' => $driverUser->id,
             'contract_number' => Contract::generateContractNumber(),
-            'subscription_type' => 'monthly',
+            'subscription_type' => 'multi_day',
             'direction' => 'both',
             'timing' => 'Morning',
             'start_date' => Carbon::now()->subDays(5),

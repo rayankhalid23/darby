@@ -175,7 +175,7 @@ class TripStopService
           $daysCount = (int) ($requestChild->days_count ?? 1);
           $daysCount = $daysCount > 0 ? $daysCount : 1; 
 
-          if ($subType === 'monthly' || $subType === 'شهري') {
+          if ($subType === 'monthly' || $subType === 'multi_day' || $subType === 'شهري') {
               $dailyCost = $basePrice / $daysCount;
               if ($direction === 'round_trip' || $direction === 'ذهاب وإياب') {
                   $tripCost = $dailyCost / 2;

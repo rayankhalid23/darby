@@ -23,10 +23,10 @@ class LoginController extends Controller
     {
         try {
             // 1. التحقق من المستخدم
-            $user = User::where('phone_number', $request->phone_number)->first();
+            $user = User::where('email', $request->email)->first();
 
             if (!$user) {
-                return response()->json(['status' => false, 'message' => 'رقم الهاتف غير مسجل في النظام.'], 404);
+                return response()->json(['status' => false, 'message' => 'البريد الإلكتروني غير مسجل في النظام.'], 404);
             }
 
             // استخدام password_hash بناءً على قاعدة بياناتك
@@ -102,7 +102,7 @@ class LoginController extends Controller
                 'exception_class' => get_class($e),
                 'file'            => $e->getFile(),
                 'line'            => $e->getLine(),
-                'request_inputs'  => $request->only(['phone_number', 'device_name', 'platform']), // استثناء كلمة المرور للأمان
+                'request_inputs'  => $request->only(['email', 'device_name', 'platform']),
                 'ip_address'      => $request->ip(),
                 'user_agent'      => $request->userAgent(),
                 'trace'           => $e->getTraceAsString(),

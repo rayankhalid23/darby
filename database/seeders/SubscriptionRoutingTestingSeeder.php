@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace Database\Seeders;
 
@@ -23,7 +23,7 @@ class SubscriptionRoutingTestingSeeder extends Seeder
 {
     public function run(): void
     {
-        // تنظيف البيانات السابقة للاختبار إن وجدت لضمان إمكانية تشغيل الـ Seeder أكثر من مرة بدون مشاكل
+        // طھظ†ط¸ظٹظپ ط§ظ„ط¨ظٹط§ظ†ط§طھ ط§ظ„ط³ط§ط¨ظ‚ط© ظ„ظ„ط§ط®طھط¨ط§ط± ط¥ظ† ظˆط¬ط¯طھ ظ„ط¶ظ…ط§ظ† ط¥ظ…ظƒط§ظ†ظٹط© طھط´ط؛ظٹظ„ ط§ظ„ظ€ Seeder ط£ظƒط«ط± ظ…ظ† ظ…ط±ط© ط¨ط¯ظˆظ† ظ…ط´ط§ظƒظ„
         $testEmails = [
             'driver.experienced@darby.test',
             'driver.newbie@darby.test',
@@ -56,17 +56,17 @@ class SubscriptionRoutingTestingSeeder extends Seeder
             DB::statement('SET FOREIGN_KEY_CHECKS=1');
         }
 
-        // 0. التأكد من وجود الأدوار (Roles)
+        // 0. ط§ظ„طھط£ظƒط¯ ظ…ظ† ظˆط¬ظˆط¯ ط§ظ„ط£ط¯ظˆط§ط± (Roles)
         DB::table('roles')->insertOrIgnore([
-            ['id' => 1, 'name' => 'Admin',  'display_name' => 'مدير النظام'],
-            ['id' => 2, 'name' => 'Driver', 'display_name' => 'سائق'],
-            ['id' => 3, 'name' => 'Parent', 'display_name' => 'ولي أمر'],
+            ['id' => 1, 'name' => 'Admin',  'display_name' => 'ظ…ط¯ظٹط± ط§ظ„ظ†ط¸ط§ظ…'],
+            ['id' => 2, 'name' => 'Driver', 'display_name' => 'ط³ط§ط¦ظ‚'],
+            ['id' => 3, 'name' => 'Parent', 'display_name' => 'ظˆظ„ظٹ ط£ظ…ط±'],
         ]);
 
-        // 1. المدرسة الافتراضية
+        // 1. ط§ظ„ظ…ط¯ط±ط³ط© ط§ظ„ط§ظپطھط±ط§ط¶ظٹط©
         $schoolId = DB::table('schools')->insertGetId([
-            'name'       => 'مدرسة طرابلس النظيفة النموذجية',
-            'address'    => 'شارع عمر المختار، طرابلس',
+            'name'       => 'ظ…ط¯ط±ط³ط© ط·ط±ط§ط¨ظ„ط³ ط§ظ„ظ†ط¸ظٹظپط© ط§ظ„ظ†ظ…ظˆط°ط¬ظٹط©',
+            'address'    => 'ط´ط§ط±ط¹ ط¹ظ…ط± ط§ظ„ظ…ط®طھط§ط±طŒ ط·ط±ط§ط¨ظ„ط³',
             'lat'        => 32.8870,
             'lng'        => 13.1910,
             'status'     => 'active',
@@ -75,10 +75,10 @@ class SubscriptionRoutingTestingSeeder extends Seeder
         ]);
 
         // =========================================================================
-        // 2. إنشاء السائق الأول: خبير (لديه مسارات ورحلات سابقة وحجوزات مقاعد)
+        // 2. ط¥ظ†ط´ط§ط، ط§ظ„ط³ط§ط¦ظ‚ ط§ظ„ط£ظˆظ„: ط®ط¨ظٹط± (ظ„ط¯ظٹظ‡ ظ…ط³ط§ط±ط§طھ ظˆط±ط­ظ„ط§طھ ط³ط§ط¨ظ‚ط© ظˆط­ط¬ظˆط²ط§طھ ظ…ظ‚ط§ط¹ط¯)
         // =========================================================================
         $userDriver1 = User::create([
-            'full_name'     => 'الكابتن عبد السلام الخبير',
+            'full_name'     => 'ط§ظ„ظƒط§ط¨طھظ† ط¹ط¨ط¯ ط§ظ„ط³ظ„ط§ظ… ط§ظ„ط®ط¨ظٹط±',
             'email'         => 'driver.experienced@darby.test',
             'phone_number'  => '0912222222',
             'password_hash' => Hash::make('password123'),
@@ -104,7 +104,7 @@ class SubscriptionRoutingTestingSeeder extends Seeder
             'current_lng'       => 13.1800,
         ]);
 
-        // سيارة السائق 1
+        // ط³ظٹط§ط±ط© ط§ظ„ط³ط§ط¦ظ‚ 1
         $vehicle1Id = DB::table('vehicles')->insertGetId([
             'driver_id'       => $driver1->id,
             'plate_number'    => '10-54321',
@@ -113,7 +113,7 @@ class SubscriptionRoutingTestingSeeder extends Seeder
             'year'            => '2023',
             'color'           => 'White',
             'type'            => 'Bus',
-            'capacity_manual' => 4, // سعة كرت 4 مقاعد للاختبار الدقيق
+            'capacity_manual' => 4, // ط³ط¹ط© ظƒط±طھ 4 ظ…ظ‚ط§ط¹ط¯ ظ„ظ„ط§ط®طھط¨ط§ط± ط§ظ„ط¯ظ‚ظٹظ‚
             'is_verified'     => 1,
             'has_ac'          => 1,
             'status'          => 'Active',
@@ -121,7 +121,7 @@ class SubscriptionRoutingTestingSeeder extends Seeder
             'updated_at'      => now(),
         ]);
 
-        // مقاعد السائق 1 (حجز مقعد 1 من أصل 4)
+        // ظ…ظ‚ط§ط¹ط¯ ط§ظ„ط³ط§ط¦ظ‚ 1 (ط­ط¬ط² ظ…ظ‚ط¹ط¯ 1 ظ…ظ† ط£طµظ„ 4)
         DriverSeatSlot::create([
             'driver_id'      => $driver1->id,
             'slot'           => DriverSeatSlot::MORNING_GO,
@@ -136,10 +136,10 @@ class SubscriptionRoutingTestingSeeder extends Seeder
         ]);
 
         // =========================================================================
-        // 3. إنشاء السائق الثاني: جديد (ليس لديه أي مسارات أو رحلات سابقاً - فترة صباحية ذهاب فقط)
+        // 3. ط¥ظ†ط´ط§ط، ط§ظ„ط³ط§ط¦ظ‚ ط§ظ„ط«ط§ظ†ظٹ: ط¬ط¯ظٹط¯ (ظ„ظٹط³ ظ„ط¯ظٹظ‡ ط£ظٹ ظ…ط³ط§ط±ط§طھ ط£ظˆ ط±ط­ظ„ط§طھ ط³ط§ط¨ظ‚ط§ظ‹ - ظپطھط±ط© طµط¨ط§ط­ظٹط© ط°ظ‡ط§ط¨ ظپظ‚ط·)
         // =========================================================================
         $userDriver2 = User::create([
-            'full_name'     => 'الكابتن محمد الجديد',
+            'full_name'     => 'ط§ظ„ظƒط§ط¨طھظ† ظ…ط­ظ…ط¯ ط§ظ„ط¬ط¯ظٹط¯',
             'email'         => 'driver.newbie@darby.test',
             'phone_number'  => '0913333333',
             'password_hash' => Hash::make('password123'),
@@ -153,11 +153,11 @@ class SubscriptionRoutingTestingSeeder extends Seeder
             'license_number'    => 'LIC-222222222',
             'license_expiry'    => now()->addYears(2)->format('Y-m-d'),
             'status'            => 'Approved',
-            'subscription_type' => 'monthly',
+            'subscription_type' => 'multi_day',
             'accepted_gender'   => 'both',
             'gender'            => 'male',
             'shift'             => DriverShift::MORNING,
-            'morning_go'        => true,  // يعمل صباحي ذهاب فقط
+            'morning_go'        => true,  // ظٹط¹ظ…ظ„ طµط¨ط§ط­ظٹ ط°ظ‡ط§ط¨ ظپظ‚ط·
             'morning_return'    => false,
             'afternoon_go'      => false,
             'afternoon_return'  => false,
@@ -165,7 +165,7 @@ class SubscriptionRoutingTestingSeeder extends Seeder
             'current_lng'       => 13.1700,
         ]);
 
-        // سيارة السائق 2 (سعة 2 مقعد فقط)
+        // ط³ظٹط§ط±ط© ط§ظ„ط³ط§ط¦ظ‚ 2 (ط³ط¹ط© 2 ظ…ظ‚ط¹ط¯ ظپظ‚ط·)
         DB::table('vehicles')->insert([
             'driver_id'       => $driver2->id,
             'plate_number'    => '5-99887',
@@ -182,7 +182,7 @@ class SubscriptionRoutingTestingSeeder extends Seeder
             'updated_at'      => now(),
         ]);
 
-        // مقاعد السائق 2 (متاحة بالكامل 2/2)
+        // ظ…ظ‚ط§ط¹ط¯ ط§ظ„ط³ط§ط¦ظ‚ 2 (ظ…طھط§ط­ط© ط¨ط§ظ„ظƒط§ظ…ظ„ 2/2)
         DriverSeatSlot::create([
             'driver_id'      => $driver2->id,
             'slot'           => DriverSeatSlot::MORNING_GO,
@@ -191,10 +191,10 @@ class SubscriptionRoutingTestingSeeder extends Seeder
         ]);
 
         // =========================================================================
-        // 4. إنشاء ولي الأمر الشامل والاختبارات
+        // 4. ط¥ظ†ط´ط§ط، ظˆظ„ظٹ ط§ظ„ط£ظ…ط± ط§ظ„ط´ط§ظ…ظ„ ظˆط§ظ„ط§ط®طھط¨ط§ط±ط§طھ
         // =========================================================================
         $userParent = User::create([
-            'full_name'     => 'الأستاذ أحمد ولي الأمر الاختباري',
+            'full_name'     => 'ط§ظ„ط£ط³طھط§ط° ط£ط­ظ…ط¯ ظˆظ„ظٹ ط§ظ„ط£ظ…ط± ط§ظ„ط§ط®طھط¨ط§ط±ظٹ',
             'email'         => 'parent.testing@darby.test',
             'phone_number'  => '0921111111',
             'password_hash' => Hash::make('password123'),
@@ -207,10 +207,10 @@ class SubscriptionRoutingTestingSeeder extends Seeder
             'is_trusted' => 1,
         ]);
 
-        // عناوين اختبارية لربط request_children
+        // ط¹ظ†ط§ظˆظٹظ† ط§ط®طھط¨ط§ط±ظٹط© ظ„ط±ط¨ط· request_children
         $homeAddressId = DB::table('addresses')->insertGetId([
             'parent_id'  => $userParent->id,
-            'label'      => 'منزل الاختبار الرئيسية',
+            'label'      => 'ظ…ظ†ط²ظ„ ط§ظ„ط§ط®طھط¨ط§ط± ط§ظ„ط±ط¦ظٹط³ظٹط©',
             'lat'        => 32.8840,
             'lng'        => 13.1870,
             'is_default' => 1,
@@ -220,7 +220,7 @@ class SubscriptionRoutingTestingSeeder extends Seeder
 
         $schoolAddressId = DB::table('addresses')->insertGetId([
             'parent_id'  => $userParent->id,
-            'label'      => 'مدرسة الاختبار الرئيسية',
+            'label'      => 'ظ…ط¯ط±ط³ط© ط§ظ„ط§ط®طھط¨ط§ط± ط§ظ„ط±ط¦ظٹط³ظٹط©',
             'lat'        => 32.8870,
             'lng'        => 13.1910,
             'is_default' => 0,
@@ -229,18 +229,18 @@ class SubscriptionRoutingTestingSeeder extends Seeder
         ]);
 
         // -------------------------------------------------------------------------
-        // الحالة A: الطفل 1 (علي) — اشتراك نشط ومسار ورحلات سابقة للسائق 1
+        // ط§ظ„ط­ط§ظ„ط© A: ط§ظ„ط·ظپظ„ 1 (ط¹ظ„ظٹ) â€” ط§ط´طھط±ط§ظƒ ظ†ط´ط· ظˆظ…ط³ط§ط± ظˆط±ط­ظ„ط§طھ ط³ط§ط¨ظ‚ط© ظ„ظ„ط³ط§ط¦ظ‚ 1
         // -------------------------------------------------------------------------
         $child1 = Child::create([
             'parent_id'  => $parentModel->id,
             'school_id'  => $schoolId,
-            'full_name'  => 'علي أحمد (اشتراك نشط مسبقاً)',
+            'full_name'  => 'ط¹ظ„ظٹ ط£ط­ظ…ط¯ (ط§ط´طھط±ط§ظƒ ظ†ط´ط· ظ…ط³ط¨ظ‚ط§ظ‹)',
             'gender'     => 'male',
             'grade'      => 4,
             'birth_date' => '2016-03-15',
         ]);
 
-        // 1. إنشاء الطلب المقبول أولاً للاشتراك النشط
+        // 1. ط¥ظ†ط´ط§ط، ط§ظ„ط·ظ„ط¨ ط§ظ„ظ…ظ‚ط¨ظˆظ„ ط£ظˆظ„ط§ظ‹ ظ„ظ„ط§ط´طھط±ط§ظƒ ط§ظ„ظ†ط´ط·
         $acceptedReq = SubscriptionRequest::create([
             'parent_id'                => $parentModel->id,
             'driver_id'                => $driver1->id,
@@ -248,18 +248,18 @@ class SubscriptionRoutingTestingSeeder extends Seeder
             'timing'                   => 'MORNING',
             'direction'                => 'both',
             'status'                   => 'accepted',
-            'subscription_type'        => 'monthly',
+            'subscription_type' => 'multi_day',
             'children_count'           => 1,
             'children_acceptance_mode' => 'all',
         ]);
 
-        // 2. عقد الطفل 1 مع السائق 1
+        // 2. ط¹ظ‚ط¯ ط§ظ„ط·ظپظ„ 1 ظ…ط¹ ط§ظ„ط³ط§ط¦ظ‚ 1
         $contract1 = Contract::create([
             'subscription_request_id' => $acceptedReq->id,
             'parent_id'               => $userParent->id,
             'driver_id'               => $userDriver1->id,
             'contract_number'         => 'DRBY-ACTIVE-001',
-            'subscription_type'       => 'monthly',
+            'subscription_type' => 'multi_day',
             'direction'               => 'both',
             'timing'                  => 'MORNING',
             'pickup_time'             => '07:00:00',
@@ -273,12 +273,12 @@ class SubscriptionRoutingTestingSeeder extends Seeder
             'status'                  => 'active',
         ]);
 
-        // مسار السائق 1 النشط
+        // ظ…ط³ط§ط± ط§ظ„ط³ط§ط¦ظ‚ 1 ط§ظ„ظ†ط´ط·
         $route1 = RouteModel::create([
             'contract_id'        => $contract1->id,
             'driver_id'          => $driver1->id,
             'vehicle_id'         => $vehicle1Id,
-            'route_name'         => 'مسار طرابلس الصباحي (نشط)',
+            'route_name'         => 'ظ…ط³ط§ط± ط·ط±ط§ط¨ظ„ط³ ط§ظ„طµط¨ط§ط­ظٹ (ظ†ط´ط·)',
             'route_type'         => 'Morning',
             'start_time'         => '07:00:00',
             'total_distance'     => 8.50,
@@ -308,7 +308,7 @@ class SubscriptionRoutingTestingSeeder extends Seeder
             'status'             => 'Active',
         ]);
 
-        // ربط اشتراك الطفل 1 بالمسار 1
+        // ط±ط¨ط· ط§ط´طھط±ط§ظƒ ط§ظ„ط·ظپظ„ 1 ط¨ط§ظ„ظ…ط³ط§ط± 1
         ActiveSubscription::create([
             'contract_id'        => $contract1->id,
             'parent_id'          => $userParent->id,
@@ -324,7 +324,7 @@ class SubscriptionRoutingTestingSeeder extends Seeder
             'status'             => 'active',
         ]);
 
-        // رحلة سابقة ومكتملة للسائق 1
+        // ط±ط­ظ„ط© ط³ط§ط¨ظ‚ط© ظˆظ…ظƒطھظ…ظ„ط© ظ„ظ„ط³ط§ط¦ظ‚ 1
         Trip::create([
             'route_id'             => $route1->id,
             'driver_id'            => $driver1->id,
@@ -336,12 +336,12 @@ class SubscriptionRoutingTestingSeeder extends Seeder
         ]);
 
         // -------------------------------------------------------------------------
-        // الحالة B: الطفل 2 (عمر) — طلب معلق قياسي مطبق على السائق 1 (حالة نجاح)
+        // ط§ظ„ط­ط§ظ„ط© B: ط§ظ„ط·ظپظ„ 2 (ط¹ظ…ط±) â€” ط·ظ„ط¨ ظ…ط¹ظ„ظ‚ ظ‚ظٹط§ط³ظٹ ظ…ط·ط¨ظ‚ ط¹ظ„ظ‰ ط§ظ„ط³ط§ط¦ظ‚ 1 (ط­ط§ظ„ط© ظ†ط¬ط§ط­)
         // -------------------------------------------------------------------------
         $child2 = Child::create([
             'parent_id'  => $parentModel->id,
             'school_id'  => $schoolId,
-            'full_name'  => 'عمر أحمد (طلب معلق - موافق القيود والمسار)',
+            'full_name'  => 'ط¹ظ…ط± ط£ط­ظ…ط¯ (ط·ظ„ط¨ ظ…ط¹ظ„ظ‚ - ظ…ظˆط§ظپظ‚ ط§ظ„ظ‚ظٹظˆط¯ ظˆط§ظ„ظ…ط³ط§ط±)',
             'gender'     => 'male',
             'grade'      => 2,
             'birth_date' => '2018-06-10',
@@ -351,7 +351,7 @@ class SubscriptionRoutingTestingSeeder extends Seeder
             'parent_id'                => $parentModel->id,
             'driver_id'                => $driver1->id,
             'school_id'                => $schoolId,
-            'subscription_type'        => 'monthly',
+            'subscription_type' => 'multi_day',
             'direction'                => 'both',
             'timing'                   => 'MORNING',
             'start_date'               => now()->addDays(2)->format('Y-m-d'),
@@ -359,7 +359,7 @@ class SubscriptionRoutingTestingSeeder extends Seeder
             'days_count'               => 22,
             'total_price'              => 200.00,
             'status'                   => 'pending',
-            'notes'                    => 'طلب قياسي للاختبار والتوصية',
+            'notes'                    => 'ط·ظ„ط¨ ظ‚ظٹط§ط³ظٹ ظ„ظ„ط§ط®طھط¨ط§ط± ظˆط§ظ„طھظˆطµظٹط©',
             'children_count'           => 1,
             'children_acceptance_mode' => 'all',
         ]);
@@ -371,22 +371,22 @@ class SubscriptionRoutingTestingSeeder extends Seeder
             'dropoff_address_id' => $schoolId,
             'home_lat'           => 32.8840,
             'home_lng'           => 13.1870,
-            'home_label'         => 'بيت عمر',
+            'home_label'         => 'ط¨ظٹطھ ط¹ظ…ط±',
             'school_lat'         => 32.8870,
             'school_lng'         => 13.1910,
-            'school_label'       => 'مدرسة طرابلس',
+            'school_label'       => 'ظ…ط¯ط±ط³ط© ط·ط±ط§ط¨ظ„ط³',
             'price_per_child'    => 200.00,
             'created_at'         => now(),
             'updated_at'         => now(),
         ]);
 
         // -------------------------------------------------------------------------
-        // الحالة C: الطفل 3 (فاطمة) — طلب معلق يطلب مسائي من سائق 2 لا يعمل مسائي
+        // ط§ظ„ط­ط§ظ„ط© C: ط§ظ„ط·ظپظ„ 3 (ظپط§ط·ظ…ط©) â€” ط·ظ„ط¨ ظ…ط¹ظ„ظ‚ ظٹط·ظ„ط¨ ظ…ط³ط§ط¦ظٹ ظ…ظ† ط³ط§ط¦ظ‚ 2 ظ„ط§ ظٹط¹ظ…ظ„ ظ…ط³ط§ط¦ظٹ
         // -------------------------------------------------------------------------
         $child3 = Child::create([
             'parent_id'  => $parentModel->id,
             'school_id'  => $schoolId,
-            'full_name'  => 'فاطمة أحمد (طلب معلق - فترة غير مدعومة لدى السائق)',
+            'full_name'  => 'ظپط§ط·ظ…ط© ط£ط­ظ…ط¯ (ط·ظ„ط¨ ظ…ط¹ظ„ظ‚ - ظپطھط±ط© ط؛ظٹط± ظ…ط¯ط¹ظˆظ…ط© ظ„ط¯ظ‰ ط§ظ„ط³ط§ط¦ظ‚)',
             'gender'     => 'female',
             'grade'      => 5,
             'birth_date' => '2015-09-20',
@@ -394,17 +394,17 @@ class SubscriptionRoutingTestingSeeder extends Seeder
 
         $req3 = SubscriptionRequest::create([
             'parent_id'                => $parentModel->id,
-            'driver_id'                => $driver2->id, // السائق 2 يشتغل صباحي ذهاب فقط
+            'driver_id'                => $driver2->id, // ط§ظ„ط³ط§ط¦ظ‚ 2 ظٹط´طھط؛ظ„ طµط¨ط§ط­ظٹ ط°ظ‡ط§ط¨ ظپظ‚ط·
             'school_id'                => $schoolId,
-            'subscription_type'        => 'monthly',
+            'subscription_type' => 'multi_day',
             'direction'                => 'both',
-            'timing'                   => 'EVENING', // طلب مسائي!
+            'timing'                   => 'EVENING', // ط·ظ„ط¨ ظ…ط³ط§ط¦ظٹ!
             'start_date'               => now()->addDays(2)->format('Y-m-d'),
             'end_date'                 => now()->addDays(32)->format('Y-m-d'),
             'days_count'               => 22,
             'total_price'              => 220.00,
             'status'                   => 'pending',
-            'notes'                    => 'اختبار رفض الفلاتر بسبب الفترة',
+            'notes'                    => 'ط§ط®طھط¨ط§ط± ط±ظپط¶ ط§ظ„ظپظ„ط§طھط± ط¨ط³ط¨ط¨ ط§ظ„ظپطھط±ط©',
             'children_count'           => 1,
             'children_acceptance_mode' => 'all',
         ]);
@@ -422,12 +422,12 @@ class SubscriptionRoutingTestingSeeder extends Seeder
         ]);
 
         // -------------------------------------------------------------------------
-        // الحالة D: الأطفال 4 و 5 (سارة وحسن) — طلب متعدد أطفال بتجاوز المقاعد وقبول فردي
+        // ط§ظ„ط­ط§ظ„ط© D: ط§ظ„ط£ط·ظپط§ظ„ 4 ظˆ 5 (ط³ط§ط±ط© ظˆط­ط³ظ†) â€” ط·ظ„ط¨ ظ…طھط¹ط¯ط¯ ط£ط·ظپط§ظ„ ط¨طھط¬ط§ظˆط² ط§ظ„ظ…ظ‚ط§ط¹ط¯ ظˆظ‚ط¨ظˆظ„ ظپط±ط¯ظٹ
         // -------------------------------------------------------------------------
         $child4 = Child::create([
             'parent_id'  => $parentModel->id,
             'school_id'  => $schoolId,
-            'full_name'  => 'سارة أحمد (طلب أطفال متعددين - 1)',
+            'full_name'  => 'ط³ط§ط±ط© ط£ط­ظ…ط¯ (ط·ظ„ط¨ ط£ط·ظپط§ظ„ ظ…طھط¹ط¯ط¯ظٹظ† - 1)',
             'gender'     => 'female',
             'grade'      => 1,
             'birth_date' => '2019-01-01',
@@ -436,7 +436,7 @@ class SubscriptionRoutingTestingSeeder extends Seeder
         $child5 = Child::create([
             'parent_id'  => $parentModel->id,
             'school_id'  => $schoolId,
-            'full_name'  => 'حسن أحمد (طلب أطفال متعددين - 2)',
+            'full_name'  => 'ط­ط³ظ† ط£ط­ظ…ط¯ (ط·ظ„ط¨ ط£ط·ظپط§ظ„ ظ…طھط¹ط¯ط¯ظٹظ† - 2)',
             'gender'     => 'male',
             'grade'      => 3,
             'birth_date' => '2017-04-12',
@@ -445,7 +445,7 @@ class SubscriptionRoutingTestingSeeder extends Seeder
         $child6 = Child::create([
             'parent_id'  => $parentModel->id,
             'school_id'  => $schoolId,
-            'full_name'  => 'زياد أحمد (طلب أطفال متعددين - 3)',
+            'full_name'  => 'ط²ظٹط§ط¯ ط£ط­ظ…ط¯ (ط·ظ„ط¨ ط£ط·ظپط§ظ„ ظ…طھط¹ط¯ط¯ظٹظ† - 3)',
             'gender'     => 'male',
             'grade'      => 6,
             'birth_date' => '2014-08-11',
@@ -453,9 +453,9 @@ class SubscriptionRoutingTestingSeeder extends Seeder
 
         $req4 = SubscriptionRequest::create([
             'parent_id'                => $parentModel->id,
-            'driver_id'                => $driver2->id, // السائق 2 لديه مقعدين متاحين فقط!
+            'driver_id'                => $driver2->id, // ط§ظ„ط³ط§ط¦ظ‚ 2 ظ„ط¯ظٹظ‡ ظ…ظ‚ط¹ط¯ظٹظ† ظ…طھط§ط­ظٹظ† ظپظ‚ط·!
             'school_id'                => $schoolId,
-            'subscription_type'        => 'monthly',
+            'subscription_type' => 'multi_day',
             'direction'                => 'go',
             'timing'                   => 'MORNING',
             'start_date'               => now()->addDays(2)->format('Y-m-d'),
@@ -463,9 +463,9 @@ class SubscriptionRoutingTestingSeeder extends Seeder
             'days_count'               => 22,
             'total_price'              => 500.00,
             'status'                   => 'pending',
-            'notes'                    => 'طلب 3 أطفال لسائق لديه مقعدان بوضع قبول فردي',
+            'notes'                    => 'ط·ظ„ط¨ 3 ط£ط·ظپط§ظ„ ظ„ط³ط§ط¦ظ‚ ظ„ط¯ظٹظ‡ ظ…ظ‚ط¹ط¯ط§ظ† ط¨ظˆط¶ط¹ ظ‚ط¨ظˆظ„ ظپط±ط¯ظٹ',
             'children_count'           => 3,
-            'children_acceptance_mode' => 'individual', // قبول فردي!
+            'children_acceptance_mode' => 'individual', // ظ‚ط¨ظˆظ„ ظپط±ط¯ظٹ!
         ]);
 
         foreach ([$child4, $child5, $child6] as $ch) {

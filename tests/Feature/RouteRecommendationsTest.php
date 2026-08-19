@@ -16,10 +16,10 @@ use App\Models\Shared\SubscriptionRequest;
 use App\Models\Shared\Route as RouteModel;
 
 /**
- * اختبار دالة المسارات المقترحة للاشتراك
+ * ط§ط®طھط¨ط§ط± ط¯ط§ظ„ط© ط§ظ„ظ…ط³ط§ط±ط§طھ ط§ظ„ظ…ظ‚طھط±ط­ط© ظ„ظ„ط§ط´طھط±ط§ظƒ
  * GET /api/v1/driver/subscriptions/{subscriptionId}/route-recommendations
  *
- * DatabaseTransactions: كل بيانات الاختبار تُحذف تلقائياً بعد الانتهاء.
+ * DatabaseTransactions: ظƒظ„ ط¨ظٹط§ظ†ط§طھ ط§ظ„ط§ط®طھط¨ط§ط± طھظڈط­ط°ظپ طھظ„ظ‚ط§ط¦ظٹط§ظ‹ ط¨ط¹ط¯ ط§ظ„ط§ظ†طھظ‡ط§ط،.
  */
 class RouteRecommendationsTest extends TestCase
 {
@@ -35,21 +35,21 @@ class RouteRecommendationsTest extends TestCase
     protected int              $vehicleId;
 
     // =========================================================
-    // إعداد البيانات الأساسية قبل كل اختبار
+    // ط¥ط¹ط¯ط§ط¯ ط§ظ„ط¨ظٹط§ظ†ط§طھ ط§ظ„ط£ط³ط§ط³ظٹط© ظ‚ط¨ظ„ ظƒظ„ ط§ط®طھط¨ط§ط±
     // =========================================================
     protected function setUp(): void
     {
         parent::setUp();
 
-        // --- الأدوار ---
+        // --- ط§ظ„ط£ط¯ظˆط§ط± ---
         DB::table('roles')->insertOrIgnore([
-            ['id' => 2, 'name' => 'Driver', 'display_name' => 'سائق'],
-            ['id' => 3, 'name' => 'Parent', 'display_name' => 'ولي أمر'],
+            ['id' => 2, 'name' => 'Driver', 'display_name' => 'ط³ط§ط¦ظ‚'],
+            ['id' => 3, 'name' => 'Parent', 'display_name' => 'ظˆظ„ظٹ ط£ظ…ط±'],
         ]);
 
-        // --- 1. مستخدم السائق ---
+        // --- 1. ظ…ط³طھط®ط¯ظ… ط§ظ„ط³ط§ط¦ظ‚ ---
         $this->driverUser = User::create([
-            'full_name'     => 'سائق توصيات الاختبار',
+            'full_name'     => 'ط³ط§ط¦ظ‚ طھظˆطµظٹط§طھ ط§ظ„ط§ط®طھط¨ط§ط±',
             'email'         => 'driver.rec.' . uniqid() . '@darby.test',
             'phone_number'  => '091' . rand(1000000, 9999999),
             'password_hash' => bcrypt('password123'),
@@ -57,7 +57,7 @@ class RouteRecommendationsTest extends TestCase
             'is_active'     => 1,
         ]);
 
-        // --- 2. سجل السائق ---
+        // --- 2. ط³ط¬ظ„ ط§ظ„ط³ط§ط¦ظ‚ ---
         $this->driver = Driver::create([
             'user_id'        => $this->driverUser->id,
             'national_id'    => 'NAT' . rand(100000, 999999),
@@ -68,13 +68,13 @@ class RouteRecommendationsTest extends TestCase
             'current_lng'    => 13.1932,
         ]);
 
-        // --- 3. مركبة للسائق (capacity=10) ---
+        // --- 3. ظ…ط±ظƒط¨ط© ظ„ظ„ط³ط§ط¦ظ‚ (capacity=10) ---
         $this->vehicleId = DB::table('vehicles')->insertGetId([
             'driver_id'       => $this->driver->id,
-            'brand'           => 'تويوتا',
-            'model'           => 'هايس',
+            'brand'           => 'طھظˆظٹظˆطھط§',
+            'model'           => 'ظ‡ط§ظٹط³',
             'year'            => 2022,
-            'color'           => 'أبيض',
+            'color'           => 'ط£ط¨ظٹط¶',
             'plate_number'    => 'REC-' . rand(1000, 9999),
             'capacity_manual' => 10,
             'capacity_ai'     => 10,
@@ -84,9 +84,9 @@ class RouteRecommendationsTest extends TestCase
             'updated_at'      => now(),
         ]);
 
-        // --- 4. مستخدم ولي الأمر ---
+        // --- 4. ظ…ط³طھط®ط¯ظ… ظˆظ„ظٹ ط§ظ„ط£ظ…ط± ---
         $this->parentUser = User::create([
-            'full_name'     => 'ولي أمر الاختبار',
+            'full_name'     => 'ظˆظ„ظٹ ط£ظ…ط± ط§ظ„ط§ط®طھط¨ط§ط±',
             'email'         => 'parent.rec.' . uniqid() . '@darby.test',
             'phone_number'  => '092' . rand(1000000, 9999999),
             'password_hash' => bcrypt('password123'),
@@ -94,42 +94,42 @@ class RouteRecommendationsTest extends TestCase
             'is_active'     => 1,
         ]);
 
-        // --- 5. ولي الأمر ---
+        // --- 5. ظˆظ„ظٹ ط§ظ„ط£ظ…ط± ---
         $this->parent = ParentModel::create([
             'user_id'    => $this->parentUser->id,
             'is_trusted' => 1,
         ]);
 
-        // --- 6. مدرسة ---
+        // --- 6. ظ…ط¯ط±ط³ط© ---
         $this->school = School::create([
-            'name'       => 'مدرسة التوصيات',
-            'address'    => 'طرابلس',
+            'name'       => 'ظ…ط¯ط±ط³ط© ط§ظ„طھظˆطµظٹط§طھ',
+            'address'    => 'ط·ط±ط§ط¨ظ„ط³',
             'lat'        => 32.9000,
             'lng'        => 13.2000,
             'start_time' => '08:00:00',
             'status'     => 'active',
         ]);
 
-        // --- 7. طفل ---
+        // --- 7. ط·ظپظ„ ---
         $this->child = Child::create([
             'parent_id'          => $this->parent->id,
             'school_id'          => $this->school->id,
-            'full_name'          => 'طفل التوصيات',
+            'full_name'          => 'ط·ظپظ„ ط§ظ„طھظˆطµظٹط§طھ',
             'birth_date'         => '2018-05-10',
             'gender'             => 'male',
             'grade'              => 1,
             'notification_radius'=> 500,
         ]);
 
-        // --- 8. عقد ---
+        // --- 8. ط¹ظ‚ط¯ ---
         $request = SubscriptionRequest::create([
             'parent_id'         => $this->parent->id,
             'driver_id'         => $this->driver->id,
             'school_id'         => $this->school->id,
-            'subscription_type' => 'monthly',
+            'subscription_type' => 'multi_day',
             'direction'         => 'both',
             'timing'            => 'MORNING',
-            'start_date'        => now()->subDay()->format('Y-m-d'),  // بدأ بالأمس ← صالح فوراً
+            'start_date'        => now()->subDay()->format('Y-m-d'),  // ط¨ط¯ط£ ط¨ط§ظ„ط£ظ…ط³ â†گ طµط§ظ„ط­ ظپظˆط±ط§ظ‹
             'end_date'          => now()->addMonths(1)->format('Y-m-d'),
             'days_count'        => 22,
             'total_price'       => 200.00,
@@ -145,7 +145,7 @@ class RouteRecommendationsTest extends TestCase
             'parent_id'               => $this->parentUser->id,
             'driver_id'               => $this->driverUser->id,
             'contract_number'         => 'DRBY-REC-' . rand(100000, 999999),
-            'subscription_type'       => 'monthly',
+            'subscription_type' => 'multi_day',
             'direction'               => 'both',
             'timing'                  => 'MORNING',
             'pickup_time'             => '07:00:00',
@@ -159,16 +159,16 @@ class RouteRecommendationsTest extends TestCase
             'status'                  => 'active',
         ]);
 
-        // --- 9. اشتراك نشط بدون مسار (route_id = null) ---
+        // --- 9. ط§ط´طھط±ط§ظƒ ظ†ط´ط· ط¨ط¯ظˆظ† ظ…ط³ط§ط± (route_id = null) ---
         $this->subscription = ActiveSubscription::create([
             'contract_id'  => $contract->id,
             'child_id'     => $this->child->id,
             'driver_id'    => $this->driver->id,
             'parent_id'    => $this->parentUser->id,
-            'route_id'     => null,     // لم يُسند بعد ← مرشح للتوصيات
+            'route_id'     => null,     // ظ„ظ… ظٹظڈط³ظ†ط¯ ط¨ط¹ط¯ â†گ ظ…ط±ط´ط­ ظ„ظ„طھظˆطµظٹط§طھ
             'pickup_lat'   => 32.8812,
             'pickup_lng'   => 13.1812,
-            'pickup_label' => 'منزل الطفل',
+            'pickup_label' => 'ظ…ظ†ط²ظ„ ط§ظ„ط·ظپظ„',
             'pickup_time'  => '07:00:00',
             'dropoff_time' => '14:00:00',
             'sort_order'   => 0,
@@ -177,7 +177,7 @@ class RouteRecommendationsTest extends TestCase
     }
 
     // =========================================================
-    // اختبار 1: لا توجد مسارات → يُرجع رسالة إنشاء مسار جديد
+    // ط§ط®طھط¨ط§ط± 1: ظ„ط§ طھظˆط¬ط¯ ظ…ط³ط§ط±ط§طھ â†’ ظٹظڈط±ط¬ط¹ ط±ط³ط§ظ„ط© ط¥ظ†ط´ط§ط، ظ…ط³ط§ط± ط¬ط¯ظٹط¯
     // =========================================================
     public function test_returns_no_recommendations_when_driver_has_no_routes(): void
     {
@@ -192,14 +192,14 @@ class RouteRecommendationsTest extends TestCase
     }
 
     // =========================================================
-    // اختبار 2: يوجد مسار نشط → يُرجع التوصية الأفضل
+    // ط§ط®طھط¨ط§ط± 2: ظٹظˆط¬ط¯ ظ…ط³ط§ط± ظ†ط´ط· â†’ ظٹظڈط±ط¬ط¹ ط§ظ„طھظˆطµظٹط© ط§ظ„ط£ظپط¶ظ„
     // =========================================================
     public function test_returns_best_recommendation_when_active_route_exists(): void
     {
         $route = RouteModel::create([
             'driver_id'          => $this->driver->id,
             'vehicle_id'         => $this->vehicleId,
-            'route_name'         => 'مسار الاختبار الصباحي',
+            'route_name'         => 'ظ…ط³ط§ط± ط§ظ„ط§ط®طھط¨ط§ط± ط§ظ„طµط¨ط§ط­ظٹ',
             'route_type'         => 'Morning',
             'start_time'         => '07:00:00',
             'estimated_duration' => 35,
@@ -212,28 +212,28 @@ class RouteRecommendationsTest extends TestCase
         $response->assertStatus(200);
         $response->assertJsonPath('status', 'success');
 
-        // الخوارزمية الجديدة (VRPTW) تُرجع recommended_route أو null
-        // بما أن الاشتراك ليس لديه إحداثيات تفصيلية يظهر Fallback (score=70)
+        // ط§ظ„ط®ظˆط§ط±ط²ظ…ظٹط© ط§ظ„ط¬ط¯ظٹط¯ط© (VRPTW) طھظڈط±ط¬ط¹ recommended_route ط£ظˆ null
+        // ط¨ظ…ط§ ط£ظ† ط§ظ„ط§ط´طھط±ط§ظƒ ظ„ظٹط³ ظ„ط¯ظٹظ‡ ط¥ط­ط¯ط§ط«ظٹط§طھ طھظپطµظٹظ„ظٹط© ظٹط¸ظ‡ط± Fallback (score=70)
         $recommended = $response->json('recommended_route');
         $this->assertNotNull($recommended);
         $this->assertEquals($route->id, $recommended['id']);
 
-        // score في الخوارزمية الجديدة هو متوسط Slack Time أو Fallback (70.0)
+        // score ظپظٹ ط§ظ„ط®ظˆط§ط±ط²ظ…ظٹط© ط§ظ„ط¬ط¯ظٹط¯ط© ظ‡ظˆ ظ…طھظˆط³ط· Slack Time ط£ظˆ Fallback (70.0)
         $score = $response->json('recommended_route.score');
         $this->assertIsNumeric($score);
 
-        // تحقق من وجود مفتاح rejected_routes في الاستجابة
+        // طھط­ظ‚ظ‚ ظ…ظ† ظˆط¬ظˆط¯ ظ…ظپطھط§ط­ rejected_routes ظپظٹ ط§ظ„ط§ط³طھط¬ط§ط¨ط©
         $response->assertJsonStructure(['status', 'recommended_route', 'other_routes', 'rejected_routes', 'message']);
     }
 
     // =========================================================
-    // اختبار 3: سائق آخر لا يرى اشتراكات سائق مختلف
+    // ط§ط®طھط¨ط§ط± 3: ط³ط§ط¦ظ‚ ط¢ط®ط± ظ„ط§ ظٹط±ظ‰ ط§ط´طھط±ط§ظƒط§طھ ط³ط§ط¦ظ‚ ظ…ط®طھظ„ظپ
     // =========================================================
     public function test_driver_cannot_access_another_drivers_subscription(): void
     {
-        // إنشاء سائق ثانٍ
+        // ط¥ظ†ط´ط§ط، ط³ط§ط¦ظ‚ ط«ط§ظ†ظچ
         $otherDriverUser = User::create([
-            'full_name'     => 'سائق آخر',
+            'full_name'     => 'ط³ط§ط¦ظ‚ ط¢ط®ط±',
             'email'         => 'driver.other.' . uniqid() . '@darby.test',
             'phone_number'  => '091' . rand(1000000, 9999999),
             'password_hash' => bcrypt('password123'),
@@ -248,7 +248,7 @@ class RouteRecommendationsTest extends TestCase
             'status'         => 'Approved',
         ]);
 
-        // السائق الثاني يحاول الوصول إلى اشتراك السائق الأول
+        // ط§ظ„ط³ط§ط¦ظ‚ ط§ظ„ط«ط§ظ†ظٹ ظٹط­ط§ظˆظ„ ط§ظ„ظˆطµظˆظ„ ط¥ظ„ظ‰ ط§ط´طھط±ط§ظƒ ط§ظ„ط³ط§ط¦ظ‚ ط§ظ„ط£ظˆظ„
         $response = $this->actingAs($otherDriverUser)
             ->getJson("/api/v1/driver/subscriptions/{$this->subscription->id}/route-recommendations");
 
@@ -258,7 +258,7 @@ class RouteRecommendationsTest extends TestCase
     }
 
     // =========================================================
-    // اختبار 4: اشتراك غير موجود → 404
+    // ط§ط®طھط¨ط§ط± 4: ط§ط´طھط±ط§ظƒ ط؛ظٹط± ظ…ظˆط¬ظˆط¯ â†’ 404
     // =========================================================
     public function test_returns_404_for_nonexistent_subscription(): void
     {
@@ -273,7 +273,7 @@ class RouteRecommendationsTest extends TestCase
     }
 
     // =========================================================
-    // اختبار 5: مستخدم غير مصادق → 401
+    // ط§ط®طھط¨ط§ط± 5: ظ…ط³طھط®ط¯ظ… ط؛ظٹط± ظ…طµط§ط¯ظ‚ â†’ 401
     // =========================================================
     public function test_unauthenticated_user_gets_401(): void
     {
@@ -285,15 +285,15 @@ class RouteRecommendationsTest extends TestCase
     }
 
     // =========================================================
-    // اختبار 6: مسار مسائي وحيد → يظهر كـ recommended_route مع تحذير (score=40)
-    //           (لأنه الوحيد المتاح رغم اختلاف الفترة)
+    // ط§ط®طھط¨ط§ط± 6: ظ…ط³ط§ط± ظ…ط³ط§ط¦ظٹ ظˆط­ظٹط¯ â†’ ظٹط¸ظ‡ط± ظƒظ€ recommended_route ظ…ط¹ طھط­ط°ظٹط± (score=40)
+    //           (ظ„ط£ظ†ظ‡ ط§ظ„ظˆط­ظٹط¯ ط§ظ„ظ…طھط§ط­ ط±ط؛ظ… ط§ط®طھظ„ط§ظپ ط§ظ„ظپطھط±ط©)
     // =========================================================
     public function test_evening_route_appears_as_recommended_with_warning(): void
     {
         $eveningRoute = RouteModel::create([
             'driver_id'          => $this->driver->id,
             'vehicle_id'         => $this->vehicleId,
-            'route_name'         => 'مسار مسائي',
+            'route_name'         => 'ظ…ط³ط§ط± ظ…ط³ط§ط¦ظٹ',
             'route_type'         => 'Afternoon',
             'start_time'         => '13:00:00',
             'estimated_duration' => 35,
@@ -306,7 +306,7 @@ class RouteRecommendationsTest extends TestCase
         $response->assertStatus(200);
         $response->assertJsonPath('status', 'success');
 
-        // في الخوارزمية الجديدة: المساء يذهب لـ rejected_routes لاختلاف الفترة
+        // ظپظٹ ط§ظ„ط®ظˆط§ط±ط²ظ…ظٹط© ط§ظ„ط¬ط¯ظٹط¯ط©: ط§ظ„ظ…ط³ط§ط، ظٹط°ظ‡ط¨ ظ„ظ€ rejected_routes ظ„ط§ط®طھظ„ط§ظپ ط§ظ„ظپطھط±ط©
         $rejectedRoutes = $response->json('rejected_routes');
         $this->assertIsArray($rejectedRoutes);
         $this->assertNotEmpty($rejectedRoutes);
@@ -314,19 +314,19 @@ class RouteRecommendationsTest extends TestCase
         $rejectedIds = array_column($rejectedRoutes, 'id');
         $this->assertContains($eveningRoute->id, $rejectedIds);
 
-        // recommended_route يكون null لأنه لا يوجد مسار صباحي
+        // recommended_route ظٹظƒظˆظ† null ظ„ط£ظ†ظ‡ ظ„ط§ ظٹظˆط¬ط¯ ظ…ط³ط§ط± طµط¨ط§ط­ظٹ
         $response->assertJsonPath('recommended_route', null);
     }
 
     // =========================================================
-    // اختبار 7: مساران (صباحي ومسائي) → الصباحي مقترح والمسائي في other_routes
+    // ط§ط®طھط¨ط§ط± 7: ظ…ط³ط§ط±ط§ظ† (طµط¨ط§ط­ظٹ ظˆظ…ط³ط§ط¦ظٹ) â†’ ط§ظ„طµط¨ط§ط­ظٹ ظ…ظ‚طھط±ط­ ظˆط§ظ„ظ…ط³ط§ط¦ظٹ ظپظٹ other_routes
     // =========================================================
     public function test_morning_recommended_and_evening_in_other_routes(): void
     {
         $morningRoute = RouteModel::create([
             'driver_id'          => $this->driver->id,
             'vehicle_id'         => $this->vehicleId,
-            'route_name'         => 'مسار صباحي ممتاز',
+            'route_name'         => 'ظ…ط³ط§ط± طµط¨ط§ط­ظٹ ظ…ظ…طھط§ط²',
             'route_type'         => 'Morning',
             'start_time'         => '07:00:00',
             'estimated_duration' => 30,
@@ -336,7 +336,7 @@ class RouteRecommendationsTest extends TestCase
         $eveningRoute = RouteModel::create([
             'driver_id'          => $this->driver->id,
             'vehicle_id'         => $this->vehicleId,
-            'route_name'         => 'مسار مسائي بديل',
+            'route_name'         => 'ظ…ط³ط§ط± ظ…ط³ط§ط¦ظٹ ط¨ط¯ظٹظ„',
             'route_type'         => 'Afternoon',
             'start_time'         => '13:00:00',
             'estimated_duration' => 30,
@@ -349,11 +349,11 @@ class RouteRecommendationsTest extends TestCase
         $response->assertStatus(200);
         $response->assertJsonPath('status', 'success');
 
-        // الصباحي هو المقترح الأفضل
+        // ط§ظ„طµط¨ط§ط­ظٹ ظ‡ظˆ ط§ظ„ظ…ظ‚طھط±ط­ ط§ظ„ط£ظپط¶ظ„
         $response->assertJsonPath('recommended_route.id', $morningRoute->id);
-        $response->assertJsonPath('recommended_route.name', 'مسار صباحي ممتاز');
+        $response->assertJsonPath('recommended_route.name', 'ظ…ط³ط§ط± طµط¨ط§ط­ظٹ ظ…ظ…طھط§ط²');
 
-        // المسائي يظهر في rejected_routes (فترة مختلفة)
+        // ط§ظ„ظ…ط³ط§ط¦ظٹ ظٹط¸ظ‡ط± ظپظٹ rejected_routes (ظپطھط±ط© ظ…ط®طھظ„ظپط©)
         $rejectedRoutes = $response->json('rejected_routes');
         $this->assertIsArray($rejectedRoutes);
         $this->assertNotEmpty($rejectedRoutes);
@@ -362,22 +362,22 @@ class RouteRecommendationsTest extends TestCase
     }
 
     // =========================================================
-    // اختبار 8: اشتراك مُسند لمسار → 400 ALREADY_ASSIGNED
+    // ط§ط®طھط¨ط§ط± 8: ط§ط´طھط±ط§ظƒ ظ…ظڈط³ظ†ط¯ ظ„ظ…ط³ط§ط± â†’ 400 ALREADY_ASSIGNED
     // =========================================================
     public function test_already_assigned_subscription_returns_400(): void
     {
-        // إنشاء مسار ثم ربط الاشتراك به
+        // ط¥ظ†ط´ط§ط، ظ…ط³ط§ط± ط«ظ… ط±ط¨ط· ط§ظ„ط§ط´طھط±ط§ظƒ ط¨ظ‡
         $route = RouteModel::create([
             'driver_id'          => $this->driver->id,
             'vehicle_id'         => $this->vehicleId,
-            'route_name'         => 'مسار مُسند',
+            'route_name'         => 'ظ…ط³ط§ط± ظ…ظڈط³ظ†ط¯',
             'route_type'         => 'Morning',
             'start_time'         => '07:00:00',
             'estimated_duration' => 30,
             'status'             => 'Active',
         ]);
 
-        // إسناد الاشتراك للمسار مباشرة
+        // ط¥ط³ظ†ط§ط¯ ط§ظ„ط§ط´طھط±ط§ظƒ ظ„ظ„ظ…ط³ط§ط± ظ…ط¨ط§ط´ط±ط©
         $this->subscription->update(['route_id' => $route->id]);
 
         $response = $this->actingAs($this->driverUser)
@@ -386,6 +386,6 @@ class RouteRecommendationsTest extends TestCase
         $response->assertStatus(400);
         $response->assertJsonPath('status', 'error');
         $response->assertJsonPath('code', 'ALREADY_ASSIGNED');
-        $response->assertJsonPath('message', 'هذا الاشتراك تم إسناده لمسار بالفعل.');
+        $response->assertJsonPath('message', 'ظ‡ط°ط§ ط§ظ„ط§ط´طھط±ط§ظƒ طھظ… ط¥ط³ظ†ط§ط¯ظ‡ ظ„ظ…ط³ط§ط± ط¨ط§ظ„ظپط¹ظ„.');
     }
 }

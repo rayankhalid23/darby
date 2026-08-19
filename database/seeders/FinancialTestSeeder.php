@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace Database\Seeders;
 
@@ -46,7 +46,7 @@ class FinancialTestSeeder extends Seeder
         SubscriptionRequest::where('parent_id', '>', 0)->delete();
 
         // Clean orphaned drivers & vehicles (FK disabled so cascade won't fire)
-        Vehicle::where('plate_number', 'ط-1234')->forceDelete();
+        Vehicle::where('plate_number', 'ط·-1234')->forceDelete();
         Driver::where('national_id', '123456789')->forceDelete();
 
         DB::table('admins')->where('user_id', '>', 0)->delete();
@@ -71,7 +71,7 @@ class FinancialTestSeeder extends Seeder
 
         // Parent 1 - Sufficient balance
         $parentUser = User::create([
-            'full_name'       => 'أحمد المالية',
+            'full_name'       => 'ط£ط­ظ…ط¯ ط§ظ„ظ…ط§ظ„ظٹط©',
             'email'           => 'finance.parent@test.com',
             'phone_number'    => '0921000001',
             'password_hash'   => Hash::make('12345678'),
@@ -87,7 +87,7 @@ class FinancialTestSeeder extends Seeder
 
         // Parent 2 - Low balance
         $parentLowUser = User::create([
-            'full_name'       => 'خالد المالية',
+            'full_name'       => 'ط®ط§ظ„ط¯ ط§ظ„ظ…ط§ظ„ظٹط©',
             'email'           => 'finance.parent.low@test.com',
             'phone_number'    => '0921000002',
             'password_hash'   => Hash::make('12345678'),
@@ -103,7 +103,7 @@ class FinancialTestSeeder extends Seeder
 
         // Driver
         $driverUser = User::create([
-            'full_name'       => 'محمود المالية',
+            'full_name'       => 'ظ…ط­ظ…ظˆط¯ ط§ظ„ظ…ط§ظ„ظٹط©',
             'email'           => 'finance.driver@test.com',
             'phone_number'    => '0921000003',
             'password_hash'   => Hash::make('12345678'),
@@ -116,7 +116,7 @@ class FinancialTestSeeder extends Seeder
             'user_id'         => $driverUser->id,
             'gender'          => 'male',
             'shift'           => 1,
-            'subscription_type' => 'monthly',
+            'subscription_type' => 'multi_day',
             'national_id'     => '123456789',
             'license_number'  => 'LIC-987654',
             'license_expiry'  => '2028-12-31',
@@ -125,7 +125,7 @@ class FinancialTestSeeder extends Seeder
 
         // Admin user for financial management
         $adminUser = User::create([
-            'full_name'       => 'مشرف المالية',
+            'full_name'       => 'ظ…ط´ط±ظپ ط§ظ„ظ…ط§ظ„ظٹط©',
             'email'           => 'finance.admin@test.com',
             'phone_number'    => '0921000004',
             'password_hash'   => Hash::make('12345678'),
@@ -160,16 +160,16 @@ class FinancialTestSeeder extends Seeder
         if (!$school) {
             $zone = Zone::first();
             $school = School::create([
-                'name'      => 'مدرسة المالية التجريبية',
+                'name'      => 'ظ…ط¯ط±ط³ط© ط§ظ„ظ…ط§ظ„ظٹط© ط§ظ„طھط¬ط±ظٹط¨ظٹط©',
                 'name_en'   => 'Finance Experimental School',
                 'zone_id'   => $zone?->id ?? 1,
-                'address'   => 'طرابلس - وسط المدينة',
+                'address'   => 'ط·ط±ط§ط¨ظ„ط³ - ظˆط³ط· ط§ظ„ظ…ط¯ظٹظ†ط©',
             ]);
         }
 
         $address = Address::create([
             'parent_id'   => $parentUser->id,
-            'label'       => 'المنزل',
+            'label'       => 'ط§ظ„ظ…ظ†ط²ظ„',
             'lat'         => 32.87519,
             'lng'         => 13.18746,
             'is_default'  => 1,
@@ -180,7 +180,7 @@ class FinancialTestSeeder extends Seeder
             'parent_id'    => $parentUser->id,
             'school_id'    => $school->id,
             'address_id'   => $address->id,
-            'full_name'    => 'يوسف المالية',
+            'full_name'    => 'ظٹظˆط³ظپ ط§ظ„ظ…ط§ظ„ظٹط©',
             'birth_date'   => '2015-06-15',
             'gender'       => 'male',
             'grade'        => 4,
@@ -196,7 +196,7 @@ class FinancialTestSeeder extends Seeder
             'dropoff_time'        => '14:00:00',
             'start_date'          => now()->subDays(30)->toDateString(),
             'end_date'            => now()->toDateString(),
-            'subscription_type'   => 'monthly',
+            'subscription_type' => 'multi_day',
             'is_active'           => true,
         ]);
 
@@ -206,11 +206,11 @@ class FinancialTestSeeder extends Seeder
 
         $vehicle = Vehicle::create([
             'driver_id'       => $driver->id,
-            'plate_number'    => 'ط-1234',
+            'plate_number'    => 'ط·-1234',
             'brand'           => 'Toyota',
             'model'           => 'Hiace',
             'year'            => 2023,
-            'color'           => 'أبيض',
+            'color'           => 'ط£ط¨ظٹط¶',
             'type'            => 'van',
             'capacity_manual' => 8,
             'has_ac'          => true,
@@ -227,7 +227,7 @@ class FinancialTestSeeder extends Seeder
             'parent_id'         => $parent1->id,
             'driver_id'         => $driver->id,
             'school_id'         => $school->id,
-            'subscription_type' => 'monthly',
+            'subscription_type' => 'multi_day',
             'direction'         => 'both',
             'timing'            => 'MORNING',
             'start_date'        => now()->subDays(30)->toDateString(),
@@ -238,7 +238,7 @@ class FinancialTestSeeder extends Seeder
             'dropoff_time'      => '14:00:00',
             'max_waiting_time'  => 15,
             'status'            => 'accepted',
-            'notes'             => 'طلب اختبار مالي - رصيد كافٍ',
+            'notes'             => 'ط·ظ„ط¨ ط§ط®طھط¨ط§ط± ظ…ط§ظ„ظٹ - ط±طµظٹط¯ ظƒط§ظپظچ',
             'children_count'    => 1,
         ]);
 
@@ -266,7 +266,7 @@ class FinancialTestSeeder extends Seeder
             'parent_id'               => $parentUser->id,
             'driver_id'               => $driverUser->id,
             'contract_number'         => Contract::generateContractNumber(),
-            'subscription_type'       => 'monthly',
+            'subscription_type' => 'multi_day',
             'direction'               => 'both',
             'timing'                  => 'MORNING',
             'pickup_time'             => '07:00:00',
@@ -292,10 +292,10 @@ class FinancialTestSeeder extends Seeder
             'parent_id'     => $parentUser->id,
             'pickup_lat'    => 32.87519,
             'pickup_lng'    => 13.18746,
-            'pickup_label'  => 'المنزل',
+            'pickup_label'  => 'ط§ظ„ظ…ظ†ط²ظ„',
             'dropoff_lat'   => 32.89520,
             'dropoff_lng'   => 13.17900,
-            'dropoff_label' => 'المدرسة',
+            'dropoff_label' => 'ط§ظ„ظ…ط¯ط±ط³ط©',
             'pickup_time'   => '07:00:00',
             'dropoff_time'  => '14:00:00',
             'status'        => 'active',
@@ -314,7 +314,7 @@ class FinancialTestSeeder extends Seeder
                 'driver_id'   => $driver->id,
                 'vehicle_id'  => $vehicle->id,
                 'contract_id' => $contract1->id,
-                'route_name'  => 'صباحي - توصيل للمدرسة - ' . $contract1->contract_number,
+                'route_name'  => 'طµط¨ط§ط­ظٹ - طھظˆطµظٹظ„ ظ„ظ„ظ…ط¯ط±ط³ط© - ' . $contract1->contract_number,
                 'route_type'  => 'Morning',
                 'start_time'  => '07:00:00',
                 'status'      => 'Active',
@@ -373,7 +373,7 @@ class FinancialTestSeeder extends Seeder
             'type'             => 'proforma',
             'status'           => 'pending',
             'due_date'         => now()->toDateString(),
-            'subscription_type'=> 'monthly',
+            'subscription_type' => 'multi_day',
             'total_trips'      => $totalTrips,
             'completed_trips'  => 0,
             'driver_absences'  => 0,
@@ -388,7 +388,7 @@ class FinancialTestSeeder extends Seeder
             'parent_id'         => $parent2->id,
             'driver_id'         => $driver->id,
             'school_id'         => $school->id,
-            'subscription_type' => 'monthly',
+            'subscription_type' => 'multi_day',
             'direction'         => 'both',
             'timing'            => 'MORNING',
             'start_date'        => now()->subDays(30)->toDateString(),
@@ -399,7 +399,7 @@ class FinancialTestSeeder extends Seeder
             'dropoff_time'      => '14:00:00',
             'max_waiting_time'  => 15,
             'status'            => 'accepted',
-            'notes'             => 'طلب اختبار مالي - رصيد غير كافٍ',
+            'notes'             => 'ط·ظ„ط¨ ط§ط®طھط¨ط§ط± ظ…ط§ظ„ظٹ - ط±طµظٹط¯ ط؛ظٹط± ظƒط§ظپظچ',
             'children_count'    => 1,
         ]);
 
@@ -408,7 +408,7 @@ class FinancialTestSeeder extends Seeder
             'parent_id'               => $parentLowUser->id,
             'driver_id'               => $driverUser->id,
             'contract_number'         => Contract::generateContractNumber(),
-            'subscription_type'       => 'monthly',
+            'subscription_type' => 'multi_day',
             'direction'               => 'both',
             'timing'                  => 'MORNING',
             'pickup_time'             => '07:00:00',
@@ -427,7 +427,7 @@ class FinancialTestSeeder extends Seeder
             'driver_id'   => $driver->id,
             'vehicle_id'  => $vehicle->id,
             'contract_id' => $contract2->id,
-            'route_name'  => 'صباحي - ' . $contract2->contract_number,
+            'route_name'  => 'طµط¨ط§ط­ظٹ - ' . $contract2->contract_number,
             'route_type'  => 'Morning',
             'start_time'  => '07:00:00',
             'status'      => 'Active',
@@ -458,7 +458,7 @@ class FinancialTestSeeder extends Seeder
             'type'             => 'proforma',
             'status'           => 'pending',
             'due_date'         => now()->toDateString(),
-            'subscription_type'=> 'monthly',
+            'subscription_type' => 'multi_day',
             'total_trips'      => 5,
             'completed_trips'  => 0,
             'driver_absences'  => 0,
@@ -475,9 +475,9 @@ class FinancialTestSeeder extends Seeder
             'wallet_balance_at_request' => 200.00,
             'status'                   => 'pending',
             'payment_method_details'   => json_encode([
-                'bank_name'      => 'المصرف التجاري الوطني',
+                'bank_name'      => 'ط§ظ„ظ…طµط±ظپ ط§ظ„طھط¬ط§ط±ظٹ ط§ظ„ظˆط·ظ†ظٹ',
                 'account_number' => '123-456-789',
-                'account_name'   => 'محمود المالية',
+                'account_name'   => 'ظ…ط­ظ…ظˆط¯ ط§ظ„ظ…ط§ظ„ظٹط©',
             ]),
         ]);
 
@@ -500,7 +500,7 @@ class FinancialTestSeeder extends Seeder
             'payment_method'   => 'ncb',
             'reference_number'  => 'NCB-REF-12345',
             'status'           => 'pending',
-            'notes'            => 'شحن عبر المصرف التجاري الوطني - 200 د.ل',
+            'notes'            => 'ط´ط­ظ† ط¹ط¨ط± ط§ظ„ظ…طµط±ظپ ط§ظ„طھط¬ط§ط±ظٹ ط§ظ„ظˆط·ظ†ظٹ - 200 ط¯.ظ„',
         ]);
 
         RechargeRequest::create([
@@ -514,32 +514,32 @@ class FinancialTestSeeder extends Seeder
         ]);
 
         $this->command->info('====================================');
-        $this->command->info('✅ تم إنشاء بيانات اختبار المالية');
+        $this->command->info('âœ… طھظ… ط¥ظ†ط´ط§ط، ط¨ظٹط§ظ†ط§طھ ط§ط®طھط¨ط§ط± ط§ظ„ظ…ط§ظ„ظٹط©');
         $this->command->info('====================================');
-        $this->command->info('📍 Parent 1 (رصيد كافٍ):');
+        $this->command->info('ًں“چ Parent 1 (ط±طµظٹط¯ ظƒط§ظپظچ):');
         $this->command->info('   email: finance.parent@test.com');
         $this->command->info('   pass:  12345678');
-        $this->command->info('   الرصيد: 500 د.ل');
+        $this->command->info('   ط§ظ„ط±طµظٹط¯: 500 ط¯.ظ„');
         $this->command->info('');
-        $this->command->info('📍 Parent 2 (رصيد غير كافٍ):');
+        $this->command->info('ًں“چ Parent 2 (ط±طµظٹط¯ ط؛ظٹط± ظƒط§ظپظچ):');
         $this->command->info('   email: finance.parent.low@test.com');
         $this->command->info('   pass:  12345678');
-        $this->command->info('   الرصيد: 10 د.ل');
+        $this->command->info('   ط§ظ„ط±طµظٹط¯: 10 ط¯.ظ„');
         $this->command->info('');
-        $this->command->info('📍 Driver:');
+        $this->command->info('ًں“چ Driver:');
         $this->command->info('   email: finance.driver@test.com');
         $this->command->info('   pass:  12345678');
-        $this->command->info('   الرصيد: 200 د.ل');
+        $this->command->info('   ط§ظ„ط±طµظٹط¯: 200 ط¯.ظ„');
         $this->command->info('');
-        $this->command->info('📍 Admin:');
+        $this->command->info('ًں“چ Admin:');
         $this->command->info('   phone: 0921000004');
         $this->command->info('   pass:  12345678');
         $this->command->info('');
-        $this->command->info('📊 بيانات الفواتير:');
-        $this->command->info('   - عقد Parent 1: 300 د.ل (22 يوم, 2 غياب سائق)');
-        $this->command->info('   - عقد Parent 2: 300 د.ل (5 أيام, رصيد غير كافٍ)');
-        $this->command->info('   - طلب سحب: 1 معلق + 1 تمت الموافقة عليه');
-        $this->command->info('   - طلب شحن: 1 معلق + 1 مكتمل');
+        $this->command->info('ًں“ٹ ط¨ظٹط§ظ†ط§طھ ط§ظ„ظپظˆط§طھظٹط±:');
+        $this->command->info('   - ط¹ظ‚ط¯ Parent 1: 300 ط¯.ظ„ (22 ظٹظˆظ…, 2 ط؛ظٹط§ط¨ ط³ط§ط¦ظ‚)');
+        $this->command->info('   - ط¹ظ‚ط¯ Parent 2: 300 ط¯.ظ„ (5 ط£ظٹط§ظ…, ط±طµظٹط¯ ط؛ظٹط± ظƒط§ظپظچ)');
+        $this->command->info('   - ط·ظ„ط¨ ط³ط­ط¨: 1 ظ…ط¹ظ„ظ‚ + 1 طھظ…طھ ط§ظ„ظ…ظˆط§ظپظ‚ط© ط¹ظ„ظٹظ‡');
+        $this->command->info('   - ط·ظ„ط¨ ط´ط­ظ†: 1 ظ…ط¹ظ„ظ‚ + 1 ظ…ظƒطھظ…ظ„');
         $this->command->info('====================================');
     }
 }

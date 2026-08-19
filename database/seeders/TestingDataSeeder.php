@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace Database\Seeders;
 
@@ -10,16 +10,16 @@ class TestingDataSeeder extends Seeder
 {
     public function run(): void
     {
-        // 1. إنشاء سائقين مع بيانات المركبات المطلوبة
+        // 1. ط¥ظ†ط´ط§ط، ط³ط§ط¦ظ‚ظٹظ† ظ…ط¹ ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ط±ظƒط¨ط§طھ ط§ظ„ظ…ط·ظ„ظˆط¨ط©
         $drivers = [
             [
-                'full_name' => 'سائق مكيف (مثالي)', 
+                'full_name' => 'ط³ط§ط¦ظ‚ ظ…ظƒظٹظپ (ظ…ط«ط§ظ„ظٹ)', 
                 'phone_number' => '0910000001', 
                 'gender' => 'male', 
                 'accepted_gender' => 'both', 
                 'subscription_type' => 'both', 
                 'has_ac' => 1, // tinyint
-                'zone_id' => 1 // تأكد من وجود zone بهذا الـ ID
+                'zone_id' => 1 // طھط£ظƒط¯ ظ…ظ† ظˆط¬ظˆط¯ zone ط¨ظ‡ط°ط§ ط§ظ„ظ€ ID
             ]
         ];
 
@@ -43,7 +43,7 @@ class TestingDataSeeder extends Seeder
                 'created_at'        => now()
             ]);
 
-            // إدراج السيارة مع الحقول الإلزامية (plate_number, brand, model, etc)
+            // ط¥ط¯ط±ط§ط¬ ط§ظ„ط³ظٹط§ط±ط© ظ…ط¹ ط§ظ„ط­ظ‚ظˆظ„ ط§ظ„ط¥ظ„ط²ط§ظ…ظٹط© (plate_number, brand, model, etc)
             DB::table('vehicles')->insert([
                 'driver_id'    => $driverId, 
                 'plate_number' => 'LY-' . rand(1000, 9999),
@@ -66,10 +66,10 @@ class TestingDataSeeder extends Seeder
             ]);
         }
 
-        // 2. إنشاء طفل للاختبار
+        // 2. ط¥ظ†ط´ط§ط، ط·ظپظ„ ظ„ظ„ط§ط®طھط¨ط§ط±
         $childId = DB::table('children')->insertGetId([
             'parent_id' => 1, 
-            'full_name' => 'محمد أحمد', 
+            'full_name' => 'ظ…ط­ظ…ط¯ ط£ط­ظ…ط¯', 
             'birth_date' => '2015-05-05',
             'gender'    => 'male',
             'grade'     => 3,
@@ -83,7 +83,7 @@ class TestingDataSeeder extends Seeder
             'preferred_time_slot' => 'morning',
             'trip_direction' => 'both',
             'is_active' => 1,
-            'subscription_type' => 'monthly',
+            'subscription_type' => 'multi_day',
             'created_at' => now()
         ]);
     }

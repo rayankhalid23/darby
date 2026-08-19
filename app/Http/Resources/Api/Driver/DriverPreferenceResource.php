@@ -13,14 +13,17 @@ class DriverPreferenceResource extends JsonResource
     {
         $zones = $this->zones;
 
-        $groupedZones = $zones->groupBy('subMunicipality.name')->map(function ($zonesGroup) {
-            $subMuni = $zonesGroup->first()->subMunicipality;
-            return [
-                'municipality_name'     => $subMuni->municipality->name,
-                'sub_municipality_name' => $subMuni->name,
-                'zones' => $zonesGroup->map(fn($z) => ['id' => $z->id, 'name' => $z->name])
-            ];
-        });
+        $groupedZones = $zones
+            ->filter(fn($z) => $z->subMunicipality !== null)
+            ->groupBy('subMunicipality.name')
+            ->map(function ($zonesGroup) {
+                $subMuni = $zonesGroup->first()->subMunicipality;
+                return [
+                    'municipality_name'     => $subMuni->municipality?->name ?? '',
+                    'sub_municipality_name' => $subMuni->name ?? '',
+                    'zones' => $zonesGroup->map(fn($z) => ['id' => $z->id, 'name' => $z->name])->values(),
+                ];
+            })->values();
 
         // مقاعد كل فترة/اتجاه
         $seatSlotsData = [];

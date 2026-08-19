@@ -23,12 +23,12 @@ class UpdateLegalDocumentsRequest extends FormRequest
             'national_id'    => ['sometimes', 'numeric', 'digits:12', Rule::unique('drivers', 'national_id')->ignore($driverId)],
             'license_number' => ['sometimes', 'string', 'max:50', Rule::unique('drivers', 'license_number')->ignore($driverId)],
             'license_expiry' => ['sometimes', 'date', 'after:today'],
+            'insurance_expiry' => ['sometimes', 'date', 'after:today'],
 
-            // ملفات المستندات الأربعة (إجبارية الرفع كصور لو أرسل طلب التجديد)
-            'doc_license'        => ['sometimes', 'image', 'mimes:jpeg,png,jpg', 'max:4096'],
-            'doc_logbook'        => ['sometimes', 'image', 'mimes:jpeg,png,jpg', 'max:4096'],
-            'doc_insurance'      => ['sometimes', 'image', 'mimes:jpeg,png,jpg', 'max:4096'],
-            'doc_criminal_record'=> ['sometimes', 'image', 'mimes:jpeg,png,jpg', 'max:4096'],
+            // ملفات المستندات (اختياري — أرسل الحقل فقط عند التجديد)
+            'doc_license'              => ['sometimes', 'image', 'mimes:jpeg,png,jpg', 'max:4096'],
+            'doc_logbook'              => ['sometimes', 'image', 'mimes:jpeg,png,jpg', 'max:4096'],
+            'doc_insurance'            => ['sometimes', 'image', 'mimes:jpeg,png,jpg', 'max:4096'],
         ];
     }
 
@@ -39,11 +39,12 @@ class UpdateLegalDocumentsRequest extends FormRequest
             'national_id.unique'        => 'الرقم الوطني هذا مسجل مسبقاً لسائق آخر.',
             'license_number.unique'     => 'رقم رخصة القيادة هذا مسجل مسبقاً لسائق آخر.',
             'license_expiry.after'      => 'تاريخ انتهاء الرخصة يجب أن يكون تاريخاً مستقبلياً صالباً.',
-            
+            'insurance_expiry.date'     => 'تاريخ انتهاء التأمين غير صالح.',
+            'insurance_expiry.after'    => 'تاريخ انتهاء التأمين يجب أن يكون تاريخاً مستقبلياً.',
+
             'doc_license.image'         => 'يجب أن يكون ملف رخصة القيادة صورة صالحة.',
             'doc_logbook.image'         => 'يجب أن يكون ملف كتيب السيارة صورة صالحة.',
             'doc_insurance.image'       => 'يجب أن يكون ملف وثيقة التأمين صورة صالحة.',
-            'doc_criminal_record.image' => 'يجب أن يكون ملف الحالة الجنائية صورة صالحة.',
             'doc_license.max'           => 'حجم صورة المستند يجب ألا يتجاوز 4 ميجابايت كحد أقصى.',
         ];
     }

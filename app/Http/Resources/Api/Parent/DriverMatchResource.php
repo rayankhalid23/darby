@@ -14,10 +14,13 @@ class DriverMatchResource extends JsonResource
         $activeVehicle = $this->vehicles->where('status', 'Active')->first()
                       ?? $this->vehicles->first();
 
-        // ── حساب المقاعد المتاحة ──
-        $totalCapacity        = $activeVehicle?->capacity_manual ?? 0;
-        $activeSubscriptions  = $this->active_subs_count ?? 0;
-        $availableSeats       = max(0, $totalCapacity - $activeSubscriptions);
+        // ── حساب المقاعد المتاحة من seatSlots الفعلية ──
+        // ✅ إصلاح: active_subs_count كان دائماً null (لم يُحمَّل في الاستعلام)
+        // الصحيح: أقل عدد مقاعد متاحة عبر جميع فترات السائق (أكثر تحفظاً وأدق للعرض)
+        $seatSlots      = $this->seatSlots ?? collect();
+        $availableSeats = $seatSlots->isNotEmpty()
+            ? (int) $seatSlots->min(fn($s) => max(0, $s->total_seats - $s->reserved_seats))
+            : max(0, $activeVehicle?->capacity_manual ?? 0);
 
         // ── بيانات التسعير (محسوبة مسبقاً في الـ Service) ──
         $pricingBreakdown = $this->pricing_breakdown ?? [];
@@ -26,11 +29,14 @@ class DriverMatchResource extends JsonResource
         // ── بيانات الأطفال المرفقة ──
         $children = $this->children_context ?? collect();
 
+        // ✅ إصلاح: has_ac مباشرة من المركبة وليس عبر مقارنة price_per_km
+        $vehicleHasAc = $activeVehicle ? (bool) $activeVehicle->has_ac : null;
+
         return [
             // ── المعرفات الصريحة (لمنع الاختلاط في الفرونت إند) ──
-            'id'               => (int) $this->id, // المعرف الأساسي في هذا الريكويست
-            'driver_id'        => (int) $this->id, // المعرف الصريح لجدول السائقين
-            'user_id'          => $user?->id ? (int) $user->id : null, // المعرف التابع لجدول المستخدمين
+            'id'               => (int) $this->id,
+            'driver_id'        => (int) $this->id,
+            'user_id'          => $user?->id ? (int) $user->id : null,
 
             // ── بيانات السائق الأساسية ──
             'full_name'        => $user?->full_name ?? 'غير متوفر',
@@ -58,8 +64,16 @@ class DriverMatchResource extends JsonResource
                 'plate_number'    => $activeVehicle->plate_number,
             ] : null,
 
-            // ── المقاعد ──
+            // ── المقاعد (محسوبة من seatSlots الفعلية) ──
             'available_seats' => $availableSeats,
+
+            // ── تفاصيل المقاعد لكل فترة ──
+            'seat_slots' => $seatSlots->map(fn($s) => [
+                'slot'            => $s->slot,
+                'total_seats'     => $s->total_seats,
+                'reserved_seats'  => $s->reserved_seats,
+                'available_seats' => max(0, $s->total_seats - $s->reserved_seats),
+            ])->values(),
 
             // ── المناطق التي يغطيها السائق ──
             'working_zones' => $this->zones->map(fn($z) => [
@@ -71,10 +85,8 @@ class DriverMatchResource extends JsonResource
             'pricing' => [
                 'total_price'     => number_format($totalPrice, 2) . ' د.ل',
                 'total_price_raw' => $totalPrice,
-                'has_ac'          => $this->pricing_breakdown[0]['price_per_km'] ?? null
-                                     ? (($this->pricing_breakdown[0]['price_per_km'] ?? 0) == 2.00)
-                                     : null,
-                'price_per_km'    => $pricingBreakdown[0]['price_per_km'] ?? null,
+                'has_ac'          => $vehicleHasAc, // ✅ مباشر من المركبة
+                'price_per_km'    => $vehicleHasAc === true ? 2.00 : ($vehicleHasAc === false ? 1.50 : null),
                 'children_count'  => count($pricingBreakdown),
                 'breakdown'       => collect($pricingBreakdown)->map(fn($item) => [
                     'child_id'         => $item['child_id'] ?? null,

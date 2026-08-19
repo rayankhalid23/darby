@@ -4,6 +4,7 @@ namespace App\Services\Admin;
 
 use App\Models\Driver\Driver;
 use App\Models\Driver\DriverApproval;
+use App\Models\Driver\DriverDocument;
 use App\Services\Admin\AdminAuditLogService;
 use App\Services\Shared\EmailService;
 use Illuminate\Support\Facades\DB;
@@ -209,6 +210,13 @@ class AdminDriverService
             }
             if (isset($data['license_expiry'])) {
                 $driverUpdates['license_expiry'] = $data['license_expiry'];
+                // تعديل تاريخ الانتهاء من الإدارة يُعيد ضبط عدّاد التذكيرات ويُلغي علامة "منتهية"
+                $driverUpdates['license_expiry_notified_milestone'] = null;
+
+                DriverDocument::where('driver_id', $driver->id)
+                    ->where('doc_type', 'LICENSE')
+                    ->where('status', 'Expired')
+                    ->update(['status' => 'Pending']);
             }
             if (isset($data['status'])) {
                 $driverUpdates['status'] = ucfirst(strtolower($data['status']));

@@ -45,7 +45,12 @@ class DriverMatchingService
         $query = Driver::query()
             ->select('drivers.*') // 🔥 حماية الـ id الأصلي للسائق من التداخل مع الـ users
             ->whereIn('drivers.status', ['Approved', 'Active'])
-            ->with(['user', 'vehicles', 'zones']);
+            // منع السائقين برخصة قيادة أو وثيقة تأمين منتهية من الظهور في اشتراكات جديدة
+            // (لا يؤثر على اشتراكاتهم النشطة الحالية — يُدار ذلك يدوياً من قبل الإدارة)
+            ->whereDoesntHave('documents', function ($q) {
+                $q->whereIn('doc_type', ['LICENSE', 'INSURANCE'])->where('status', 'Expired');
+            })
+            ->with(['user', 'vehicles', 'zones', 'seatSlots']); // ✅ إضافة seatSlots للحساب الصحيح للمقاعد
 
         // ─── فحص وجود بحث نصي لمنع تقييد النتائج جغرافياً ───
         $hasSearchQuery = !empty($filters['search_query']);
@@ -152,16 +157,18 @@ class DriverMatchingService
 
     /**
      * تطبيق الفلاتر المشتقة من الأطفال:
-     *   - المنطقة الجغرافية (مع fallback للبلدية)
+     *   - جنس القبول (accepted_gender)
      *   - نوع الاشتراك (daily / monthly)
-     *   - جنس الأطفال (accepted_gender للسائق)
+     *   - توفر المقاعد (seatSlots)
+     *   - المنطقة الجغرافية (مع fallback للبلدية) ← تُطبق أخيراً عمداً
+     *
+     * ⚠️ ترتيب مهم: applyZoneFilter تُستدعى أخيراً لأنها تعمل clone للـ $query
+     *    لحساب عدد السائقين وتقرير الـ Fallback. إذا طُبقت أولاً لن يشمل الـ clone
+     *    فلاتر الجنس والاشتراك والمقاعد، فيُعطي قرار Fallback غير دقيق.
      */
     private function applyChildrenSmartFilters($query, Collection $children): void
     {
-        // ── فلترة المنطقة بذكاء ──
-        $this->applyZoneFilter($query, $children);
-
-        // ── فلترة جنس القبول للسائق ──
+        // ── 1) فلترة جنس القبول للسائق ──
         $genders = $children->pluck('gender')->unique()->values()->toArray();
         if (count($genders) > 1) {
             $query->where('drivers.accepted_gender', 'both');
@@ -169,7 +176,7 @@ class DriverMatchingService
             $query->whereIn('drivers.accepted_gender', [$genders[0], 'both']);
         }
 
-        // ── فلترة نوع الاشتراك ──
+        // ── 2) فلترة نوع الاشتراك ──
         $subscriptionTypes = $children
             ->map(fn($c) => optional($c->logistics)->subscription_type)
             ->filter()
@@ -186,8 +193,13 @@ class DriverMatchingService
             });
         }
 
-        // ── فلترة توفر المقاعد ──
+        // ── 3) فلترة توفر المقاعد ──
         $this->applySeatsAvailabilityFilter($query, $children);
+
+        // ── 4) فلترة المنطقة الجغرافية (أخيراً عمداً) ──
+        // الـ clone داخل applyZoneFilter سيحمل الآن كل الفلاتر 1+2+3
+        // فقرار "هل نتوسع للبلدية؟" سيبنى على العدد الحقيقي النهائي
+        $this->applyZoneFilter($query, $children);
     }
 
     /**
