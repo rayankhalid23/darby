@@ -90,26 +90,37 @@ class DriverRegisterController extends Controller
      */
     public function completeProfile(CompleteProfileRequest $request, int $userId): JsonResponse
     {
+        $authUser = $request->user();
+        if ($authUser && (int) $authUser->id !== (int) $userId) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'غير مصرح لك بإكمال ملف مستخدم آخر.',
+            ], 403);
+        }
+
         $uploadedPaths = [];
         try {
             $data = $request->validated();
 
             // رفع صورة المركبة
-            $path = $request->file('vehicle_image')->store('drivers/vehicles', 'public');
+            $vehicleFile = $request->file('vehicle_image') ?? $request->file('vehicle_photo');
+            $path = $vehicleFile->store('drivers/vehicles', 'public');
             $data['vehicle_image_path'] = 'storage/' . $path;
             $uploadedPaths[] = $path;
 
             // رفع صور المستندات
-            $docFileMap = [
-                'doc_license'   => 'doc_license_path',
-                'doc_logbook'   => 'doc_logbook_path',
-                'doc_insurance' => 'doc_insurance_path',
+            $docFiles = [
+                'doc_license_path'   => $request->file('doc_license') ?? $request->file('license_photo'),
+                'doc_logbook_path'   => $request->file('doc_logbook') ?? $request->file('logbook_photo'),
+                'doc_insurance_path' => $request->file('doc_insurance') ?? $request->file('insurance_photo'),
             ];
 
-            foreach ($docFileMap as $fileField => $pathKey) {
-                $path = $request->file($fileField)->store('drivers/documents', 'public');
-                $data[$pathKey] = 'storage/' . $path;
-                $uploadedPaths[] = $path;
+            foreach ($docFiles as $pathKey => $file) {
+                if ($file) {
+                    $path = $file->store('drivers/documents', 'public');
+                    $data[$pathKey] = 'storage/' . $path;
+                    $uploadedPaths[] = $path;
+                }
             }
 
             $driver = $this->registerService->completeProfile($userId, $data);
