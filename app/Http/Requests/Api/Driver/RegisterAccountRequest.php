@@ -20,7 +20,7 @@ class RegisterAccountRequest extends FormRequest
             'email'        => 'required|email|unique:users,email',
             'phone_number' => 'required|digits:10|unique:users,phone_number|regex:/^09[0-9]{8}$/',
             'gender'       => 'required|in:male,female', // الحقل الجديد
-            'password'     => ['required', 'string', 'min:8', 'regex:/^(?=.*[a-zA-Z])(?=.*\d).+$/'],
+            'password'     => ['required', 'string', 'min:6', 'regex:/^(?=.*[a-zA-Z])(?=.*\d).+$/'],
             'avatar_url'   => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
 
             'alternative_phone' => 'nullable|string|min:7',
@@ -37,7 +37,7 @@ class RegisterAccountRequest extends FormRequest
             'full_name.min'          => 'يرجى إدخال الاسم الثلاثي على الأقل.',
             'email.required'         => 'البريد الإلكتروني مطلوب.',
             'email.email'            => 'تنسيق البريد الإلكتروني غير صحيح.',
-            'email.unique'           => 'هذا البريد الإلكتروني مسجل مسبقاً في النظام.',
+            'email.unique'           => 'البريد الإلكتروني مسجل بالفعل، يرجى استخدام بريد آخر',
             'phone_number.required'  => 'رقم الهاتف مطلوب.',
             'phone_number.digits'    => 'يجب أن يتكون رقم الهاتف من 10 أرقام.',
             'phone_number.unique'    => 'رقم الهاتف هذا مستخدم من قبل سائق آخر.',
@@ -45,7 +45,7 @@ class RegisterAccountRequest extends FormRequest
             'gender.required'        => 'يرجى تحديد الجنس.',
             'gender.in'              => 'القيمة المختارة للجنس غير صحيحة.',
             'password.required'      => 'كلمة المرور مطلوبة.',
-            'password.min'           => 'يجب ألا تقل كلمة المرور عن 8 أحرف.',
+            'password.min'           => 'يجب ألا تقل كلمة المرور عن 6 أحرف.',
             'password.regex'         => 'كلمة المرور يجب أن تحتوي على حرف إنجليزي ورقم على الأقل.',
             'avatar_url.image'       => 'الملف المرفوع يجب أن يكون صورة.',
             'avatar_url.mimes'       => 'يسمح فقط بالصور بصيغ jpeg, png, jpg.',
@@ -61,7 +61,7 @@ class RegisterAccountRequest extends FormRequest
     {
         throw new HttpResponseException(response()->json([
             'status'  => false,
-            'message' => 'عذراً، بيانات التسجيل تحتوي على أخطاء.',
+            'message' => '',
             'errors'  => $validator->errors()
         ], 422));
     }

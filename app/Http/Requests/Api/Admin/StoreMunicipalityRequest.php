@@ -48,7 +48,7 @@ class StoreMunicipalityRequest extends FormRequest
     {
         throw new HttpResponseException(response()->json([
             'status'  => false,
-            'message' => 'عذراً، بيانات البلدية تحتوي على أخطاء.',
+            'message' => '',
             'errors'  => $validator->errors(),
         ], 422));
     }

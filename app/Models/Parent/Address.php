@@ -20,11 +20,6 @@ class Address extends Model
         'label',
         'lat',
         'lng',
-        'is_default'
-    ];
-
-    protected $casts = [
-        'is_default' => 'boolean',
     ];
 
     /**

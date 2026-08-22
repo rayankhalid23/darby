@@ -189,15 +189,15 @@ class AdminController extends Controller
 
             return response()->json([
                 'status'  => true,
-                'message' => "تم حذف المشرف ({$deletedName}) نهائياً بنجاح."
+                'message' => "تم حذف المشرف ({$deletedName}) بنجاح."
             ], 200);
 
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             Log::error("Delete Admin Error: " . $e->getMessage());
             return response()->json([
                 'status'  => false,
-                'message' => 'تعذر حذف المشرف، يرجى المحاولة لاحقاً.'
-            ], 500);
+                'message' => $e->getMessage() // 👈 تم التعديل هنا لتمرير نص الخطأ الحقيقي
+            ], 400);
         }
     }
 

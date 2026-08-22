@@ -39,7 +39,6 @@ class StoreAddressRequest extends FormRequest
                 })
             ],
             'lng' => 'required|numeric|between:-180,180',
-            'is_default' => 'nullable|boolean'
         ];
     }
 

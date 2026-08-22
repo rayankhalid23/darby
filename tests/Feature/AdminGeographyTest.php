@@ -619,4 +619,127 @@ class AdminGeographyTest extends TestCase
         $this->assertDatabaseMissing('municipalities', ['id' => $municipalityId]);
         $this->assertDatabaseMissing('sub_municipalities', ['id' => $subId]);
     }
+
+    // =====================================================================
+    // 📝 اختبارات تفصيلية لرسائل التحقق والأخطاء (Validation & Error Messages)
+    // =====================================================================
+
+    public function test_sub_municipality_validation_rules_and_messages(): void
+    {
+        $m = $this->makeMunicipality();
+
+        // 1. الاسم فارغ
+        $res = $this->actingAs($this->adminUser)
+            ->postJson("/api/admin/municipalities/{$m->id}/sub-municipalities", ['name' => '']);
+        $res->assertStatus(422);
+        $res->assertJsonValidationErrors(['name']);
+        $this->assertEquals('يرجى إدخال اسم المحلة، هذا الحقل إجباري.', $res->json('errors.name.0'));
+
+        // 2. الاسم قصير جداً (أقل من حرفين)
+        $res = $this->actingAs($this->adminUser)
+            ->postJson("/api/admin/municipalities/{$m->id}/sub-municipalities", ['name' => 'أ']);
+        $res->assertStatus(422);
+        $this->assertEquals('اسم المحلة قصير جداً، يجب ألا يقل عن حرفين.', $res->json('errors.name.0'));
+
+        // 3. الاسم طويل جداً (أكثر من 100 حرف)
+        $res = $this->actingAs($this->adminUser)
+            ->postJson("/api/admin/municipalities/{$m->id}/sub-municipalities", ['name' => str_repeat('م', 101)]);
+        $res->assertStatus(422);
+        $this->assertEquals('اسم المحلة طويل جداً، يجب ألا يتجاوز 100 حرف.', $res->json('errors.name.0'));
+    }
+
+    public function test_zone_validation_rules_and_messages(): void
+    {
+        $sub = $this->makeSub($this->makeMunicipality());
+
+        // 1. الاسم فارغ
+        $res = $this->actingAs($this->adminUser)
+            ->postJson("/api/admin/sub-municipalities/{$sub->id}/zones", ['name' => '']);
+        $res->assertStatus(422);
+        $res->assertJsonValidationErrors(['name']);
+        $this->assertEquals('يرجى إدخال اسم المنطقة، هذا الحقل إجباري.', $res->json('errors.name.0'));
+
+        // 2. الاسم قصير جداً (أقل من حرفين)
+        $res = $this->actingAs($this->adminUser)
+            ->postJson("/api/admin/sub-municipalities/{$sub->id}/zones", ['name' => 'ب']);
+        $res->assertStatus(422);
+        $this->assertEquals('اسم المنطقة قصير جداً، يجب ألا يقل عن حرفين.', $res->json('errors.name.0'));
+
+        // 3. الاسم طويل جداً (أكثر من 100 حرف)
+        $res = $this->actingAs($this->adminUser)
+            ->postJson("/api/admin/sub-municipalities/{$sub->id}/zones", ['name' => str_repeat('ن', 101)]);
+        $res->assertStatus(422);
+        $this->assertEquals('اسم المنطقة طويل جداً، يجب ألا يتجاوز 100 حرف.', $res->json('errors.name.0'));
+    }
+
+    public function test_sub_municipality_and_zone_put_method_update(): void
+    {
+        $m    = $this->makeMunicipality();
+        $sub  = $this->makeSub($m);
+        $zone = $this->makeZone($sub);
+
+        // تعديل محلة عبر PUT
+        $newSubName = 'محلة معدلة عبر PUT ' . uniqid();
+        $this->actingAs($this->adminUser)
+            ->putJson("/api/admin/sub-municipalities/{$sub->id}", ['name' => $newSubName])
+            ->assertStatus(200)
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('data.name', $newSubName);
+
+        // تعديل منطقة عبر PUT
+        $newZoneName = 'منطقة معدلة عبر PUT ' . uniqid();
+        $this->actingAs($this->adminUser)
+            ->putJson("/api/admin/admin-zones/{$zone->id}", ['name' => $newZoneName])
+            ->assertStatus(200)
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('data.name', $newZoneName);
+    }
+
+    public function test_cannot_delete_sub_municipality_whose_zone_has_schools(): void
+    {
+        $m    = $this->makeMunicipality();
+        $sub  = $this->makeSub($m);
+        $zone = $this->makeZone($sub);
+
+        DB::table('schools')->insert([
+            'name'       => 'مدرسة تجريبية ' . uniqid(),
+            'zone_id'    => $zone->id,
+            'lat'        => 32.881,
+            'lng'        => 13.191,
+            'status'     => 'approved',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->actingAs($this->adminUser)
+            ->deleteJson("/api/admin/sub-municipalities/{$sub->id}");
+
+        $response->assertStatus(409);
+        $response->assertJsonPath('status', false);
+        $this->assertStringContainsString('مدرسة', $response->json('message'));
+        $this->assertDatabaseHas('sub_municipalities', ['id' => $sub->id]);
+    }
+
+    public function test_cannot_delete_zone_that_has_schools(): void
+    {
+        $zone = $this->makeZone($this->makeSub($this->makeMunicipality()));
+
+        DB::table('schools')->insert([
+            'name'       => 'مدرسة تجريبية 2 ' . uniqid(),
+            'zone_id'    => $zone->id,
+            'lat'        => 32.881,
+            'lng'        => 13.191,
+            'status'     => 'approved',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->actingAs($this->adminUser)
+            ->deleteJson("/api/admin/admin-zones/{$zone->id}");
+
+        $response->assertStatus(409);
+        $response->assertJsonPath('status', false);
+        $this->assertStringContainsString('مدرسة', $response->json('message'));
+        $this->assertDatabaseHas('zones', ['id' => $zone->id]);
+    }
 }

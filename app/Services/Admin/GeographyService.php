@@ -7,6 +7,7 @@ use App\Models\Shared\SubMunicipality;
 use App\Models\Shared\Zone;
 use Exception;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * 🗺️ إدارة الجغرافيا للوحة التحكم — ثلاثة مستويات:
@@ -210,7 +211,9 @@ class GeographyService
         $usage = [
             'drivers'   => DB::table('driver_zone')->whereIn('zone_id', $zoneIds)->count(),
             'schools'   => DB::table('schools')->whereIn('zone_id', $zoneIds)->count(),
-            'addresses' => DB::table('addresses')->whereIn('zone_id', $zoneIds)->count(),
+            'addresses' => Schema::hasColumn('addresses', 'zone_id')
+                ? DB::table('addresses')->whereIn('zone_id', $zoneIds)->count()
+                : 0,
         ];
 
         if (array_sum($usage) === 0) {
@@ -240,8 +243,10 @@ class GeographyService
             ->selectRaw('zone_id, COUNT(*) c')->groupBy('zone_id')->pluck('c', 'zone_id');
         $schools   = DB::table('schools')->whereIn('zone_id', $ids)
             ->selectRaw('zone_id, COUNT(*) c')->groupBy('zone_id')->pluck('c', 'zone_id');
-        $addresses = DB::table('addresses')->whereIn('zone_id', $ids)
-            ->selectRaw('zone_id, COUNT(*) c')->groupBy('zone_id')->pluck('c', 'zone_id');
+        $addresses = Schema::hasColumn('addresses', 'zone_id')
+            ? DB::table('addresses')->whereIn('zone_id', $ids)
+                ->selectRaw('zone_id, COUNT(*) c')->groupBy('zone_id')->pluck('c', 'zone_id')
+            : collect();
 
         foreach ($zones as $zone) {
             $zone->drivers_count   = (int) ($drivers[$zone->id] ?? 0);

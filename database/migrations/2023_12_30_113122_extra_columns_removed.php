@@ -11,15 +11,22 @@ return new class() extends Migration
 {
     public function up(): void
     {
-        Schema::table($this->table(), function (Blueprint $table) {
-            $table->dropIndex(['from_type', 'from_id']);
-            $table->dropIndex(['to_type', 'to_id']);
+        try {
+            Schema::table($this->table(), function (Blueprint $table) {
+                $table->dropIndex(['from_type', 'from_id']);
+                $table->dropIndex(['to_type', 'to_id']);
+                $table->index('from_id');
+                $table->index('to_id');
+            });
+        } catch (\Throwable $e) {
+            // Index might not exist in current schema
+        }
 
-            $table->index('from_id');
-            $table->index('to_id');
-        });
-
-        Schema::dropColumns($this->table(), ['from_type', 'to_type']);
+        try {
+            if (Schema::hasColumn($this->table(), 'from_type')) {
+                Schema::dropColumns($this->table(), ['from_type', 'to_type']);
+            }
+        } catch (\Throwable $e) {}
     }
 
     public function down(): void

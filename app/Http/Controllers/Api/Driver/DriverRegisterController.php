@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Driver\RegisterAccountRequest;
 use App\Http\Requests\Api\Driver\CompleteProfileRequest;
 use App\Http\Requests\Api\Driver\ProfileUpdateRequest; 
+use App\Http\Requests\Api\Driver\AbandonRegistrationRequest;
 use App\Http\Requests\Api\Shared\OtpRequest;
 use App\Services\Driver\DriverRegisterService;
 use App\Services\Shared\OtpService;
@@ -125,6 +126,47 @@ class DriverRegisterController extends Controller
             }
             Log::error("Complete Profile Error: " . $e->getMessage());
             return response()->json(['status' => false, 'message' => 'فشل إكمال الملف الشخصي للمركبة والمستندات.'], 500);
+        }
+    }
+
+    /**
+     * إلغاء وحذف الحساب غير المكتمل بعد التحقق من الـ OTP
+     * DELETE /api/v1/driver/abandon-registration
+     * POST   /api/v1/driver/cancel-registration
+     */
+    public function abandonRegistration(AbandonRegistrationRequest $request): JsonResponse
+    {
+        try {
+            $user = $request->user();
+
+            if (!$user) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'المستخدم غير مصادق.',
+                ], 401);
+            }
+
+            // إذا أرسل العميل user_id في الـ Body، نتأكد أنه يطابق المستخدم المصادق بالتوكن
+            if ($request->filled('user_id') && (int) $request->input('user_id') !== (int) $user->id) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'غير مصرح لك بإلغاء تسجيل هذا الحساب.',
+                ], 403);
+            }
+
+            $this->registerService->abandonRegistration($user);
+
+            return response()->json([
+                'status'  => true,
+                'message' => 'تم إلغاء طلب التسجيل وحذف الحساب غير المكتمل بنجاح.',
+            ], 200);
+
+        } catch (Exception $e) {
+            Log::error("Abandon Driver Registration Error: " . $e->getMessage());
+            return response()->json([
+                'status'  => false,
+                'message' => $e->getMessage() ?: 'فشل إلغاء طلب التسجيل.',
+            ], 400);
         }
     }
 }

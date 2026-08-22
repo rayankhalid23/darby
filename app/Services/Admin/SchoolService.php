@@ -28,20 +28,64 @@ class SchoolService
      */
     public function createSchool(array $data): School
     {
-        $data['status'] = 'active';
+        // 1. التحقق من عدم تكرار اسم المدرسة
+        if (isset($data['name']) && School::where('name', $data['name'])->exists()) {
+            throw new \Exception('اسم المدرسة موجود مسبقاً.');
+        }
+    
+        // 2. التحقق من عدم تكرار الإحداثيات
+        if (isset($data['latitude'], $data['longitude'])) {
+            $coordsExist = School::where('latitude', $data['latitude'])
+                ->where('longitude', $data['longitude'])
+                ->exists();
+    
+            if ($coordsExist) {
+                throw new \Exception('توجد مدرسة أخرى بنفس الإحداثيات تماماً.');
+            }
+        }
+    
+        $data['status'] = $data['status'] ?? 'active';
         $school = School::create($data);
-
+    
         return $school->load('zone.subMunicipality.municipality');
     }
-
+    
     /**
      * تحديث بيانات مدرسة وضمان بقاء حالتها نشطة (status = active)
      */
     public function updateSchool(School $school, array $data): School
     {
-        $data['status'] = 'active';
+        // 1. التحقق من عدم تكرار اسم المدرسة (مع استثناء المدرسة الحالية)
+        if (isset($data['name'])) {
+            $nameExists = School::where('name', $data['name'])
+                ->where('id', '!=', $school->id)
+                ->exists();
+    
+            if ($nameExists) {
+                throw new \Exception('اسم المدرسة موجود مسبقاً.');
+            }
+        }
+    
+        // 2. التحقق من عدم تكرار الإحداثيات في حال تم إرسالها أو تغييرها
+        if (array_key_exists('latitude', $data) || array_key_exists('longitude', $data)) {
+            $lat = $data['latitude'] ?? $school->latitude;
+            $lng = $data['longitude'] ?? $school->longitude;
+    
+            if ($lat !== null && $lng !== null) {
+                $coordsExist = School::where('latitude', $lat)
+                    ->where('longitude', $lng)
+                    ->where('id', '!=', $school->id)
+                    ->exists();
+    
+                if ($coordsExist) {
+                    throw new \Exception('توجد مدرسة أخرى بنفس الإحداثيات تماماً.');
+                }
+            }
+        }
+    
+        $data['status'] = $data['status'] ?? $school->status ?? 'active';
         $school->update($data);
-        
+    
         // شحن البيانات الجغرافية المحدثة لضمان رجوع الـ Resource كامل للفرونت إند
         return $school->load('zone.subMunicipality.municipality');
     }

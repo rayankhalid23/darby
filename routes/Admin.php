@@ -121,14 +121,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/admin-audit-logs', [AdminAuditLogController::class, 'index'])->name('api.admin.audit-logs.index');
     Route::get('/admin-audit-logs/{id}', [AdminAuditLogController::class, 'show'])->name('api.admin.audit-logs.show');
 
-    // --- مجموعة روابط إدارة المدارس ---
-    Route::prefix('schools')->group(function () {
-        Route::get('/', [SchoolController::class, 'index']);
-        Route::post('/', [SchoolController::class, 'store']);
-        Route::get('/{id}', [SchoolController::class, 'show']);
-        Route::post('/{id}', [SchoolController::class, 'update']); 
-        Route::delete('/{id}', [SchoolController::class, 'destroy']);
-    });
+ // --- مجموعة روابط إدارة المدارس ---
+Route::prefix('schools')->group(function () {
+    Route::get('/', [SchoolController::class, 'index']);
+    Route::post('/', [SchoolController::class, 'store']);
+    Route::get('/{id}', [SchoolController::class, 'show']);
+    Route::match(['put', 'patch'], '/{id}', [SchoolController::class, 'update']); // 👈 تم التعديل هنا وإزالة كلمة schools الزائدة
+    Route::delete('/{id}', [SchoolController::class, 'destroy']);
+});
 
     // =========================================================================
     // 🗺️ مسارات إدارة الجغرافيا والمناطق والبلديات (Geographic Management)

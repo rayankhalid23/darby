@@ -109,14 +109,13 @@ class EmailService
             </div>
         </div>";
     }
-
     /**
      * 3️⃣ إرسال بيانات الدخول للمشرف الجديد
      */
-    public function sendAdminCredentials(string $to, string $fullName, string $phoneNumber, string $password): bool
+    public function sendAdminCredentials(string $to, string $fullName, string $email, string $password): bool
     {
         try {
-            Mail::html($this->getAdminCredentialsTemplate($fullName, $phoneNumber, $password), function ($message) use ($to) {
+            Mail::html($this->getAdminCredentialsTemplate($fullName, $email, $password), function ($message) use ($to) {
                 $message->to($to)->subject('مرحباً بك في فريق العمل! بيانات حسابك المشرف | Darby');
             });
 
@@ -131,7 +130,7 @@ class EmailService
     /**
      * قالب بريد بيانات المشرف
      */
-    private function getAdminCredentialsTemplate(string $fullName, string $phoneNumber, string $password): string
+    private function getAdminCredentialsTemplate(string $fullName, string $email, string $password): string
     {
         return "
         <div style='background-color: #f4f7f6; padding: 50px 15px; font-family: \"Segoe UI\", Tahoma, Geneva, Verdana, sans-serif; direction: rtl;'>
@@ -145,7 +144,7 @@ class EmailService
                     <p style='margin: 0 0 25px; font-size: 15px; color: #4a5568; line-height: 1.6; text-align: center;'>لقد تم تسجيلك كمشرف في منصة Darby. إليك بيانات الاعتماد الخاصة بك:</p>
                     <div style='background-color: #f8fafc; border-radius: 12px; padding: 20px; border: 1px solid #eaedf1; margin-bottom: 25px;'>
                         <table style='width: 100%; border-collapse: collapse;'>
-                            <tr><td style='padding: 8px 0; color: #718096; font-size: 14px; width: 40%;'>رقم الهاتف:</td><td style='padding: 8px 0; color: #2d3748; font-size: 15px; font-weight: 700; direction: ltr; text-align: right;'>{$phoneNumber}</td></tr>
+                            <tr><td style='padding: 8px 0; color: #718096; font-size: 14px; width: 40%;'> الايميل:</td><td style='padding: 8px 0; color: #2d3748; font-size: 15px; font-weight: 700; direction: ltr; text-align: right;'>{$email}</td></tr>
                             <tr><td style='padding: 8px 0; color: #718096; font-size: 14px;'>الرقم السري:</td><td style='padding: 8px 0; color: {$this->primaryColor}; font-size: 16px; font-weight: 700; font-family: monospace; direction: ltr; text-align: right;'>{$password}</td></tr>
                         </table>
                     </div>
@@ -156,6 +155,7 @@ class EmailService
             </div>
         </div>";
     }
+
 
     /**
      * 4️⃣ إرسال روابط الموافقة أو الرفض لتعديل إيميل الأدمن

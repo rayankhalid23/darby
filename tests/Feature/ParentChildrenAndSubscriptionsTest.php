@@ -34,23 +34,23 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
     {
         parent::setUp();
 
-        // 1. ط¥ظ†ط´ط§ط، ظ…ظ†ط·ظ‚ط© ط¬ط؛ط±ط§ظپظٹط© ظˆظ…ط¯ط±ط³ط©
-        $municipality = Municipality::firstOrCreate(['name' => 'ط·ط±ط§ط¨ظ„ط³ ط§ظ„ظ…ط±ظƒط²']);
-        $subMuni = SubMunicipality::firstOrCreate(['municipality_id' => $municipality->id, 'name' => 'ط§ظ„ط¸ظ‡ط±ط©']);
-        $this->zone = Zone::firstOrCreate(['sub_municipality_id' => $subMuni->id, 'name' => 'ط´ط§ط±ط¹ ط§ظ„ظ†طµط±']);
+        // 1. إنشاء منطقة جغرافية ومدرسة
+        $municipality = Municipality::firstOrCreate(['name' => 'طرابلس المركز']);
+        $subMuni = SubMunicipality::firstOrCreate(['municipality_id' => $municipality->id, 'name' => 'الظهرة']);
+        $this->zone = Zone::firstOrCreate(['sub_municipality_id' => $subMuni->id, 'name' => 'شارع النصر']);
 
         $this->school = School::create([
-            'name'         => 'ظ…ط¯ط±ط³ط© ط§ظ„ظ†ظˆط± ط§ظ„ظ†ظ…ظˆط°ط¬ظٹط©',
+            'name'         => 'مدرسة النور النموذجية',
             'zone_id'      => $this->zone->id,
             'lat'          => 32.88000000,
             'lng'          => 13.18000000,
-            'address'      => 'ط·ط±ط§ط¨ظ„ط³ - ط´ط§ط±ط¹ ط§ظ„ظ†طµط±',
+            'address'      => 'طرابلس - شارع النصر',
             'status'       => 'approved',
         ]);
 
-        // 2. ط¥ظ†ط´ط§ط، ط­ط³ط§ط¨ ظˆظ„ظٹ ط£ظ…ط±
+        // 2. إنشاء حساب ولي أمر
         $this->parentUser = User::create([
-            'full_name'     => 'ط£ط­ظ…ط¯ ط³ط§ظ„ظ… ط§ظ„ظپظٹطھظˆط±ظٹ',
+            'full_name'     => 'أحمد سالم الفيتوري',
             'email'         => 'parent.test.' . uniqid() . '@darby.test',
             'phone_number'  => '091' . rand(1000000, 9999999),
             'password_hash' => Hash::make('password123'),
@@ -62,11 +62,11 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
             'is_trusted' => 1,
         ]);
 
-        // 3. ط¥ظ†ط´ط§ط، ط¹ظ†ظˆط§ظ† ط³ظƒظ† ظˆط¹ظ†ظˆط§ظ† ظ…ط¯ط±ط³ط© ظ„ظˆظ„ظٹ ط§ظ„ط£ظ…ط±
+        // 3. إنشاء عنوان سكن وعنوان مدرسة لولي الأمر
         $this->address = Address::create([
             'parent_id'   => $this->parentUser->id,
             'zone_id'     => $this->zone->id,
-            'label'       => 'ط§ظ„ظ…ظ†ط²ظ„ ط§ظ„ط±ط¦ظٹط³ظٹ',
+            'label'       => 'المنزل الرئيسي',
             'lat'         => 32.88500000,
             'lng'         => 13.18500000,
             'is_default'  => true,
@@ -75,15 +75,15 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
         $this->schoolAddress = Address::create([
             'parent_id'   => $this->parentUser->id,
             'zone_id'     => $this->zone->id,
-            'label'       => 'ظ…ظˆظ‚ط¹ ط§ظ„ظ…ط¯ط±ط³ط©',
+            'label'       => 'موقع المدرسة',
             'lat'         => 32.88000000,
             'lng'         => 13.18000000,
             'is_default'  => false,
         ]);
 
-        // 4. ط¥ظ†ط´ط§ط، ط­ط³ط§ط¨ ط³ط§ط¦ظ‚
+        // 4. إنشاء حساب سائق
         $this->driverUser = User::create([
-            'full_name'     => 'ط§ظ„ظƒط§ط¨طھظ† ط¹ط¨ط¯ ط§ظ„ط³ظ„ط§ظ…',
+            'full_name'     => 'الكابتن عبد السلام الزنتاني',
             'email'         => 'driver.test.' . uniqid() . '@darby.test',
             'phone_number'  => '092' . rand(1000000, 9999999),
             'password_hash' => Hash::make('password123'),
@@ -95,6 +95,7 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
             'national_id'             => '11988' . rand(1000000, 9999999),
             'license_number'          => 'LY-' . rand(1000, 9999),
             'status'                  => 'Approved',
+            'subscription_type'       => 'both',
             'morning_go'              => 1,
             'morning_return'          => 1,
             'afternoon_go'            => 1,
@@ -105,19 +106,12 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
             'evening_return_capacity' => 10,
         ]);
 
-        DB::table('drivers')->where('id', $this->driver->id)->update([
-            'morning_go'       => 1,
-            'morning_return'   => 1,
-            'afternoon_go'     => 1,
-            'afternoon_return' => 1,
-        ]);
-
         DB::table('driver_seat_slots')->insert([
             ['driver_id' => $this->driver->id, 'slot' => 'morning_go', 'total_seats' => 10, 'reserved_seats' => 0, 'created_at' => now(), 'updated_at' => now()],
             ['driver_id' => $this->driver->id, 'slot' => 'morning_return', 'total_seats' => 10, 'reserved_seats' => 0, 'created_at' => now(), 'updated_at' => now()],
         ]);
 
-        // ط±ط¨ط· ط§ظ„ط³ط§ط¦ظ‚ ط¨ط§ظ„ظ…ظ†ط·ظ‚ط©
+        // ربط السائق بالمنطقة
         DB::table('driver_zone')->insert([
             'driver_id' => $this->driver->id,
             'zone_id'   => $this->zone->id,
@@ -125,7 +119,7 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
     }
 
     /**
-     * 1. ط§ط®طھط¨ط§ط± ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† ظˆط¬ظˆط¯ ط£ط·ظپط§ظ„ ظ„ظˆظ„ظٹ ط§ظ„ط£ظ…ط± (has-children)
+     * 1. اختبار التحقق من وجود أطفال لولي الأمر (has-children)
      */
     public function test_check_has_children_returns_correct_boolean(): void
     {
@@ -140,24 +134,24 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
     }
 
     /**
-     * 2. ط§ط®طھط¨ط§ط± ط¥ط¶ط§ظپط© ط·ظپظ„ ط¬ط¯ظٹط¯ ظ…ط¹ ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ†ظ‚ظ„ ط§ظ„ظ„ظˆط¬ط³طھظٹط© (Add Child)
+     * 2. اختبار إضافة طفل جديد مع بيانات النقل اللوجستية (Add Child)
      */
     public function test_add_child_with_logistics_successfully(): void
     {
         $payload = [
             'school_id'           => $this->school->id,
             'address_id'          => $this->address->id,
-            'full_name'           => 'ظ…ط­ظ…ط¯ ط£ط­ظ…ط¯ ط³ط§ظ„ظ…',
+            'full_name'           => 'محمد أحمد الفيتوري',
             'birth_date'          => '2015-05-10',
             'gender'              => 'male',
             'grade'               => 4,
-            'medical_notes'       => 'ط­ط³ط§ط³ظٹط© ظ…ظ† ط§ظ„ط؛ط¨ط§ط±',
+            'medical_notes'       => 'حساسية من الغبار',
             'notification_radius' => 500,
             'preferred_time_slot' => 'morning',
             'trip_direction'      => 'both',
             'pickup_time'         => '07:15',
             'dropoff_time'        => '13:30',
-            'start_date'          => now()->addDay()->format('Y-m-d'),
+            'start_date'          => now()->addDays(2)->format('Y-m-d'),
             'end_date'            => now()->addMonths(3)->format('Y-m-d'),
             'subscription_type'   => 'multi_day',
         ];
@@ -168,7 +162,7 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
         $response->assertStatus(201)
             ->assertJson([
                 'success' => true,
-                'message' => 'طھظ… ط¥ط¶ط§ظپط© ط¨ظٹط§ظ†ط§طھ ط§ظ„ط·ظپظ„ ط¨ظ†ط¬ط§ط­.',
+                'message' => 'تم إضافة بيانات الطفل بنجاح.',
             ])
             ->assertJsonStructure([
                 'data' => [
@@ -183,14 +177,14 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
             ]);
 
         $this->assertDatabaseHas('children', [
-            'full_name' => 'ظ…ط­ظ…ط¯ ط£ط­ظ…ط¯ ط³ط§ظ„ظ…',
+            'full_name' => 'محمد أحمد الفيتوري',
             'parent_id' => $this->parent->id,
             'gender'    => 'male',
         ]);
     }
 
     /**
-     * 3. ط§ط®طھط¨ط§ط± ط¬ظ„ط¨ ظ‚ط§ط¦ظ…ط© ط£ط·ظپط§ظ„ ظˆظ„ظٹ ط§ظ„ط£ظ…ط± ظˆط¹ط±ط¶ طھظپط§طµظٹظ„ ط·ظپظ„ ظ…ط­ط¯ط¯
+     * 3. اختبار جلب قائمة أطفال ولي الأمر وعرض تفاصيل طفل محدد
      */
     public function test_list_and_show_child(): void
     {
@@ -198,7 +192,7 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
             'parent_id'           => $this->parent->id,
             'school_id'           => $this->school->id,
             'address_id'          => $this->address->id,
-            'full_name'           => 'ظپط§ط·ظ…ط© ط£ط­ظ…ط¯ ط³ط§ظ„ظ…',
+            'full_name'           => 'فاطمة أحمد الفيتوري',
             'birth_date'          => '2016-08-15',
             'gender'              => 'female',
             'grade'               => 3,
@@ -210,27 +204,27 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
             'child_id'            => $child->id,
             'preferred_time_slot' => 'both',
             'trip_direction'      => 'both',
-            'start_date'          => now()->addDay()->format('Y-m-d'),
+            'start_date'          => now()->addDays(2)->format('Y-m-d'),
             'end_date'            => now()->addMonths(2)->format('Y-m-d'),
-            'subscription_type' => 'multi_day',
+            'subscription_type'   => 'multi_day',
         ]);
 
-        // ظ‚ط§ط¦ظ…ط© ط§ظ„ط£ط·ظپط§ظ„
+        // قائمة الأطفال
         $listRes = $this->actingAs($this->parentUser, 'sanctum')
             ->getJson('/api/parent/children');
 
         $listRes->assertStatus(200)
             ->assertJsonPath('success', true);
 
-        // ط¹ط±ط¶ طھظپط§طµظٹظ„ ط·ظپظ„ ظ…ط­ط¯ط¯
+        // عرض تفاصيل طفل محدد
         $showRes = $this->actingAs($this->parentUser, 'sanctum')
             ->getJson("/api/parent/children/{$child->id}");
 
         $showRes->assertStatus(200)
-            ->assertJsonPath('data.full_name', 'ظپط§ط·ظ…ط© ط£ط­ظ…ط¯ ط³ط§ظ„ظ…')
+            ->assertJsonPath('data.full_name', 'فاطمة أحمد الفيتوري')
             ->assertJsonPath('data.gender', 'female');
 
-        // ط¹ط±ط¶ ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ†ظ‚ظ„ ظˆط§ظ„ظ„ظˆط¬ط³طھظٹط§طھ
+        // عرض بيانات النقل واللوجستيات
         $subRes = $this->actingAs($this->parentUser, 'sanctum')
             ->getJson("/api/parent/children/{$child->id}/subscription");
 
@@ -239,7 +233,7 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
     }
 
     /**
-     * 4. ط§ط®طھط¨ط§ط± طھط¹ط¯ظٹظ„ ط¨ظٹط§ظ†ط§طھ ط§ظ„ط·ظپظ„ ظˆط§ظ„ظ†ظ‚ظ„ ظƒط§ظ…ظ„ط§ظ‹
+     * 4. اختبار تعديل بيانات الطفل والنقل كاملاً
      */
     public function test_update_child_and_logistics_successfully(): void
     {
@@ -247,7 +241,7 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
             'parent_id'           => $this->parent->id,
             'school_id'           => $this->school->id,
             'address_id'          => $this->address->id,
-            'full_name'           => 'ط¹ظ„ظٹ ط£ط­ظ…ط¯ ط³ط§ظ„ظ…',
+            'full_name'           => 'علي أحمد الفيتوري',
             'birth_date'          => '2014-02-10',
             'gender'              => 'male',
             'grade'               => 5,
@@ -259,13 +253,13 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
             'child_id'            => $child->id,
             'preferred_time_slot' => 'morning',
             'trip_direction'      => 'go',
-            'start_date'          => now()->addDay()->format('Y-m-d'),
+            'start_date'          => now()->addDays(2)->format('Y-m-d'),
             'end_date'            => now()->addMonth()->format('Y-m-d'),
-            'subscription_type' => 'multi_day',
+            'subscription_type'   => 'multi_day',
         ]);
 
         $updatePayload = [
-            'full_name'           => 'ط¹ظ„ظٹ ط£ط­ظ…ط¯ ط³ط§ظ„ظ… ط§ظ„ظ…ط¹ط¯ظ„',
+            'full_name'           => 'علي أحمد الفيتوري المعدل',
             'grade'               => 6,
             'preferred_time_slot' => 'both',
             'trip_direction'      => 'both',
@@ -278,18 +272,18 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
         $response->assertStatus(200)
             ->assertJson([
                 'success' => true,
-                'message' => 'طھظ… طھط­ط¯ظٹط« ط¨ظٹط§ظ†ط§طھ ط§ظ„ط·ظپظ„ ط¨ظ†ط¬ط§ط­.',
+                'message' => 'تم تحديث بيانات الطفل بنجاح.',
             ]);
 
         $this->assertDatabaseHas('children', [
             'id'        => $child->id,
-            'full_name' => 'ط¹ظ„ظٹ ط£ط­ظ…ط¯ ط³ط§ظ„ظ… ط§ظ„ظ…ط¹ط¯ظ„',
+            'full_name' => 'علي أحمد الفيتوري المعدل',
             'grade'     => 6,
         ]);
     }
 
     /**
-     * 5. ط§ط®طھط¨ط§ط± ط­ط°ظپ ط·ظپظ„
+     * 5. اختبار حذف طفل
      */
     public function test_delete_child_successfully(): void
     {
@@ -297,7 +291,7 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
             'parent_id'           => $this->parent->id,
             'school_id'           => $this->school->id,
             'address_id'          => $this->address->id,
-            'full_name'           => 'ط³ط§ط±ط© ط£ط­ظ…ط¯ ط³ط§ظ„ظ…',
+            'full_name'           => 'سارة أحمد الفيتوري',
             'birth_date'          => '2017-09-01',
             'gender'              => 'female',
             'grade'               => 2,
@@ -311,7 +305,7 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
         $response->assertStatus(200)
             ->assertJson([
                 'success' => true,
-                'message' => 'طھظ… ط­ط°ظپ ط¨ظٹط§ظ†ط§طھ ط§ظ„ط·ظپظ„ ظˆط¥ظ„ط؛ط§ط، ط§ط´طھط±ط§ظƒظ‡ ط¨ظ†ط¬ط§ط­.',
+                'message' => 'تم حذف بيانات الطفل وإلغاء اشتراكه بنجاح.',
             ]);
 
         $this->assertDatabaseMissing('children', [
@@ -320,7 +314,7 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
     }
 
     /**
-     * 6. ط§ط®طھط¨ط§ط± ط¥ط±ط³ط§ظ„ ط·ظ„ط¨ ط§ط´طھط±ط§ظƒطŒ ط¬ظ„ط¨ ط§ظ„ط·ظ„ط¨ط§طھطŒ ظˆط¥ظ„ط؛ط§ط، ط·ظ„ط¨ ط§ط´طھط±ط§ظƒ ظ…ط¹ظ„ظ‚
+     * 6. اختبار إرسال طلب اشتراك، جلب الطلبات، وإلغاء طلب اشتراك معلق
      */
     public function test_parent_subscription_request_lifecycle(): void
     {
@@ -328,7 +322,7 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
             'parent_id'           => $this->parent->id,
             'school_id'           => $this->school->id,
             'address_id'          => $this->address->id,
-            'full_name'           => 'ط·ط§ط±ظ‚ ط£ط­ظ…ط¯ ط³ط§ظ„ظ…',
+            'full_name'           => 'طارق أحمد الفيتوري',
             'birth_date'          => '2015-01-01',
             'gender'              => 'male',
             'grade'               => 4,
@@ -336,14 +330,14 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
             'qr_code_token'       => 'QR_' . uniqid(),
         ]);
 
-        // ط¥ط±ط³ط§ظ„ ط·ظ„ط¨ ط§ط´طھط±ط§ظƒ
+        // إرسال طلب اشتراك
         $reqPayload = [
             'driver_id'         => $this->driver->id,
             'school_id'         => $this->school->id,
             'subscription_type' => 'multi_day',
             'direction'         => 'both',
             'timing'            => 'MORNING',
-            'start_date'        => now()->addDay()->format('Y-m-d'),
+            'start_date'        => now()->addDays(2)->format('Y-m-d'),
             'end_date'          => now()->addMonth()->format('Y-m-d'),
             'children'          => [
                 [
@@ -361,26 +355,26 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
         $storeRes->assertStatus(201)
             ->assertJson([
                 'success' => true,
-                'message' => 'طھظ… ط¥ط±ط³ط§ظ„ ط·ظ„ط¨ ط§ظ„ط§ط´طھط±ط§ظƒ ط¨ظ†ط¬ط§ط­.',
+                'message' => 'تم إرسال طلب الاشتراك بنجاح.',
             ]);
 
         $requestId = $storeRes->json('data.id');
 
-        // ط¬ظ„ط¨ ظ‚ط§ط¦ظ…ط© ط§ظ„ط·ظ„ط¨ط§طھ
+        // جلب قائمة الطلبات
         $listReqRes = $this->actingAs($this->parentUser, 'sanctum')
             ->getJson('/api/parent/requests');
 
         $listReqRes->assertStatus(200)
             ->assertJsonPath('success', true);
 
-        // ط¥ظ„ط؛ط§ط، ط§ظ„ط·ظ„ط¨ ط§ظ„ظ…ط¹ظ„ظ‚
+        // إلغاء الطلب المعلق
         $cancelRes = $this->actingAs($this->parentUser, 'sanctum')
             ->postJson("/api/parent/requests/{$requestId}/cancel");
 
         $cancelRes->assertStatus(200)
             ->assertJson([
                 'success' => true,
-                'message' => 'طھظ… ط¥ظ„ط؛ط§ط، ط·ظ„ط¨ ط§ظ„ط§ط´طھط±ط§ظƒ ط¨ظ†ط¬ط§ط­.',
+                'message' => 'تم إلغاء طلب الاشتراك بنجاح.',
             ]);
 
         $this->assertDatabaseHas('requests', [

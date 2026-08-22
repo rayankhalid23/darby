@@ -15,26 +15,12 @@ class AddressService
 
     public function createAddress(int $driverId, array $data): Address
     {
-        return DB::transaction(function () use ($driverId, $data) {
-            $isDefault = isset($data['is_default']) && $data['is_default'];
-
-            $hasAddresses = Address::where('driver_id', $driverId)->exists();
-            if (!$hasAddresses) {
-                $isDefault = true;
-            }
-
-            if ($isDefault) {
-                Address::where('driver_id', $driverId)->update(['is_default' => false]);
-            }
-
-            return Address::create([
-                'driver_id'  => $driverId,
-                'label'      => $data['label'],
-                'lat'        => $data['lat'],
-                'lng'        => $data['lng'],
-                'is_default' => $isDefault,
-            ]);
-        });
+        return Address::create([
+            'driver_id' => $driverId,
+            'label'     => $data['label'],
+            'lat'       => $data['lat'],
+            'lng'       => $data['lng'],
+        ]);
     }
 
     public function updateAddress(Address $address, int $driverId, array $data): Address
@@ -69,29 +55,13 @@ class AddressService
 
         $addressId = $address->id;
 
-        return DB::transaction(function () use ($address, $driverId, $data, $addressId) {
-            if (isset($data['is_default']) && $data['is_default']) {
-                Address::where('driver_id', $driverId)->update(['is_default' => false]);
-            }
-
-            $address->update($data);
-            
-            return Address::withTrashed()->findOrFail($addressId);
-        });
+        $address->update($data);
+        
+        return Address::withTrashed()->findOrFail($addressId);
     }
 
     public function deleteAddress(Address $address): void
     {
-        if ($address->is_default) {
-            $hasOtherAddresses = Address::where('driver_id', $address->driver_id)
-                ->where('id', '!=', $address->id)
-                ->exists();
-                
-            if ($hasOtherAddresses) {
-                throw new Exception("لا يمكنك حذف العنوان الافتراضي، يرجى تعيين عنوان آخر كافتراضي أولاً.");
-            }
-        }
-
         $address->delete();
     }
 }

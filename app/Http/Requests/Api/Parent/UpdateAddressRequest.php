@@ -13,8 +13,8 @@ class UpdateAddressRequest extends FormRequest
 
     public function rules(): array
     {
-        $parentId = 1; // سيتم استبدالها بـ auth()->user()->parent->id لاحقاً
-        $addressId = $this->route('address') ? $this->route('address')->id : $this->route('id');
+        $parentId = auth()->id();
+        $addressId = $this->route('address') ? ($this->route('address') instanceof \App\Models\Parent\Address ? $this->route('address')->id : $this->route('address')) : $this->route('id');
 
         return [
             'label' => [
@@ -25,7 +25,7 @@ class UpdateAddressRequest extends FormRequest
                 // يمنع تكرار الاسم مع عناوين ولي الأمر الأخرى، ويتخطى العنوان الحالي نفسه أثناء التحديث
                 \Illuminate\Validation\Rule::unique('addresses', 'label')
                     ->where(function ($query) use ($parentId) {
-                        return $query->where('parent_id', $parentId);
+                        return $query->where('parent_id', $parentId)->whereNull('deleted_at');
                     })->ignore($addressId)
             ],
             'lat' => [
@@ -39,8 +39,7 @@ class UpdateAddressRequest extends FormRequest
                         return $query->where('parent_id', $parentId)->where('lng', $this->lng ?? ($this->route('address')->lng ?? null));
                     })->ignore($addressId)
             ],
-            'lng'        => 'sometimes|required|numeric|between:-180,180',
-            'is_default' => 'nullable|boolean'
+            'lng' => 'sometimes|required|numeric|between:-180,180',
         ];
     }
 

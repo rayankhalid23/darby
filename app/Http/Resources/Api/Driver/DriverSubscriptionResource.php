@@ -51,14 +51,12 @@ class DriverSubscriptionResource extends JsonResource
         $homeLat = $getValidCoord(
             $this->pickup_lat,
             optional(optional($this->child)->address)->lat,
-            optional(optional(optional($this->parent)->addresses)->firstWhere('is_default', 1))->lat,
             optional(optional(optional($this->parent)->addresses)->first())->lat
         );
 
         $homeLng = $getValidCoord(
             $this->pickup_lng,
             optional(optional($this->child)->address)->lng,
-            optional(optional(optional($this->parent)->addresses)->firstWhere('is_default', 1))->lng,
             optional(optional(optional($this->parent)->addresses)->first())->lng
         );
 

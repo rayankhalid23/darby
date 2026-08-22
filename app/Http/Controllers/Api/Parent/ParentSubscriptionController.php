@@ -175,8 +175,7 @@ class ParentSubscriptionController extends Controller
                 if ($childModel->address) {
                     $address = $childModel->address;
                 } elseif ($parentModel && method_exists($parentModel, 'addresses')) {
-                    $address = $parentModel->addresses()->where('is_default', true)->first() 
-                                ?? $parentModel->addresses()->first();
+                    $address = $parentModel->addresses()->first();
                 }
 
                 $homeLat = $address->lat ?? $item->pickup_lat ?? null;
@@ -286,8 +285,7 @@ class ParentSubscriptionController extends Controller
             if ($childModel->address) {
                 $address = $childModel->address;
             } elseif ($parentModel && method_exists($parentModel, 'addresses')) {
-                $address = $parentModel->addresses()->where('is_default', true)->first() 
-                            ?? $parentModel->addresses()->first();
+                $address = $parentModel->addresses()->first();
             }
 
             $homeLat   = $address->lat ?? $item->pickup_lat ?? null;

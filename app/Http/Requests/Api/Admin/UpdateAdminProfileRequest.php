@@ -8,14 +8,6 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 
-/**
- * تعديل المشرف/الأدمن لبياناته الشخصية بنفسه.
- *
- * الفرق عن UpdateAdminRequest:
- *  - يتجاهل حساب المستخدم الحالي في قواعد التفرّد (لا يحتاج {id} من المسار)
- *  - لا يسمح بتعديل is_active إطلاقاً (لا يوقف المستخدم نفسه ولا يفعّل نفسه)
- *  - يشترط كلمة المرور الحالية عند تغيير كلمة المرور
- */
 class UpdateAdminProfileRequest extends FormRequest
 {
     public function authorize(): bool
@@ -32,12 +24,13 @@ class UpdateAdminProfileRequest extends FormRequest
                 'sometimes',
                 'nullable',
                 'string',
+                'regex:/^[\x{0600}-\x{06FF}\s]+$/u',
                 Rule::unique('users', 'full_name')->ignore($userId),
                 function ($attribute, $value, $fail) {
                     if (!empty($value)) {
                         $words = explode(' ', trim(preg_replace('/\s+/', ' ', $value)));
                         if (count($words) < 3) {
-                            $fail('الرجاء إدخال الاسم الثلاثي بالكامل.');
+                            $fail('الاسم يجب أن يكون ثلاثياً على الأقل.');
                         }
                     }
                 }
@@ -45,7 +38,7 @@ class UpdateAdminProfileRequest extends FormRequest
             'email' => [
                 'sometimes',
                 'nullable',
-                'email',
+                'email:filter',
                 Rule::unique('users', 'email')->ignore($userId)
             ],
             'phone_number' => [
@@ -56,7 +49,6 @@ class UpdateAdminProfileRequest extends FormRequest
                 'regex:/^09/',
                 Rule::unique('users', 'phone_number')->ignore($userId)
             ],
-            // كلمة المرور الحالية إجبارية فقط عند إرسال كلمة مرور جديدة
             'current_password' => [
                 'required_with:password',
                 'nullable',
@@ -67,27 +59,47 @@ class UpdateAdminProfileRequest extends FormRequest
                     }
                 }
             ],
-            'password' => ['sometimes', 'nullable', 'string', 'min:6', 'confirmed'],
-            'avatar'   => ['sometimes', 'nullable', 'image', 'mimes:jpeg,png,jpg', 'max:2048'],
+            'password' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'min:6',
+                'regex:/[a-zA-Z]/',
+                'confirmed'
+            ],
+            'avatar' => [
+                'sometimes',
+                'nullable',
+                'image',
+                'mimes:jpeg,png,jpg',
+                'max:2048'
+            ],
         ];
     }
 
     public function messages(): array
     {
         return [
-            'full_name.unique'           => 'هذا الاسم مسجل في النظام مسبقاً.',
-            'email.email'                => 'صيغة البريد الإلكتروني غير صحيحة.',
-            'email.unique'               => 'البريد الإلكتروني مستخدم بالفعل لحساب آخر.',
-            'phone_number.digits'        => 'رقم الهاتف يجب أن يتكون من 10 أرقام بالضبط.',
-            'phone_number.regex'         => 'رقم الهاتف غير صحيح، يجب أن يبدأ بـ 09.',
-            'phone_number.unique'        => 'رقم الهاتف هذا مستخدم لحساب آخر.',
+            'full_name.regex'               => 'الاسم يجب أن يكون باللغة العربية فقط وبدون رموز أو أرقام.',
+            'full_name.unique'              => 'الاسم مُسجّل مسبقاً.',
+
+            'email.email'                   => 'صيغة البريد الإلكتروني غير صحيحة.',
+            'email.unique'                  => 'البريد الإلكتروني مُسجّل مسبقاً.',
+
+            'phone_number.numeric'          => 'رقم الهاتف يجب أن يتكون من أرقام فقط.',
+            'phone_number.digits'           => 'رقم الهاتف يجب أن يكون 10 أرقام.',
+            'phone_number.regex'            => 'رقم الهاتف يجب أن يبدأ بـ 09.',
+            'phone_number.unique'           => 'رقم الهاتف مُسجّل مسبقاً.',
+
             'current_password.required_with' => 'يجب إدخال كلمة المرور الحالية لتغيير كلمة المرور.',
-            'password.min'               => 'يجب ألا تقل كلمة المرور عن 6 خانات.',
-            'password.confirmed'         => 'تأكيد كلمة المرور غير مطابق.',
-            'avatar.image'               => 'الملف المرفق يجب أن يكون صورة.',
-            'avatar.mimes'               => 'يجب أن تكون الصورة بصيغة jpeg, png, أو jpg.',
-            'avatar.max'                 => 'حجم الصورة يجب ألا يتجاوز 2 ميجابايت.',
-            'avatar.uploaded'            => 'تعذر رفع الصورة إلى الخادم. تأكد أن حجمها لا يتجاوز 2 ميجابايت ثم أعد المحاولة.',
+            
+            'password.min'                  => 'كلمة المرور يجب ألا تقل عن 6 خانات.',
+            'password.regex'                => 'كلمة المرور يجب أن تحتوي على حرف واحد على الأقل.',
+            'password.confirmed'            => 'تأكيد كلمة المرور غير مطابق.',
+
+            'avatar.image'                  => 'الملف يجب أن يكون صورة.',
+            'avatar.mimes'                  => 'الصيغ المسموحة: jpeg, png, jpg.',
+            'avatar.max'                    => 'حجم الصورة يجب ألا يتجاوز 2 ميجابايت.',
         ];
     }
 
@@ -95,7 +107,7 @@ class UpdateAdminProfileRequest extends FormRequest
     {
         throw new HttpResponseException(response()->json([
             'status'  => false,
-            'message' => 'عذراً، البيانات المرسلة لتعديل الملف الشخصي تحتوي على أخطاء.',
+            'message' => 'بيانات المدخلات غير صحيحة.',
             'errors'  => $validator->errors()
         ], 422));
     }

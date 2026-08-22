@@ -12,6 +12,7 @@ use App\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Carbon\Carbon;
 use Exception;
 
@@ -33,8 +34,12 @@ class DriverRegisterService
      */
     public function sendVerificationOtp(array $data): bool
     {
-        // توليد الرمز وربطه بالبريد الإلكتروني في الـ Cache أو جدول الـ OTP المؤقت
-        $otpCode = $this->otpService->generate($data['email'], 'REGISTER');
+        // توليد الرمز وربطه بالبريد الإلكتروني في جدول الـ OTP المؤقت
+        $otpResult = $this->otpService->generate($data['email'], 'REGISTER');
+        if (!$otpResult['success']) {
+            throw new \Exception($otpResult['message']);
+        }
+        $otpCode = $otpResult['code'];
 
         // إرسال البريد
         $this->emailService->sendOtp(
@@ -75,18 +80,32 @@ class DriverRegisterService
             // 3. تسجيل جهاز السائق فقط إذا تم إرسال fcm_token حقيقي (fcm_token فريد عالمياً في الجدول،
             //    ولا معنى لإدراج توكن وهمي؛ التسجيل الرسمي للجهاز يتم عبر POST /api/user/device-token بعد تسجيل الدخول)
             if (!empty($data['fcm_token'])) {
+                $deviceData = [
+                    'user_id'     => $user->id,
+                    'device_name' => $data['device_name'] ?? 'mobile_device',
+                ];
+                if (\Illuminate\Support\Facades\Schema::hasColumn('user_devices', 'device_id')) {
+                    $deviceData['device_id'] = $data['device_id'] ?? null;
+                }
+                if (\Illuminate\Support\Facades\Schema::hasColumn('user_devices', 'platform')) {
+                    $deviceData['platform'] = in_array(strtolower($data['platform'] ?? ''), ['ios', 'android', 'web']) ? strtolower($data['platform']) : 'web';
+                }
+                if (\Illuminate\Support\Facades\Schema::hasColumn('user_devices', 'is_active')) {
+                    $deviceData['is_active'] = true;
+                }
+                if (\Illuminate\Support\Facades\Schema::hasColumn('user_devices', 'last_active_at')) {
+                    $deviceData['last_active_at'] = Carbon::now();
+                }
+                if (\Illuminate\Support\Facades\Schema::hasColumn('user_devices', 'created_at')) {
+                    $deviceData['created_at'] = Carbon::now();
+                }
+                if (\Illuminate\Support\Facades\Schema::hasColumn('user_devices', 'updated_at')) {
+                    $deviceData['updated_at'] = Carbon::now();
+                }
+
                 DB::table('user_devices')->updateOrInsert(
                     ['fcm_token' => $data['fcm_token']],
-                    [
-                        'user_id'        => $user->id,
-                        'device_id'      => $data['device_id'] ?? null,
-                        'device_name'    => $data['device_name'] ?? 'mobile_device',
-                        'platform'       => $data['platform'] ?? 'unknown',
-                        'is_active'      => true,
-                        'last_active_at' => Carbon::now(),
-                        'created_at'     => Carbon::now(),
-                        'updated_at'     => Carbon::now(),
-                    ]
+                    $deviceData
                 );
             }
 
@@ -178,6 +197,70 @@ return $driver->load([
                 Log::error("Error completing driver profile: " . $e->getMessage());
                 throw $e;
             }
+        });
+    }
+
+    /**
+     * إلغاء وحذف الحساب غير المكتمل بعد التحقق من OTP
+     */
+    public function abandonRegistration(User $user): bool
+    {
+        return DB::transaction(function () use ($user) {
+            $driver = $user->driver;
+
+            if ($driver) {
+                // حماية: منع حذف الحسابات النشطة العاملة التي لديها رحلات أو اشتراكات نشطة
+                $hasActiveTrips = $driver->trips()->whereIn('status', ['SCHEDULED', 'IN_PROGRESS', 'STARTED'])->exists();
+                $hasActiveContracts = $driver->activeSubscriptions()->exists();
+
+                if ($hasActiveTrips || $hasActiveContracts) {
+                    throw new Exception("لا يمكن إلغاء الحساب لوجود رحلات أو اشتراكات نشطة مرتبطة به.");
+                }
+
+                // 1. حذف وثائق ومستندات السائق وملفاتها من التخزين
+                if ($driver->documents()->exists()) {
+                    foreach ($driver->documents as $doc) {
+                        if (!empty($doc->file_url)) {
+                            $relative = str_replace('storage/', '', $doc->file_url);
+                            Storage::disk('public')->delete($relative);
+                        }
+                        $doc->delete();
+                    }
+                }
+
+                // 2. حذف مركبات السائق وصورها من التخزين
+                if ($driver->vehicles()->withoutGlobalScopes()->exists()) {
+                    foreach ($driver->vehicles()->withoutGlobalScopes()->get() as $vehicle) {
+                        if (!empty($vehicle->vehicle_image_url)) {
+                            $relative = str_replace('storage/', '', $vehicle->vehicle_image_url);
+                            Storage::disk('public')->delete($relative);
+                        }
+                        $vehicle->forceDelete();
+                    }
+                }
+
+                // 3. حذف علاقات المناطق والمقاعد والعناوين إن وجدت
+                $driver->zones()->detach();
+                $driver->seatSlots()->delete();
+                $driver->addresses()->forceDelete();
+
+                // 4. حذف سجل السائق
+                $driver->delete();
+            }
+
+            // 5. حذف أجهزة المستخدم وتوكنات الدخول
+            DB::table('user_devices')->where('user_id', $user->id)->delete();
+            $user->tokens()->delete();
+
+            Log::info("تم إلغاء طلب تسجيل السائق بنجاح وحذف حسابه غير المكتمل #{$user->id}", [
+                'user_id' => $user->id,
+                'email'   => $user->email,
+            ]);
+
+            // 6. حذف المستخدم نهائياً لتحرير البريد الإلكتروني ورقم الهاتف
+            $user->forceDelete();
+
+            return true;
         });
     }
 }

@@ -45,6 +45,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('complete-profile/{userId}', [DriverRegisterController::class, 'completeProfile'])
         ->name('api.driver.complete-profile');
 
+    // 4. إلغاء وحذف الحساب غير المكتمل بعد التحقق من الـ OTP (DELETE أو POST)
+    Route::delete('abandon-registration', [DriverRegisterController::class, 'abandonRegistration'])
+        ->name('api.driver.abandon-registration');
+    Route::post('abandon-registration', [DriverRegisterController::class, 'abandonRegistration']);
+    Route::delete('cancel-registration', [DriverRegisterController::class, 'abandonRegistration']);
+    Route::post('cancel-registration', [DriverRegisterController::class, 'abandonRegistration'])
+        ->name('api.driver.cancel-registration');
+
     // موديول العناوين (Addresses Module)
     Route::prefix('addresses')->group(function () {
         

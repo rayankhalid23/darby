@@ -41,8 +41,12 @@ class ParentRegistrationService
         }
 
         try {
-            $code = $this->otpService->generate($email, 'REGISTER');
-            $this->emailService->sendOtp($email, 'مستقبل جديد', $code, 3, null, 'REGISTER');
+            $otpResult = $this->otpService->generate($email, 'REGISTER');
+            if (!$otpResult['success']) {
+                throw new Exception($otpResult['message']);
+            }
+            $code = $otpResult['code'];
+            $this->emailService->sendOtp($email, ' المستخدم', $code, 3, null, 'REGISTER');
             Log::info("Service: OTP generated and sent successfully to: {$email}");
             return $code;
         } catch (Exception $e) {
@@ -86,18 +90,32 @@ class ParentRegistrationService
                 // تسجيل الجهاز فقط إذا تم إرسال fcm_token حقيقي (فريد عالمياً في الجدول)؛
                 // التسجيل الرسمي يتم عبر POST /api/user/device-token بعد تسجيل الدخول
                 if (!empty($data['fcm_token'])) {
+                    $deviceData = [
+                        'user_id'     => $user->id,
+                        'device_name' => $data['device_name'] ?? 'mobile_device',
+                    ];
+                    if (\Illuminate\Support\Facades\Schema::hasColumn('user_devices', 'device_id')) {
+                        $deviceData['device_id'] = $data['device_id'] ?? null;
+                    }
+                    if (\Illuminate\Support\Facades\Schema::hasColumn('user_devices', 'platform')) {
+                        $deviceData['platform'] = in_array(strtolower($data['platform'] ?? ''), ['ios', 'android', 'web']) ? strtolower($data['platform']) : 'web';
+                    }
+                    if (\Illuminate\Support\Facades\Schema::hasColumn('user_devices', 'is_active')) {
+                        $deviceData['is_active'] = true;
+                    }
+                    if (\Illuminate\Support\Facades\Schema::hasColumn('user_devices', 'last_active_at')) {
+                        $deviceData['last_active_at'] = Carbon::now();
+                    }
+                    if (\Illuminate\Support\Facades\Schema::hasColumn('user_devices', 'created_at')) {
+                        $deviceData['created_at'] = Carbon::now();
+                    }
+                    if (\Illuminate\Support\Facades\Schema::hasColumn('user_devices', 'updated_at')) {
+                        $deviceData['updated_at'] = Carbon::now();
+                    }
+
                     DB::table('user_devices')->updateOrInsert(
                         ['fcm_token' => $data['fcm_token']],
-                        [
-                            'user_id'        => $user->id,
-                            'device_id'      => $data['device_id'] ?? null,
-                            'device_name'    => $data['device_name'] ?? 'mobile_device',
-                            'platform'       => $data['platform'] ?? 'unknown',
-                            'is_active'      => true,
-                            'last_active_at' => Carbon::now(),
-                            'created_at'     => Carbon::now(),
-                            'updated_at'     => Carbon::now(),
-                        ]
+                        $deviceData
                     );
                     Log::info("Service: Device registered for User ID: {$user->id}");
                 }
@@ -133,12 +151,23 @@ class ParentRegistrationService
     }
 }
 
-                // 2. تحديث البيانات الأساسية (باستثناء البريد الإلكتروني لأنه يحتاج تأكيد)
-                $updateData = collect($data)->except(['email'])->toArray();
+                // 2. تحديث البيانات الأساسية (باستثناء البريد وكلمة المرور وحالة الموثوقية)
+                $updateData = collect($data)->except(['email', 'password', 'is_trusted'])->toArray();
                 
                 if (!empty($updateData)) {
-                    // وضع البيانات الجديدة في الـ Model
                     $user->fill($updateData); 
+                }
+
+                // تحديث كلمة المرور إن أُرسلت
+                if (!empty($data['password'])) {
+                    $user->password_hash = Hash::make($data['password']);
+                }
+
+                // تحديث حالة الموثوقية بجدول parents إن أُرسلت
+                if (isset($data['is_trusted'])) {
+                    ParentModel::where('user_id', $user->id)->update([
+                        'is_trusted' => (int) $data['is_trusted']
+                    ]);
                 }
 
                 // متغير مؤقت لتتبع ما إذا كان هناك طلب لتغيير البريد الإلكتروني
@@ -174,7 +203,7 @@ class ParentRegistrationService
 
                 Log::info("Service: User fields updated and saved successfully for ID: {$userId}");
 
-                return $user;
+                return $user->load('parentProfile');
             });
         } catch (Exception $e) {
             Log::error("Service: updateParentProfile failed for ID {$userId}. Error: " . $e->getMessage());

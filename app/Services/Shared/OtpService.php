@@ -9,29 +9,46 @@ use Carbon\Carbon;
 class OtpService
 {
     /**
-     * توليد كود تحقق جديد وإلغاء الأكواد السابقة لضمان عدم التكرار
+     * توليد كود تحقق جديد مع حماية ضد الطلبات المتكررة
      */
-    public function generate(string $email, string $purpose): string
+    public function generate(string $email, string $purpose): array
     {
+        // 1. منع الطلب المتكرر قبل مرور 60 ثانية
+        $lastOtp = OtpCode::where('email', $email)
+            ->where('purpose', $purpose)
+            ->latest()
+            ->first();
+
+            if ($lastOtp && Carbon::parse($lastOtp->created_at)->gt(Carbon::now()->subSeconds(60))) {
+                $secondsLeft = 60 - Carbon::now()->diffInSeconds(Carbon::parse($lastOtp->created_at));
+            return [
+                'success' => false,
+                'message' => "يرجى الانتظار {$secondsLeft} ثانية قبل طلب رمز جديد."
+            ];
+        }
+
         $code = strval(random_int(100000, 999999));
 
-        // 1. إلغاء صلاحية أي أكواد نشطة سابقة لهذا الإيميل لنفس الغرض (حتى لا يحدث تضارب)
+        // 2. إلغاء صلاحية أي أكواد نشطة سابقة
         OtpCode::where('email', $email)
             ->where('purpose', $purpose)
             ->where('is_used', 0)
             ->update(['is_used' => 1]);
 
-        // 2. إنشاء سجل جديد تماماً للطلب الحالي
+        // 3. إنشاء سجل جديد بصلاحية 5 دقائق
         OtpCode::create([
             'email'      => $email,
             'purpose'    => $purpose,
             'code_hash'  => Hash::make($code),
-            'expires_at' => Carbon::now()->addMinutes(100),
+            'expires_at' => Carbon::now()->addMinutes(5),
             'is_used'    => 0,
             'attempts'   => 0
         ]);
 
-        return $code;
+        return [
+            'success' => true,
+            'code'    => $code
+        ];
     }
 
     /**
@@ -39,7 +56,6 @@ class OtpService
      */
     public function verify(string $email, string $code, string $purpose): array
     {
-        // جلب أحدث كود نشط متاح
         $otp = OtpCode::where('email', $email)
             ->where('purpose', $purpose)
             ->where('is_used', 0)
@@ -47,35 +63,39 @@ class OtpService
             ->first();
 
         if (!$otp) {
-            return ['success' => false, 'message' => 'لا يوجد كود نشط أو تم استخدامه مسبقاً.'];
+            return ['success' => false, 'message' => 'انتهت صلاحية الرمز يرجى إعادة طلب رمز التحقق.'];
         }
         
-        // التحقق من عدد المحاولات الفاشلة
-        if ($otp->attempts >= 30) {
+        // 1. التحقق من تجاوز المحاولات الفاشلة
+        if ($otp->attempts >= 3) {
             $otp->update(['is_used' => 1]);
             return ['success' => false, 'message' => 'تم تجاوز عدد المحاولات المسموح بها لحماية حسابك.'];
         }
 
-        // التحقق من صلاحية الوقت
+        // 2. التحقق من صلاحية الوقت
         if (Carbon::parse($otp->expires_at)->isPast()) {
             $otp->update(['is_used' => 1]);
             return ['success' => false, 'message' => 'الكود منتهي الصلاحية، يرجى طلب كود جديد.'];
         }
 
-        // مطابقة التشفير المباشر للكود المدخل
+        // 3. مطابقة الكود
         if (Hash::check($code, $otp->code_hash)) {
             $otp->update(['is_used' => 1]);
             return ['success' => true, 'message' => 'تم التحقق بنجاح.'];
         }
 
-        // زيادة عداد المحاولات الفاشلة بحالة عدم التطابق
+        // 4. زيادة المحاولات وحظر الكود فوراً إذا وصل للحد الأقصى
         $otp->increment('attempts');
-        
-        $remainingAttempts = 30 - $otp->attempts;
-        
+        $remainingAttempts = 3 - $otp->attempts;
+
+        if ($remainingAttempts <= 0) {
+            $otp->update(['is_used' => 1]);
+            return ['success' => false, 'message' => 'تم تجاوز عدد المحاولات المسموح بها لحماية حسابك.'];
+        }
+
         return [
             'success' => false, 
-            'message' => 'رمز التحقق غير صحيح. متبقي لديك ' . ($remainingAttempts > 0 ? $remainingAttempts : 0) . ' محاولات.'
+            'message' => 'رمز التحقق غير صحيح. متبقي لديك ' . $remainingAttempts . ' محاولات.'
         ];
     }
 }

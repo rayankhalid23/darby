@@ -21,11 +21,8 @@ class AddressController extends Controller
     }
     public function index(): JsonResponse
     {
-        // التصحيح هنا: نجلب رقم ولي الأمر الفعلي المرتبط بالمستخدم، وليس رقم المستخدم نفسه
-        $parentId = auth()->user()->parent->id;
-
-        // استدعاء الخدمة لجلب العناوين
-        $addresses = $this->addressService->getParentAddresses($parentId);
+        $userId = auth()->id();
+        $addresses = $this->addressService->getParentAddresses($userId);
 
         return response()->json([
             'success' => true,
@@ -36,10 +33,8 @@ class AddressController extends Controller
 
     public function store(StoreAddressRequest $request): JsonResponse
     {
-        // التصحيح هنا: استبدال الرقم الثابت بالرقم الفعلي لولي الأمر
-        $parentId = auth()->user()->parent->id; 
-        
-        $address = $this->addressService->createAddress($parentId, $request->validated());
+        $userId = auth()->id();
+        $address = $this->addressService->createAddress($userId, $request->validated());
 
         return response()->json([
             'success' => true,
@@ -50,15 +45,23 @@ class AddressController extends Controller
 
     public function update(UpdateAddressRequest $request, Address $address): JsonResponse
     {
-        // التصحيح هنا أيضاً: استبدال الرقم الثابت
-        $parentId = auth()->user()->parent->id; 
-        
-        $updatedAddress = $this->addressService->updateAddress($address, $parentId, $request->validated());
+        $userId = auth()->id();
+        $updatedAddress = $this->addressService->updateAddress($address, $userId, $request->validated());
 
         return response()->json([
             'success' => true,
             'message' => 'تم تحديث بيانات العنوان بنجاح.',
             'data'    => new AddressResource($updatedAddress)
+        ], Response::HTTP_OK);
+    }
+
+    public function destroy(Address $address): JsonResponse
+    {
+        $this->addressService->deleteAddress($address);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'تم حذف العنوان بنجاح.'
         ], Response::HTTP_OK);
     }
 }

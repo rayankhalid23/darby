@@ -18,9 +18,10 @@ abstract class TestCase extends BaseTestCase
 
         if (\Illuminate\Support\Facades\Schema::hasTable('roles')) {
             DB::table('roles')->insertOrIgnore([
-                ['id' => 1, 'name' => 'Admin',  'display_name' => 'مدير'],
-                ['id' => 2, 'name' => 'Driver', 'display_name' => 'سائق'],
-                ['id' => 3, 'name' => 'Parent', 'display_name' => 'ولي أمر'],
+                ['id' => 1, 'name' => 'admin',      'display_name' => 'مدير النظام'],
+                ['id' => 2, 'name' => 'supervisor', 'display_name' => 'مشرف'],
+                ['id' => 3, 'name' => 'parent',     'display_name' => 'ولي أمر'],
+                ['id' => 4, 'name' => 'driver',     'display_name' => 'سائق'],
             ]);
         }
     }

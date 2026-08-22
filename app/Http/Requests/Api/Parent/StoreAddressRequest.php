@@ -13,7 +13,7 @@ class StoreAddressRequest extends FormRequest
 
     public function rules(): array
     {
-        $parentId = 1; // سيتم استبدالها بـ auth()->user()->parent->id لاحقاً
+        $parentId = auth()->id();
 
         return [
             'label' => [
@@ -22,7 +22,7 @@ class StoreAddressRequest extends FormRequest
                 'max:100',
                 // شرط ديناميكي: يمنع تكرار الاسم لنفس ولي الأمر عند الإضافة
                 \Illuminate\Validation\Rule::unique('addresses', 'label')->where(function ($query) use ($parentId) {
-                    return $query->where('parent_id', $parentId);
+                    return $query->where('parent_id', $parentId)->whereNull('deleted_at');
                 })
             ],
             'lat' => [
@@ -35,7 +35,6 @@ class StoreAddressRequest extends FormRequest
                 })
             ],
             'lng' => 'required|numeric|between:-180,180',
-            'is_default' => 'nullable|boolean'
         ];
     }
 

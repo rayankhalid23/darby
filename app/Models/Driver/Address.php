@@ -19,13 +19,11 @@ class Address extends Model
         'label',
         'lat',
         'lng',
-        'is_default'
     ];
 
     protected $casts = [
-        'is_default' => 'boolean',
-        'lat'        => 'float',
-        'lng'        => 'float',
+        'lat' => 'float',
+        'lng' => 'float',
     ];
 
     /**

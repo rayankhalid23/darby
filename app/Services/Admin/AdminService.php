@@ -5,6 +5,7 @@ namespace App\Services\Admin;
 use App\Models\User;
 use App\Models\Admin\Admin;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Hash;
@@ -44,9 +45,18 @@ class AdminService
             ->orderByDesc('id')
             ->paginate($perPage);
     }
-
+    /**
+     * 1️⃣ إنشاء مشرف جديد (مسموح فقط للأدمن الرئيسي role_id = 1)
+     */
     public function createAdmin(array $data, ?UploadedFile $avatar = null): Admin
     {
+        $currentUser = auth()->user();
+
+        // 🛑 الأدمن الرئيسي فقط هو من يملك صلاحية الإضافة
+        if (!$currentUser || $currentUser->role_id != 1) {
+            throw new \Exception('ليس لديك الصلاحية في إضافة مشرف.');
+        }
+
         return DB::transaction(function () use ($data, $avatar) {
             $avatarUrl = null;
             if ($avatar) {
@@ -74,7 +84,7 @@ class AdminService
             $this->emailService->sendAdminCredentials(
                 $user->email,
                 $user->full_name,
-                $user->phone_number,
+                $user->email,
                 $generatedPassword
             );
 
@@ -83,28 +93,37 @@ class AdminService
     }
 
     /**
-     * 🚀 النسخة المحدثة والمحمية بالكامل لدالة تعديل بيانات المشرف (تعديل جزئي 100%)
+     * 2️⃣ تعديل بيانات المشرف
      */
     public function updateAdmin(Admin $admin, array $data, ?UploadedFile $avatar = null): Admin
     {
+        $currentUser = auth()->user();
+
+        if ($currentUser && $currentUser->role_id != 1) {
+            // 🛑 منع المشرف من تعديل بيانات أي مشرف آخر
+            if ($currentUser->id !== $admin->user_id) {
+                throw new \Exception('ليس لديك الصلاحية لتعديل بيانات المشرفين.');
+            }
+
+            // 🛑 منع المشرف من تغيير حالة نشاط حسابه الشخصي (تفعيل / تعطيل)
+            if (array_key_exists('is_active', $data)) {
+                throw new \Exception('ليس لديك الصلاحية لتغيير حالة نشاط الحساب.');
+            }
+        }
+
         return DB::transaction(function () use ($admin, $data, $avatar) {
             try {
                 $user = $admin->user;
                 $updateData = [];
 
-                // الاعتماد على array_key_exists لضمان التقاط القيم مثل 0 أو null بأمان
                 if (array_key_exists('full_name', $data))    $updateData['full_name'] = $data['full_name'];
-                // ملاحظة: تغيير البريد الإلكتروني تتم معالجته بالكامل في AdminController
-                // عبر إرسال رابط تأكيد موقّع، لذلك لا يُحدَّث الإيميل هنا إطلاقاً.
                 if (array_key_exists('phone_number', $data)) $updateData['phone_number'] = $data['phone_number'];
                 if (array_key_exists('is_active', $data))    $updateData['is_active'] = $data['is_active'];
 
-                // تحديث كلمة المرور فقط في حال تمريرها غير فارغة
                 if (!empty($data['password'])) {
                     $updateData['password_hash'] = Hash::make($data['password']);
                 }
 
-                // معالجة وحذف الصورة القديمة بشكل آمن عند رفع صورة جديدة
                 if ($avatar) {
                     if ($user->avatar_url && Storage::disk('public')->exists(str_replace('storage/', '', $user->avatar_url))) {
                         Storage::disk('public')->delete(str_replace('storage/', '', $user->avatar_url));
@@ -113,19 +132,21 @@ class AdminService
                     $updateData['avatar_url'] = 'storage/' . $path;
                 }
 
-                // تنفيذ التحديث الجزئي الفعلي للمستخدم المرتبط
                 if (!empty($updateData)) {
                     $user->update($updateData);
                 }
 
                 return $admin->refresh()->load(['user', 'creator']);
 
-            } catch (Exception $e) {
+            } catch (\Exception $e) {
                 Log::error("Error updating admin ID {$admin->id}: " . $e->getMessage());
                 throw $e;
             }
         });
     }
+
+    
+  
     // =====================================================================
     // 📧 منظومة تغيير البريد الإلكتروني بالتأكيد (مطابقة لآلية ولي الأمر)
     //
@@ -298,42 +319,44 @@ class AdminService
      * الخطوات: نقل ملكية المشرفين الذين أنشأهم (بسبب قيد RESTRICT على created_by)،
      * ثم إلغاء توكنات الدخول، ثم حذف صورته من التخزين، وأخيراً حذف الحساب والسجل.
      */
+
     public function deleteAdmin(Admin $admin, ?int $performedByUserId = null): void
-    {
-        $performedByUserId = $performedByUserId ?? auth()->id() ?? 1;
+{
+    $currentUser = auth()->user();
 
-        DB::transaction(function () use ($admin, $performedByUserId) {
-            $user = $admin->user;
-
-            if ($user) {
-                // 1. نقل ملكية أي مشرفين أنشأهم هذا المشرف إلى منفّذ عملية الحذف
-                Admin::where('created_by', $user->id)
-                    ->where('id', '!=', $admin->id)
-                    ->update(['created_by' => $performedByUserId]);
-
-                // 2. إلغاء كل جلسات الدخول النشطة لهذا المشرف فوراً
-                $user->tokens()->delete();
-
-                // 3. حذف الصورة الشخصية من التخزين إن وُجدت
-                if ($user->avatar_url) {
-                    $path = str_replace('storage/', '', $user->avatar_url);
-                    if (Storage::disk('public')->exists($path)) {
-                        Storage::disk('public')->delete($path);
-                    }
-                }
-
-                // 4. إلغاء أي طلب معلق لتغيير البريد الإلكتروني
-                $this->forgetEmailChange($user->id);
-                Cache::forget("admin_email_change_status_{$user->id}");
-            }
-
-            // 5. حذف سجل المشرف ثم حذف حساب المستخدم نهائياً
-            $admin->delete();
-            if ($user) {
-                $user->forceDelete();
-            }
-
-            Log::info("Admin ID {$admin->id} deleted by user {$performedByUserId}");
-        });
+    // 🛑 التحقق من الصلاحية: مسموح فقط للأدمن الرئيسي (role_id = 1)
+    if (!$currentUser || $currentUser->role_id != 1) {
+        throw new \Exception('ليس لديك الصلاحية لحذف المشرفين.');
     }
+
+    $performedByUserId = $performedByUserId ?? $currentUser->id ?? 1;
+
+    DB::transaction(function () use ($admin, $performedByUserId) {
+        $user = $admin->user;
+
+        if ($user) {
+            // 1. نقل ملكية أي مشرفين أنشأهم هذا المشرف إلى منفّذ عملية الحذف
+            Admin::where('created_by', $user->id)
+                ->where('id', '!=', $admin->id)
+                ->update(['created_by' => $performedByUserId]);
+
+            // 2. إلغاء كل جلسات الدخول النشطة فوراً
+            $user->tokens()->delete();
+
+            // 3. إلغاء أي طلب معلق لتغيير البريد الإلكتروني
+            $this->forgetEmailChange($user->id);
+            Cache::forget("admin_email_change_status_{$user->id}");
+
+            // 4. تعيين تاريخ الوقت الحالي في deleted_at (Soft Delete)
+            $user->delete();
+        }
+
+        // 5. حذف سجل المشرف (Soft Delete)
+        $admin->delete();
+
+        Log::info("Admin ID {$admin->id} soft-deleted by user {$performedByUserId}");
+    });
+}
+  
+   
 }

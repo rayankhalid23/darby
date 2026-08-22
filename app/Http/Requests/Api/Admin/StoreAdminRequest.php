@@ -27,22 +27,23 @@ class StoreAdminRequest extends FormRequest
     {
         return [
             // يدعم العربية والانجليزية ويشترط 3 مقاطع على الأقل لتوثيق الهوية
-            'full_name' => [
-                'required',
-                'string',
-                'unique:users,full_name',
-                function ($attribute, $value, $fail) {
-                    $words = explode(' ', trim(preg_replace('/\s+/', ' ', $value)));
-                    if (count($words) < 3) {
-                        $fail('الرجاء إدخل الاسم الثلاثي للمشرف بالكامل لتوثيق الحساب.');
-                    }
-                }
-            ],
-            'email' => [
-                'required',
-                'email',
-                'unique:users,email'
-            ],
+    'full_name' => [
+    'required',
+    'string',
+    'regex:/^[\x{0600}-\x{06FF}\s]+$/u', // يمنع الإنجليزية، الأرقام، والرموز ويقبل أحرف عربية ومسافات فقط
+    'unique:users,full_name',
+    function ($attribute, $value, $fail) {
+        $words = explode(' ', trim(preg_replace('/\s+/', ' ', $value)));
+        if (count($words) < 3) {
+            $fail('الاسم يجب أن يكون ثلاثياً على الأقل.');
+        }
+    }
+],
+'email' => [
+    'required',
+    'email:filter', // فحص دقيق لصيغة البريد
+    'unique:users,email'
+],
             'phone_number' => [
                 'required',
                 'numeric',
@@ -51,10 +52,11 @@ class StoreAdminRequest extends FormRequest
                 'unique:users,phone_number'
             ],
             'password' => [
-                'nullable',
-                'string',
-                'min:6'
-            ],
+    'nullable',
+    'string',
+    'min:6',
+    'regex:/[a-zA-Z]/' // يشترط وجود حرف إنجليزي واحد على الأقل
+],
             'avatar' => [
                 'sometimes',
                 'nullable',
@@ -71,26 +73,25 @@ class StoreAdminRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'full_name.required' => 'حقل الاسم الكامل مطلوب، لا يمكنك تركه فارغاً.',
-            'full_name.string'   => 'الاسم يجب أن يكون نصاً صالحاً وخالياً من الرموز.',
-            'full_name.unique'   => 'هذا الاسم مسجل في النظام مسبقاً، الرجاء اختيار اسم مختلف.',
+            'full_name.required' => 'حقل الاسم مطلوب.',
+'full_name.regex'    => 'الاسم يجب أن يكون باللغة العربية فقط وبدون رموز أو أرقام.',
+'full_name.unique'   => 'الاسم مُسجّل مسبقاً.',
 
-            'email.required'     => 'البريد الإلكتروني حقل إجباري لتسجيل حساب المشرف.',
-            'email.email'        => 'صيغة البريد الإلكتروني غير صحيحة.',
-            'email.unique'       => 'البريد الإلكتروني هذا مستخدم لحساب آخر في النظام.',
+'email.required'     => 'البريد الإلكتروني مطلوب.',
+'email.email'        => 'صيغة البريد الإلكتروني غير صحيحة.',
+'email.unique'       => 'البريد الإلكتروني مُسجّل مسبقاً.',
 
-            'phone_number.required' => 'رقم الهاتف مطلوب لاستكمال عملية التسجيل.',
-            'phone_number.numeric'  => 'رقم الهاتف يجب أن يحتوي على أرقام فقط.',
-            'phone_number.digits'   => 'رقم الهاتف يجب أن يتكون من 10 أرقام بالضبط.',
-            'phone_number.regex'    => 'رقم الهاتف غير صحيح، يجب أن يبدأ بـ 09.',
-            'phone_number.unique'   => 'رقم الهاتف هذا مستخدم لحساب آخر بالفعل.',
+'phone_number.required' => 'رقم الهاتف مطلوب.',
+'phone_number.numeric'  => 'رقم الهاتف يجب أن يتكون من أرقام فقط.',
+'phone_number.digits'   => 'رقم الهاتف يجب أن يكون 10 أرقام.',
+'phone_number.regex'    => 'رقم الهاتف يجب أن يبدأ بـ 09.',
+'phone_number.unique'   => 'رقم الهاتف مُسجّل مسبقاً.',
+'password.min'   => 'كلمة المرور يجب ألا تقل عن 6 خانات.',
+'password.regex' => 'كلمة المرور يجب أن تحتوي على حرف واحد على الأقل.',
 
-            'password.min'          => 'كلمة المرور يجب ألا تقل عن 6 خانات.',
-
-            'avatar.image'          => 'الملف المرفق يجب أن يكون صورة.',
-            'avatar.mimes'          => 'يجب أن تكون الصورة بصيغة jpeg, png, أو jpg.',
-            'avatar.max'            => 'حجم الصورة يجب ألا يتجاوز 2 ميجابايت.',
-            'avatar.uploaded'       => 'تعذر رفع الصورة إلى الخادم. تأكد أن حجمها لا يتجاوز 2 ميجابايت ثم أعد المحاولة.',
+'avatar.image'          => 'الملف يجب أن يكون صورة.',
+'avatar.mimes'          => 'الصيغ المسموحة: jpeg, png, jpg.',
+'avatar.max'            => 'حجم الصورة يجب ألا يتجاوز 2 ميجابايت.',
         ];
     }
 

@@ -4,11 +4,9 @@ namespace App\Services\Admin;
 
 use App\Models\Driver\Driver;
 use App\Models\Driver\DriverApproval;
-<<<<<<< HEAD
-use App\Models\Driver\DriverDocument;
-=======
+
 use App\Services\Notification\NotificationService;
->>>>>>> 7c7e95414ad0f0430534f46f0b6057beb96b09af
+
 use App\Services\Admin\AdminAuditLogService;
 use App\Services\Shared\EmailService;
 use Illuminate\Support\Facades\DB;

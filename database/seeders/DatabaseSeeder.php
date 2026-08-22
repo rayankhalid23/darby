@@ -8,19 +8,22 @@ class DatabaseSeeder extends Seeder
 {
     /**
      * Seed the application's database.
+     *
+     * الترتيب الصحيح للـ Seeder:
+     *   1. MainSystemSeeder  ← البيانات الأساسية (أدوار، جغرافيا، مدارس، مستخدمون)
+     *   2. ClauseSeeder      ← بنود العقود
+     *
+     * لتشغيل السيدر الشامل فقط:
+     *   php artisan db:seed --class=MainSystemSeeder
+     *
+     * لتشغيل جميع السيدرات:
+     *   php artisan db:seed
      */
     public function run(): void
     {
         $this->call([
-            // 1. البنية التحتية، الجغرافيا، والبيانات الأساسية
-            TripoliGeographySeeder::class,
-            ZoneSeeder::class,
-            SchoolSeeder::class,
+            MainSystemSeeder::class,
             ClauseSeeder::class,
-            SystemInitialSeeder::class,
-
-            // 2. البنية الشاملة لكافة بيانات واشتراكات ورجلات النظام
-            FullSystemSeeder::class,
         ]);
     }
 }
