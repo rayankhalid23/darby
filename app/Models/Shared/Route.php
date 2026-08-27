@@ -15,7 +15,7 @@ class Route extends Model
     protected $fillable = [
         'driver_id',
         'vehicle_id',
-        'contract_id',
+        'subscription_request_id',
         'route_name',
         'route_type',
         'shift_slot',
@@ -41,9 +41,9 @@ class Route extends Model
         return $this->belongsTo(Vehicle::class, 'vehicle_id');
     }
 
-    public function contract(): BelongsTo
+    public function subscriptionRequest(): BelongsTo
     {
-        return $this->belongsTo(Contract::class, 'contract_id');
+        return $this->belongsTo(SubscriptionRequest::class, 'subscription_request_id');
     }
 
     public function trips(): HasMany
@@ -95,6 +95,6 @@ class Route extends Model
                 return $name;
             }
         }
-        return self::generateGenericRouteName($this->shift_slot ?? null, $this->contract?->direction ?? 'both', $this->route_type);
+        return self::generateGenericRouteName($this->shift_slot ?? null, $this->subscriptionRequest?->direction ?? 'both', $this->route_type);
     }
 }

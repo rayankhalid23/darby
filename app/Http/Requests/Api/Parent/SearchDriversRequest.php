@@ -8,20 +8,13 @@ use Illuminate\Validation\Rule;
 
 class SearchDriversRequest extends FormRequest
 {
-    /**
-     * تحديد ما إذا كان المستخدم مخولاً لإجراء هذا الطلب.
-     */
     public function authorize(): bool
     {
         return true;
     }
 
-    /**
-     * قواعد التحقق من البيانات
-     */
     public function rules(): array
     {
-        // جلب الـ parent_id الفعلي المقابل للمستخدم المسجل حالياً لضمان دقة التحقق
         $parent = DB::table('parents')->where('user_id', auth()->id())->first();
         $parentId = $parent ? $parent->id : 0;
 
@@ -30,11 +23,10 @@ class SearchDriversRequest extends FormRequest
             'driver_gender' => ['nullable', 'string', Rule::in(['male', 'female', 'both'])],
             'has_ac'        => ['nullable'],
             
-            // تحقق ذكي وصارم للتأكد من وجود الأطفال وتبعيّتهم الفعليه لولي الأمر الحالي
-            'child_ids'     => ['nullable', 'array'],
+            // 🔥 جعل الأطفال إجباريين لضمان حساب السعر دائماً
+            'child_ids'     => ['required', 'array', 'min:1'],
             'child_ids.*'   => [
                 'integer',
-                // 🔥 تم إضافة "use ($parentId)" هنا لكي يرى الكود المتغير بالداخل بدون مشاكل
                 Rule::exists('children', 'id')->where(function ($query) use ($parentId) {
                     $query->where('parent_id', $parentId);
                 }),
@@ -42,12 +34,11 @@ class SearchDriversRequest extends FormRequest
         ];
     }
 
-    /**
-     * تخصيص رسائل الخطأ لتظهر بشكل احترافي في الفرونت إند
-     */
     public function messages(): array
     {
         return [
+            'child_ids.required' => 'يرجى تحديد طفل واحد على الأقل لحساب تكلفة الاشتراك.',
+            'child_ids.min'      => 'يجب اختيار طفل واحد على الأقل.',
             'child_ids.*.exists' => 'أحد الأطفال المحددين غير موجود أو لا ينتمي لحسابك.',
             'driver_gender.in'   => 'جنس السائق المحدد غير صحيح.',
         ];

@@ -41,30 +41,39 @@ class AdminDriverDetailResource extends JsonResource
                 'email'             => $this->user->email ?? null,
                 'phone_number'      => $this->user->phone_number ?? null,
                 'alternative_phone' => $this->user->alternative_phone ?? null,
-                'avatar_url'        => $this->user->avatar_url ?? null,
+                'avatar_url'        => \App\Http\Controllers\Api\Shared\MediaController::urlFor($this->user->avatar_url ?? null),
                 'is_active'         => (bool) ($this->user->is_active ?? false),
             ],
 
             // مصفوفة المركبات المسجلة للسائق
             'vehicles' => $this->vehicles ? $this->vehicles->map(function ($vehicle) {
                 return [
-                    'id'            => $vehicle->id,
-                    'make'          => $vehicle->make,
-                    'model'         => $vehicle->model,
-                    'year'          => $vehicle->year,
-                    'plate_number'  => $vehicle->plate_number,
-                    'color'         => $vehicle->color,
-                    'capacity'      => $vehicle->capacity,
+                    'id'                => $vehicle->id,
+                    'brand'             => $vehicle->brand,
+                    'model'             => $vehicle->model,
+                    'year'              => $vehicle->year,
+                    'plate_number'      => $vehicle->plate_number,
+                    'color'             => $vehicle->color,
+                    'type'              => $vehicle->type,
+                    'capacity_manual'   => $vehicle->capacity_manual,
+                    'has_ac'            => (bool) $vehicle->has_ac,
+                    'vehicle_image_url' => \App\Http\Controllers\Api\Shared\MediaController::urlFor($vehicle->vehicle_image_url),
+                    'status'            => $vehicle->status,
+                    'is_verified'       => (bool) $vehicle->is_verified,
                 ];
             }) : [],
 
-            // 🚀 مصفوفة الوثائق والمستندات الرسمية المرفوعة - تم إصلاح الـ null هنا قاطعاُ
+            // 🚀 مصفوفة الوثائق والمستندات الرسمية المرفوعة - مع ترويسات CORS وحماية كاملة للفرونت
             'documents' => $this->documents ? $this->documents->map(function ($doc) {
                 return [
-                    'id'            => $doc->id,
-                    'document_type' => $doc->doc_type ?? $doc->document_type, // يقرأ doc_type الفعلي أولاً
-                    'document_url'  => $doc->file_url ? url($doc->file_url) : ($doc->document_url ? url($doc->document_url) : null), // يولد رابط كامل للصورة
-                    'status'        => $doc->status, // Pending, Approved, Rejected
+                    'id'                               => $doc->id,
+                    'document_type'                    => $doc->doc_type ?? $doc->document_type,
+                    'document_url'                     => \App\Http\Controllers\Api\Shared\MediaController::urlFor($doc->file_url ?? $doc->document_url),
+                    'insurance_expiry_date'            => $doc->insurance_expiry_date,
+                    'stamp_expiry_date'                => $doc->stamp_expiry_date,
+                    'technical_inspection_expiry_date' => $doc->technical_inspection_expiry_date,
+                    'status'                           => $doc->status,
+                    'feedback'                         => $doc->feedback,
                 ];
             }) : [],
 

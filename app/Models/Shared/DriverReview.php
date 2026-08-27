@@ -17,7 +17,7 @@ class DriverReview extends Model
     protected $fillable = [
         'parent_id',
         'driver_id',
-        'contract_id',
+        'subscription_request_id',
         'rating',
         'comment',
         'status',
@@ -37,8 +37,8 @@ class DriverReview extends Model
         return $this->belongsTo(Driver::class, 'driver_id');
     }
 
-    public function contract(): BelongsTo
+    public function subscriptionRequest(): BelongsTo
     {
-        return $this->belongsTo(Contract::class, 'contract_id');
+        return $this->belongsTo(SubscriptionRequest::class, 'subscription_request_id');
     }
 }

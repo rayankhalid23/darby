@@ -92,26 +92,26 @@ Content-Type: application/json
 
 #### 1.2 التحقق من OTP وتوليد التوكن
 * **Method:** `POST`
-* **URL:** `/api/driver/verify-otp`
+* **URL:** `/api/v1/driver/verify-otp`
 * **Body (JSON):**
 ```json
 {
   "email": "driver1@darby.com",
-  "otp": "123456"
+  "otp": "123456",
+  "full_name": "عبد السلام المصراتي",
+  "phone_number": "0921111111",
+  "gender": "male",
+  "password": "Password123"
 }
 ```
-* **Success Response (200 OK):**
+* **Success Response (201 Created):**
 ```json
 {
-  "status": "success",
-  "token": "1|sanctum_token_string_here",
-  "user": {
-    "id": 95,
-    "full_name": "عبد السلام المصراتي",
-    "email": "driver1@darby.com",
-    "phone_number": "0921111111",
-    "role_id": 4
-  }
+  "status": true,
+  "message": "تم تفعيل الحساب وإنشاؤه بنجاح.",
+  "user_id": 95,
+  "driver_id": 36,
+  "token": "1|sanctum_token_string_here"
 }
 ```
 

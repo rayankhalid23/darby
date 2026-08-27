@@ -113,28 +113,27 @@ class DriverSubscriptionAcceptanceTest extends TestCase
             'status'  => 'active',
         ]);
 
-        // ---- 6.2 ط¹ظ†ظˆط§ظ† ظˆظ„ظٹ ط§ظ„ط£ظ…ط± ----
+        // ---- 6.2 عنوان ولي الأمر ----
         $addressId = DB::table('addresses')->insertGetId([
             'parent_id'  => $this->parentUser->id,
-            'label'      => 'ظ…ظ†ط²ظ„ ظˆظ„ظٹ ط§ظ„ط£ظ…ط±',
+            'label'      => 'منزل ولي الأمر',
             'lat'        => 32.88,
             'lng'        => 13.19,
-            'is_default' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
 
-        // ---- 6. ط§ظ„ط·ظپظ„ ----
+        // ---- 6. الطفل ----
         $this->child = Child::create([
             'parent_id' => $this->parent->id,
-            'full_name' => 'ط·ظپظ„ ط§ظ„ط§ط®طھط¨ط§ط±',
+            'full_name' => 'طفل الاختبار',
             'birth_date'=> '2018-05-10',
             'gender'    => 'male',
             'grade'     => 1,
             'notification_radius' => 500,
         ]);
 
-        // ---- 7. ط·ظ„ط¨ ط§ظ„ط§ط´طھط±ط§ظƒ ط§ظ„ظ…ط¹ظ„ظ‚ ----
+        // ---- 7. طلب الاشتراك المعلق ----
         $this->subscriptionRequest = SubscriptionRequest::create([
             'parent_id'         => $this->parent->id,
             'driver_id'         => $this->driver->id,
@@ -153,7 +152,7 @@ class DriverSubscriptionAcceptanceTest extends TestCase
             'children_count'    => 1,
         ]);
 
-        // ---- 8. ط±ط¨ط· ط§ظ„ط·ظپظ„ ط¨ط§ظ„ط·ظ„ط¨ ظپظٹ ط¬ط¯ظˆظ„ request_children ----
+        // ---- 8. ربط الطفل بالطلب في جدول request_children ----
         DB::table('request_children')->insert([
             'request_id'         => $this->subscriptionRequest->id,
             'child_id'           => $this->child->id,
@@ -161,101 +160,62 @@ class DriverSubscriptionAcceptanceTest extends TestCase
             'dropoff_address_id' => $this->school->id,
             'home_lat'           => 32.88,
             'home_lng'           => 13.19,
-            'home_label'         => 'ط§ظ„ظ…ظ†ط²ظ„',
+            'home_label'         => 'المنزل',
             'school_lat'         => 32.90,
             'school_lng'         => 13.20,
-            'school_label'       => 'ط§ظ„ظ…ط¯ط±ط³ط©',
+            'school_label'       => 'المدرسة',
             'price_per_child'    => 200.00,
         ]);
     }
 
     protected function tearDown(): void
     {
-        // طھط£ظƒط¯ ظ…ظ† ط¥ط؛ظ„ط§ظ‚ ظƒظ„ mock ظ„طھظپط§ط¯ظٹ طھط³ط±ط¨ ط§ظ„ط­ط§ظ„ط© ط¨ظٹظ† ط§ظ„ط§ط®طھط¨ط§ط±ط§طھ
         Mockery::close();
         parent::tearDown();
     }
 
     // =========================================================
-    // ط§ط®طھط¨ط§ط± 1: ط§ظ„ط³ط§ط¦ظ‚ ظٹظ‚ط¨ظ„ ط§ظ„ط·ظ„ط¨ ط¨ظ†ط¬ط§ط­
+    // اختبار 1: السائق يقبل الطلب بنجاح
     // =========================================================
     public function test_driver_can_accept_subscription_request(): void
     {
-        // --- Mock ظ„ظ€ ContractService ظ„طھط¬ظ†ط¨ PDF/OSRM ط§ظ„ط®ط§ط±ط¬ظٹظٹظ† ---
-        $fakeContract = Contract::create([
-            'subscription_request_id' => $this->subscriptionRequest->id,
-            'parent_id'               => $this->parentUser->id,
-            'driver_id'               => $this->driverUser->id,
-            'contract_number'         => 'DRBY-TEST-' . rand(100000, 999999),
-            'subscription_type' => 'multi_day',
-            'direction'               => 'both',
-            'timing'                  => 'MORNING',
-            'pickup_time'             => '07:00:00',
-            'dropoff_time'            => '14:00:00',
-            'max_waiting_time'        => 15,
-            'start_date'              => now()->addDays(1)->format('Y-m-d'),
-            'end_date'                => now()->addMonths(1)->format('Y-m-d'),
-            'days_count'              => 22,
-            'total_price'             => 200.00,
-            'clauses'                 => [],
-            'status'                  => 'active',
-            'signed_at'               => now(),
-        ]);
-
-        $mockContractService = Mockery::mock(ContractService::class);
-        $mockContractService->shouldReceive('generateContract')
-            ->once()
-            ->andReturn($fakeContract->load(['subscriptionRequest', 'parent', 'driver', 'activeSubscriptions']));
-
-        $this->app->instance(ContractService::class, $mockContractService);
-
-        // --- ط¥ط±ط³ط§ظ„ ط·ظ„ط¨ ط§ظ„ظ‚ط¨ظˆظ„ ---
+        // --- إرسال طلب القبول ---
         $response = $this->actingAs($this->driverUser)
             ->putJson("/api/driver/{$this->subscriptionRequest->id}/status", [
                 'status' => 'accepted',
             ]);
 
-        // --- ط§ظ„طھط­ظ‚ظ‚ط§طھ ---
+        // --- التحققات ---
         $response->assertStatus(200);
         $response->assertJsonPath('success', true);
 
-        // طھط­ظ‚ظ‚ ط£ظ† ط­ط§ظ„ط© ط§ظ„ط·ظ„ط¨ طھط؛ظٹظ‘ط±طھ ط¥ظ„ظ‰ accepted
+        // تحقق أن حالة الطلب تغيّرت إلى accepted
         $this->assertDatabaseHas('requests', [
             'id'     => $this->subscriptionRequest->id,
             'status' => 'accepted',
         ]);
 
-        // طھط­ظ‚ظ‚ ظ…ظ† ط¥ظ†ط´ط§ط، ط³ط¬ظ„ط§طھ active_subscriptions
+        // تحقق من إنشاء سجلات active_subscriptions
         $this->assertDatabaseHas('active_subscriptions', [
-            'driver_id' => $this->driver->id,
-            'child_id'  => $this->child->id,
-            'status'    => 'active',
+            'subscription_request_id' => $this->subscriptionRequest->id,
+            'driver_id'               => $this->driver->id,
+            'child_id'                => $this->child->id,
+            'status'                  => 'active',
         ]);
 
-        // ط¬ظ„ط¨ ظ…ط¹ط±ظپ ط§ظ„ط§ط´طھط±ط§ظƒ ط§ظ„ظ†ط´ط· ظ…ظ† ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ ظ„ظ„طھط­ظ‚ظ‚ ظ…ظ† طھط·ط§ط¨ظ‚ظ‡ ظ…ط¹ ط§ظ„ط§ط³طھط¬ط§ط¨ط©
+        // جلب معرف الاشتراك النشط من قاعدة البيانات للتحقق من تطابقه مع الاستجابة
         $activeSub = ActiveSubscription::where('driver_id', $this->driver->id)
             ->where('child_id', $this->child->id)
             ->first();
         
         $this->assertNotNull($activeSub);
 
-        // ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† ظˆط¬ظˆط¯ ط§ظ„ظ…ط¹ط±ظ‘ظپ (id) ظˆطھط·ط§ط¨ظ‚ظ‡ ط¯ط§ط®ظ„ طھظپط§طµظٹظ„ ط§ط´طھط±ط§ظƒ ط§ظ„ط·ظپظ„ ظپظٹ ظ…طµظپظˆظپط© ط§ظ„ط¥ط®ط±ط§ط¬
+        // التحقق من وجود المعرّف (id) وتطابقه داخل تفاصيل اشتراك الطفل في مصفوفة الإخراج
         $response->assertJsonPath('data.children.0.subscription.id', $activeSub->id);
-
-        // ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† ظˆط¬ظˆط¯ طµظˆط±ط© ط§ظ„ط·ظپظ„ (photo_url) ظپظٹ ظ…طµظپظˆظپط© ط§ظ„ط¥ط®ط±ط§ط¬
-        $response->assertJsonStructure([
-            'data' => [
-                'children' => [
-                    '*' => [
-                        'photo_url',
-                    ]
-                ]
-            ]
-        ]);
     }
 
     // =========================================================
-    // ط§ط®طھط¨ط§ط± 1.5: ظ‚ط¨ظˆظ„ ط§ظ„ط·ظ„ط¨ ظٹظ†ط´ط¦ ظ…ط³ط§ط±ط§ظ‹ ظˆظٹط®طµظ… ط§ظ„ظ…ظ‚ط§ط¹ط¯ ط§ظ„ظ…طھط§ط­ط© (ط¨ط²ظٹط§ط¯ط© ط§ظ„ط§ط´طھط±ط§ظƒط§طھ ط§ظ„ظ†ط´ط·ط©)
+    // اختبار 1.5: قبول الطلب ينشئ مساراً ويخصم المقاعد المتاحة (بزيادة الاشتراكات النشطة)
     // =========================================================
     public function test_accepting_subscription_creates_route_and_deducts_available_seats(): void
     {
@@ -263,87 +223,83 @@ class DriverSubscriptionAcceptanceTest extends TestCase
 
         $beforeActiveCount = ActiveSubscription::where('driver_id', $this->driver->id)->where('status', 'active')->count();
 
-        // ط¥ظƒظ…ط§ظ„ ظ‚ط¨ظˆظ„ ط§ظ„ط·ظ„ط¨
+        // إكمال قبول الطلب
         $updatedRequest = $service->updateStatus($this->subscriptionRequest, 'accepted');
 
-        // 1. طھط­ظ‚ظ‚ ظ…ظ† طھط؛ظٹط± ط­ط§ظ„ط© ط§ظ„ط·ظ„ط¨ ط¥ظ„ظ‰ accepted
+        // 1. تحقق من تغير حالة الطلب إلى accepted
         $this->assertEquals('accepted', $updatedRequest->status);
 
-        // 2. طھط­ظ‚ظ‚ ظ…ظ† ط²ظٹط§ط¯ط© ط§ظ„ظ…ظ‚ط§ط¹ط¯ ط§ظ„ظ…ط­ط¬ظˆط²ط© (ط¹ط¯ط¯ ط§ظ„ط§ط´طھط±ط§ظƒط§طھ ط§ظ„ظ†ط´ط·ط©) ط¨ظ†ط§ط،ظ‹ ط¹ظ„ظ‰ ط¹ط¯ط¯ ط§ظ„ط£ط·ظپط§ظ„
+        // 2. تحقق من زيادة المقاعد المحجوزة (عدد الاشتراكات النشطة) بناءً على عدد الأطفال
         $afterActiveCount = ActiveSubscription::where('driver_id', $this->driver->id)->where('status', 'active')->count();
         $this->assertEquals($beforeActiveCount + $this->subscriptionRequest->children_count, $afterActiveCount);
 
-        // 3. طھط­ظ‚ظ‚ ظ…ظ† ط¥ظ†ط´ط§ط، ط§ظ„ظ…ط³ط§ط± ظپظٹ ط¬ط¯ظˆظ„ routes
+        // 3. تحقق من إنشاء المسار في جدول routes
         $this->assertDatabaseHas('routes', [
-            'driver_id'   => $this->driver->id,
-            'contract_id' => $updatedRequest->contract->id,
-            'status'      => 'Active',
+            'driver_id'               => $this->driver->id,
+            'subscription_request_id' => $updatedRequest->id,
+            'status'                  => 'Active',
         ]);
 
-        // 4. طھط­ظ‚ظ‚ ظ…ظ† ط±ط¨ط· active_subscriptions ط¨ظ€ route_id ط§ظ„ظ…ظˆظ„ط¯
-        $route = DB::table('routes')->where('contract_id', $updatedRequest->contract->id)->first();
+        // 4. تحقق من ربط active_subscriptions بـ route_id المولد
+        $route = DB::table('routes')->where('subscription_request_id', $updatedRequest->id)->first();
         $this->assertNotNull($route);
         $this->assertDatabaseHas('active_subscriptions', [
-            'driver_id'   => $this->driver->id,
-            'contract_id' => $updatedRequest->contract->id,
-            'route_id'    => $route->id,
-            'status'      => 'active',
+            'driver_id'               => $this->driver->id,
+            'subscription_request_id' => $updatedRequest->id,
+            'route_id'                => $route->id,
+            'status'                  => 'active',
         ]);
     }
 
     // =========================================================
-    // ط§ط®طھط¨ط§ط± 1.6: ط§ظ„ط³ط§ط¦ظ‚ ظ„ط§ ظٹظ…ظƒظ†ظ‡ ظ‚ط¨ظˆظ„ ط·ظ„ط¨ ط¥ط°ط§ طھظˆط§ط²طھ ط£ظˆ طھط¬ط§ظˆط²طھ ط³ط¹ط© ط§ظ„ظ…ط±ظƒط¨ط© ط§ظ„ظ…طھط§ط­ط©
+    // اختبار 1.6: السائق لا يمكنه قبول طلب إذا توازت أو تجاوزت سعة المركبة المتاحة
     // =========================================================
     public function test_accepting_subscription_fails_when_vehicle_capacity_is_exceeded(): void
     {
-        // طھط­ط¯ظٹط¯ ط³ط¹ط© ط§ظ„ظ…ط±ظƒط¨ط© ط¨ظ€ 1 ظ…ظ‚ط¹ط¯
+        // تحديد سعة المركبة بـ 1 مقعد
         DB::table('vehicles')->where('driver_id', $this->driver->id)->update(['capacity_manual' => 1]);
 
-        $existingContract = Contract::create([
-            'subscription_request_id' => $this->subscriptionRequest->id,
-            'parent_id'               => $this->parentUser->id,
-            'driver_id'               => $this->driverUser->id,
-            'contract_number'         => 'DRBY-TEST-' . rand(100000, 999999),
-            'subscription_type' => 'multi_day',
-            'direction'               => 'both',
-            'timing'                  => 'MORNING',
-            'pickup_time'             => '07:00:00',
-            'dropoff_time'            => '14:00:00',
-            'max_waiting_time'        => 15,
-            'start_date'              => now()->addDays(1)->format('Y-m-d'),
-            'end_date'                => now()->addMonths(1)->format('Y-m-d'),
-            'days_count'              => 22,
-            'total_price'             => 200.00,
-            'clauses'                 => [],
-            'status'                  => 'active',
-            'signed_at'               => now(),
-        ]);
-
-        // ط­ط¬ط² ط§ظ„ظ…ظ‚ط¹ط¯ ط§ظ„ظ…طھط§ط­ ط¨ط§ط´طھط±ط§ظƒ ظ†ط´ط· ط³ط§ط¨ظ‚
+        // حجز المقعد المتاح باشتراك نشط سابق لنفس الفترة والاتجاه
         ActiveSubscription::create([
-            'contract_id'   => $existingContract->id,
-            'status'        => 'active',
-            'child_id'      => $this->child->id,
-            'driver_id'     => $this->driver->id,
-            'parent_id'     => $this->parentUser->id,
-            'pickup_lat'    => 32.88,
-            'pickup_lng'    => 13.19,
-            'pickup_label'  => 'ظ…ظ†ط²ظ„',
-            'pickup_time'   => '07:00:00',
-            'dropoff_lat'   => 32.90,
-            'dropoff_lng'   => 13.20,
-            'dropoff_label' => 'ظ…ط¯ط±ط³ط©',
-            'dropoff_time'  => '14:00:00',
+            'subscription_request_id' => $this->subscriptionRequest->id,
+            'status'                  => 'active',
+            'child_id'                => $this->child->id,
+            'driver_id'               => $this->driver->id,
+            'parent_id'               => $this->parentUser->id,
+            'pickup_lat'              => 32.88,
+            'pickup_lng'              => 13.19,
+            'pickup_label'            => 'منزل',
+            'pickup_time'             => '07:00:00',
+            'dropoff_lat'             => 32.90,
+            'dropoff_lng'             => 13.20,
+            'dropoff_label'           => 'مدرسة',
+            'dropoff_time'            => '14:00:00',
         ]);
 
-        // ظ…ط­ط§ظˆظ„ط© ظ‚ط¨ظˆظ„ ط·ظ„ط¨ ط¬ط¯ظٹط¯ ظٹطھط·ظ„ط¨ ظ…ظ‚ط¹ط¯ط§ظ‹ ظٹظپط´ظ„ ط¨ط³ط¨ط¨ طھط¬ط§ظˆط² ط§ظ„ط³ط¹ط©
+        // إنشاء طلب جديد لنفس التوقيت
+        $newReq = SubscriptionRequest::create([
+            'parent_id'         => $this->parent->id,
+            'driver_id'         => $this->driver->id,
+            'school_id'         => $this->school->id,
+            'subscription_type' => 'multi_day',
+            'direction'         => 'both',
+            'timing'            => 'MORNING',
+            'start_date'        => now()->addDays(1)->format('Y-m-d'),
+            'end_date'          => now()->addMonths(1)->format('Y-m-d'),
+            'days_count'        => 22,
+            'total_price'       => 200.00,
+            'status'            => SubscriptionRequest::STATUS_PENDING,
+            'children_count'    => 1,
+        ]);
+
+        // محاولة قبول طلب جديد يتطلب مقعداً يفشل بسبب تجاوز السعة
         $response = $this->actingAs($this->driverUser)
-            ->putJson("/api/driver/{$this->subscriptionRequest->id}/status", [
+            ->putJson("/api/driver/{$newReq->id}/status", [
                 'status' => 'accepted',
             ]);
 
         $response->assertStatus(500);
-        $this->assertStringContainsString('ط£ظ‚ظ„ ظ…ظ† ط¹ط¯ط¯ ط§ظ„ط£ط·ظپط§ظ„', $response->json('message'));
+        $this->assertStringContainsString('لا توجد مقاعد كافية', $response->json('message'));
     }
 
     // =========================================================

@@ -340,6 +340,8 @@ class UserCreationFlowsTest extends TestCase
             'license_number'    => 'DL-' . rand(10000, 99999),
             'license_expiry'    => Carbon::now()->addYears(2)->toDateString(),
             'insurance_expiry'  => Carbon::now()->addYear()->toDateString(),
+            'stamp_expiry'                => Carbon::now()->addYear()->toDateString(),
+            'technical_inspection_expiry' => Carbon::now()->addYear()->toDateString(),
             'plate_number'      => '5-' . rand(10000, 99999),
             'brand'             => 'Toyota',
             'model'             => 'Coaster',
@@ -352,6 +354,9 @@ class UserCreationFlowsTest extends TestCase
             'doc_license'       => UploadedFile::fake()->image('license.jpg'),
             'doc_logbook'       => UploadedFile::fake()->image('logbook.jpg'),
             'doc_insurance'     => UploadedFile::fake()->image('insurance.jpg'),
+            'doc_booklet_page'         => UploadedFile::fake()->image('booklet.jpg'),
+            'doc_stamp'                => UploadedFile::fake()->image('stamp.jpg'),
+            'doc_technical_inspection' => UploadedFile::fake()->image('technical.jpg'),
         ];
 
         $response = $this->actingAs($driverUser)

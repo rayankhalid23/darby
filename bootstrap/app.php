@@ -44,7 +44,7 @@ Route::middleware('api')
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // هنا يتم تسجيل الـ Middlewares المخصصة لاحقاً إذا دعت الحاجة
+        $middleware->trustProxies(at: '*');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         

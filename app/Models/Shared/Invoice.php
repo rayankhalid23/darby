@@ -12,7 +12,7 @@ class Invoice extends Model
     protected $table = 'invoices';
 
     protected $fillable = [
-        'contract_id',
+        'subscription_request_id',
         'parent_id',
         'driver_id',
         'invoice_number',
@@ -39,9 +39,9 @@ class Invoice extends Model
         'resolved_at'       => 'datetime',
     ];
 
-    public function contract(): BelongsTo
+    public function subscriptionRequest(): BelongsTo
     {
-        return $this->belongsTo(Contract::class, 'contract_id');
+        return $this->belongsTo(SubscriptionRequest::class, 'subscription_request_id');
     }
 
     public function parent(): BelongsTo

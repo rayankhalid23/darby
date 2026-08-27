@@ -1,0 +1,114 @@
+<?php
+
+namespace App\Http\Controllers\Api\Shared;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\Response;
+
+/**
+ * 🖼️ تقديم ملفات storage/app/public (وثائق وصور السائقين/المركبات) عبر لارافيل
+ * بدل الرابط الثابت المباشر /storage/...
+ *
+ * السبب (مؤكَّد تجريبياً بـ curl على /storage/... مع Origin مُرسَل):
+ * الملفات تحت /storage يقدّمها خادم الويب (أو php artisan serve) مباشرة كملف
+ * ثابت، دون أن يمر الطلب على كيرنل لارافيل إطلاقاً — فلا يُطبَّق أي ميدلوير،
+ * بما فيه HandleCors، حتى لو كانت storage/* مُدرجة في config/cors.php.
+ * هذا المسار يمر عبر لارافيل فعلياً (العنوان لا يقابل ملفاً حقيقياً على القرص)
+ * فتُطبَّق عليه إعدادات CORS الخاصة بـ api/* تلقائياً، بالإضافة إلى ترويسة
+ * احتياطية صريحة كخط دفاع ثانٍ. نفس الأسلوب المستخدم مسبقاً في AdminAvatarController.
+ */
+class MediaController extends Controller
+{
+    /** المجلدات المسموح تقديم الملفات منها فقط (allowlist أمني) */
+    private const ALLOWED_DIRECTORIES = [
+        'drivers/avatars',
+        'drivers/documents',
+        'drivers/vehicles',
+        'uploads/admins/avatars',
+        'children/photos',
+        'children_photos',
+        'avatars',
+        'contracts',
+    ];
+
+    private const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'pdf', 'svg'];
+
+    public function show(string $path): Response
+    {
+        if (str_contains($path, '..') || !preg_match('#^[A-Za-z0-9._/-]+$#', $path)) {
+            abort(404);
+        }
+
+        $segments = explode('/', $path);
+        $filename = array_pop($segments);
+        $directory = implode('/', $segments);
+
+        if (!in_array($directory, self::ALLOWED_DIRECTORIES, true)) {
+            abort(404);
+        }
+
+        $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+        if (!in_array($extension, self::ALLOWED_EXTENSIONS, true)) {
+            abort(404);
+        }
+
+        $disk = Storage::disk('public');
+        $storedPath = $directory . '/' . $filename;
+
+        if (!$disk->exists($storedPath)) {
+            abort(404);
+        }
+
+        $headers = [
+            'Content-Type'                 => $disk->mimeType($storedPath) ?: 'application/octet-stream',
+            'Cache-Control'                => 'public, max-age=604800, immutable',
+            'Access-Control-Allow-Origin'  => '*',
+            'Access-Control-Allow-Methods' => 'GET, HEAD, OPTIONS',
+            'Access-Control-Allow-Headers' => '*',
+        ];
+
+        if ($extension === 'pdf') {
+            $headers['Content-Disposition'] = 'inline; filename="' . $filename . '"';
+        }
+
+        return response($disk->get($storedPath), 200, $headers);
+    }
+
+    /**
+     * تحويل قيمة مسار مخزَّن في قاعدة البيانات (مثل "storage/drivers/documents/xyz.jpg"
+     * أو "drivers/documents/xyz.jpg") إلى رابط يمر عبر لارافيل ويحصل على ترويسات CORS.
+     * ترجع null إن لم تكن هناك قيمة، وتترك الروابط الخارجية المستقلة كما هي.
+     */
+    public static function urlFor(?string $storedPath): ?string
+    {
+        if (empty($storedPath)) {
+            return null;
+        }
+
+        // إذا كان الرابط كاملاً، استخراج المسار النسبي إن كان يشير إلى storage على نفس الدومين
+        if (str_starts_with($storedPath, 'http://') || str_starts_with($storedPath, 'https://')) {
+            $parsedPath = parse_url($storedPath, PHP_URL_PATH);
+            if ($parsedPath && str_contains($parsedPath, 'storage/')) {
+                $storedPath = preg_replace('#^.*?storage/#', '', $parsedPath);
+            } elseif ($parsedPath && str_contains($parsedPath, 'api/media/')) {
+                return $storedPath;
+            } else {
+                return $storedPath;
+            }
+        }
+
+        $relative = ltrim(preg_replace('#^storage/#', '', trim($storedPath)), '/');
+
+        $segments = explode('/', $relative);
+        $filename = array_pop($segments);
+        $directory = implode('/', $segments);
+
+        if (!in_array($directory, self::ALLOWED_DIRECTORIES, true)) {
+            // مسار غير متوقع خارج القائمة البيضاء — نرجع رابط asset
+            return asset('storage/' . $relative);
+        }
+
+        return url('api/media/' . $relative);
+    }
+}

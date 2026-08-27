@@ -60,38 +60,54 @@ class ChildService
         });
     }
 
-    /**
-     * تحديث بيانات الطفل وبيانات اشتراكه اللوجستي في نفس الوقت.
+   /**
+     * تحديث بيانات الطفل وبيانات اشتراكه اللوجستي في نفس الوقت (دعم التعديل الجزئي).
      */
-    public function updateChild(Child $child, array $data): Child
-    {
-        // 1. تأمين البيانات
-        unset($data['qr_code_token'], $data['school_stage']);
+   public function updateChild(Child $child, array $data): Child
+   {
+       // 1. تأمين البيانات ومنع تعديل الحقول الحساسة
+       unset($data['qr_code_token'], $data['school_stage']);
 
-        // 2. معالجة تحديث الصورة
-        if (isset($data['photo']) && $data['photo'] instanceof UploadedFile) {
-            $this->deletePhoto($child->photo_url);
-            $data['photo_url'] = $this->uploadPhoto($data['photo']);
-            unset($data['photo']);
-        }
+       // 2. معالجة تحديث الصورة عند رفع صورة جديدة بأي مسمى
+       $photoFile = $data['photo'] ?? $data['child_photo'] ?? $data['image'] ?? request()->file('photo') ?? request()->file('child_photo') ?? request()->file('image');
+       if ($photoFile instanceof \Illuminate\Http\UploadedFile) {
+           if (!empty($child->photo_url)) {
+               $this->deletePhoto($child->photo_url);
+           }
+           $data['photo_url'] = $this->uploadPhoto($photoFile);
+           unset($data['photo'], $data['child_photo'], $data['image']);
+       }
 
-        $logisticsFields = ['preferred_time_slot', 'trip_direction', 'pickup_time', 'dropoff_time', 'start_date', 'end_date', 'subscription_type', 'is_active'];
-        $logisticsData   = array_intersect_key($data, array_flip($logisticsFields));
-        $childData       = array_diff_key($data, array_flip($logisticsFields));
+       // 3. فصل بيانات الطفل الأساسية عن البيانات اللوجستية (Logistics)
+       $logisticsFields = [
+           'preferred_time_slot',
+           'trip_direction',
+           'pickup_time',
+           'dropoff_time',
+           'start_date',
+           'end_date',
+           'subscription_type',
+           'is_active'
+       ];
 
+       $logisticsData = array_intersect_key($data, array_flip($logisticsFields));
+       $childData     = array_diff_key($data, array_flip($logisticsFields));
 
-        // 3. تحديث بيانات الطفل الأساسية
-        if (!empty($childData)) {
-            $child->update($childData);
-        }
+       // 4. تحديث بيانات الطفل الأساسية فقط في حال وجود حقول مرسلة
+       if (!empty($childData)) {
+           $child->update($childData);
+       }
 
-        // 4. تحديث بيانات الاشتراك (Logistics) إذا تم إرسال أي منها في الطلب
-        if (!empty($logisticsData) && $child->logistics) {
-            $child->logistics()->update($logisticsData);
-        }
+       // 5. تحديث أو إنشاء البيانات اللوجستية إذا تم إرسال أي منها في الطلب
+       if (!empty($logisticsData)) {
+           $child->logistics()->updateOrCreate(
+               ['child_id' => $child->id],
+               $logisticsData
+           );
+       }
 
-        return $child->refresh();
-    }
+       return $child->refresh();
+   }
 
     /**
      * حذف طفل من النظام نهائياً مع حذف صورته المرفقة.

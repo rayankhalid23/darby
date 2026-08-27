@@ -23,4 +23,15 @@ class OtpCode extends Model
         'expires_at' => 'datetime',
         'is_used'    => 'boolean',
     ];
+
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($model) {
+            if (!$model->created_at) {
+                $model->created_at = now();
+            }
+        });
+    }
 }

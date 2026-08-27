@@ -16,11 +16,11 @@ class ParentRegisterRequest extends FormRequest
     public function rules(): array
     {
         return [
-            // الاسم الثلاثي بحروف عربية فقط
+            // الاسم الثلاثي بالعربية فقط (بدون أرقام أو رموز)
             'full_name' => [
                 'required',
                 'string',
-                'regex:/^[\p{Arabic}]+(\s+[\p{Arabic}]+){2,}$/u'
+                'regex:/^[\p{Arabic}]+(\s+[\p{Arabic}]+){2}$/u'
             ],
 
             // البريد الإلكتروني
@@ -32,7 +32,7 @@ class ParentRegisterRequest extends FormRequest
                 'unique:users,email'
             ],
 
-            // رقم الهاتف الأساسي (10 خانات ويبدأ بـ 09)
+            // رقم الهاتف الأساسي (10 أرقام ويبدأ بـ 09)
             'phone_number' => [
                 'required',
                 'string',
@@ -40,7 +40,7 @@ class ParentRegisterRequest extends FormRequest
                 'unique:users,phone_number'
             ],
 
-            // رقم الهاتف الاحتياطي (اختياري، 10 خانات، ويبدأ بـ 09)
+            // رقم الهاتف الاحتياطي (اختياري، 10 أرقام، ولا يطابق الأساسي)
             'alternative_phone' => [
                 'nullable',
                 'string',
@@ -48,12 +48,12 @@ class ParentRegisterRequest extends FormRequest
                 'different:phone_number'
             ],
 
-            // كلمة المرور (7 خانات على الأقل + أرقام وحروف + منع الرموز الخاصة)
+            // كلمة المرور (6 خانات على الأقل، أرقام + حرف إنجليزي واحد على الأقل)
             'password' => [
                 'required',
                 'string',
                 'min:6',
-                'regex:/^(?=.*[0-9])(?=.*[a-zA-Z])(?!.*[!@#$%^&*]).+$/',
+                'regex:/^(?=.*[a-zA-Z])(?=.*[0-9])/'
             ],
 
             // تأكيد كلمة المرور
@@ -63,14 +63,14 @@ class ParentRegisterRequest extends FormRequest
                 'same:password'
             ],
 
-            // كود التحقق
+            // كود التحقق OTP
             'otp' => [
                 'required',
                 'numeric',
                 'digits:6'
             ],
 
-            // بيانات اختيارية
+            // بيانات إضافية
             'device_name' => ['nullable', 'string'],
             'platform'    => ['nullable', 'string'],
             'fcm_token'   => ['nullable', 'string'],
@@ -81,54 +81,51 @@ class ParentRegisterRequest extends FormRequest
     public function messages(): array
     {
         return [
-            // الاسم الكامل
-            'full_name.required' => 'حقل الاسم الكامل مطلوب.',
-            'full_name.regex'    => 'الاسم يجب أن يكون ثلاثياً وبحروف عربية فقط.',
+            // الاسم
+            'full_name.required' => 'الاسم الكامل مطلوب.',
+            'full_name.regex'    => 'الاسم يجب أن يكون ثلاثياً وباللغة العربية فقط.',
 
             // البريد الإلكتروني
-            'email.required' => 'حقل البريد الإلكتروني مطلوب.',
+            'email.required' => 'البريد الإلكتروني مطلوب.',
             'email.email'    => 'صيغة البريد الإلكتروني غير صحيحة.',
-            'email.unique'   => 'البريد الإلكتروني مسجل بالفعل، يرجى استخدام بريد آخر',
+            'email.unique'   => 'البريد الإلكتروني مستخدم بالفعل.',
 
-            // رقم الهاتف الأساسي
-            'phone_number.required' => 'حقل رقم الهاتف الأساسي مطلوب.',
-            'phone_number.regex'    => 'رقم الهاتف الأساسي يجب أن يتكون من 10 أرقام ويبدأ بـ 09.',
-            'phone_number.unique'   => 'رقم الهاتف الأساسي مسجل لدينا بالفعل.',
+            // الهاتف الأساسي
+            'phone_number.required' => 'رقم الهاتف مطلوب.',
+            'phone_number.regex'    => 'رقم الهاتف يجب أن يتكون من 10 أرقام ويبدأ بـ 09.',
+            'phone_number.unique'   => 'رقم الهاتف مستخدم بالفعل.',
 
-            // رقم الهاتف الاحتياطي
-            'alternative_phone.regex'     => 'رقم الهاتف الاحتياطي يجب أن يتكون من 10 أرقام ويبدأ بـ 09.',
-            'alternative_phone.different' => 'رقم الهاتف الاحتياطي لا يمكن أن يكون مطابقاً لرقم الهاتف الأساسي.',
+            // الهاتف الاحتياطي
+            'alternative_phone.regex'     => 'الرقم الاحتياطي يجب أن يتكون من 10 أرقام ويبدأ بـ 09.',
+            'alternative_phone.different' => 'الرقم الاحتياطي يجب ألا يكون مطابقاً للرقم الأساسي.',
 
             // كلمة المرور
-            'password.required' => 'حقل كلمة المرور مطلوب.',
+            'password.required' => 'كلمة المرور مطلوبة.',
             'password.min'      => 'كلمة المرور يجب ألا تقل عن 6 خانات.',
-            'password.regex'    => 'كلمة المرور يجب أن تحتوي على أرقام وحروف، ويُمنع استخدام الرموز الخاصة.',
+            'password.regex'    => 'كلمة المرور يجب أن تحتوي على أرقام وحرف إنجليزي واحد على الأقل.',
 
             // تأكيد كلمة المرور
-            'password_confirmation.required' => 'حقل تأكيد كلمة المرور مطلوب.',
-            'password_confirmation.same'     => 'تأكيد كلمة المرور غير مطابق لكلمة المرور الرئيسية.',
+            'password_confirmation.required' => 'تأكيد كلمة المرور مطلوب.',
+            'password_confirmation.same'     => 'تأكيد كلمة المرور غير مطابق.',
 
-            // كود التحقق OTP
-            'otp.required' => 'حقل رمز التحقق مطلوب.',
-            'otp.numeric'  => 'رمز التحقق يجب أن يتكون من أرقام فقط.',
-            'otp.digits'   => 'رمز التحقق يجب أن يتكون من 6 أرقام بالضبط.',
+            // كود التحقق
+            'otp.required' => 'رمز التحقق مطلوب.',
+            'otp.numeric'  => 'رمز التحقق يجب أن يكون أرقاماً فقط.',
+            'otp.digits'   => 'رمز التحقق يجب أن يتكون من 6 أرقام.',
 
             // الصورة الشخصية
-            'avatar.image' => 'الملف المرفق يجب أن يكون صورة صحيحة.',
-            'avatar.mimes' => 'صيغة الصورة يجب أن تكون: jpeg, png, jpg, gif, أو svg.',
-            'avatar.max'   => 'حجم الصورة يجب ألا يتجاوز 2 ميجابايت.',
+            'avatar.image' => 'الملف يجب أن يكون صورة.',
+            'avatar.mimes' => 'صيغة الصورة غير مدعومة.',
+            'avatar.max'   => 'حجم الصورة يتجاوز الحد المسموح (2 ميجابايت).',
         ];
     }
 
-    /**
-     * توحيد تنسيق أخطاء الـ API تماشياً مع معايير المشروع
-     */
     protected function failedValidation(Validator $validator)
     {
         throw new HttpResponseException(response()->json([
             'status'     => false,
             'error_code' => 'VALIDATION_ERROR',
-            'message'    => 'خطأ في البيانات المرسلة، يرجى تصحيح الحقول وإعادة المحاولة.',
+            'message'    => '',
             'errors'     => $validator->errors()
         ], 422));
     }

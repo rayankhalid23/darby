@@ -36,6 +36,25 @@ class CompleteProfileRequest extends FormRequest
             $data['type'] = $data['vehicle_type'];
         }
 
+        // 1. تنظيف وتطبيع الرقم الوطني (الملاحظة 1)
+        if (!empty($data['national_id']) && is_string($data['national_id'])) {
+            $data['national_id'] = $this->sanitizeNationalId($data['national_id']);
+        }
+
+        // 2. تطبيع التواريخ (الملاحظة 2)
+        if (!empty($data['license_expiry']) && is_string($data['license_expiry'])) {
+            $data['license_expiry'] = $this->normalizeDate($data['license_expiry']);
+        }
+        if (!empty($data['insurance_expiry']) && is_string($data['insurance_expiry'])) {
+            $data['insurance_expiry'] = $this->normalizeDate($data['insurance_expiry']);
+        }
+        if (!empty($data['stamp_expiry']) && is_string($data['stamp_expiry'])) {
+            $data['stamp_expiry'] = $this->normalizeDate($data['stamp_expiry']);
+        }
+        if (!empty($data['technical_inspection_expiry']) && is_string($data['technical_inspection_expiry'])) {
+            $data['technical_inspection_expiry'] = $this->normalizeDate($data['technical_inspection_expiry']);
+        }
+
         return $data;
     }
 
@@ -53,9 +72,67 @@ class CompleteProfileRequest extends FormRequest
         if ($this->hasFile('insurance_photo') && !$this->hasFile('doc_insurance')) {
             $this->files->set('doc_insurance', $this->file('insurance_photo'));
         }
+
+        $merge = [];
+
         if ($this->filled('vehicle_type') && !$this->filled('type')) {
-            $this->merge(['type' => $this->input('vehicle_type')]);
+            $merge['type'] = $this->input('vehicle_type');
         }
+
+        // تنظيف وتطبيع الرقم الوطني (الملاحظة 1)
+        if ($this->filled('national_id')) {
+            $merge['national_id'] = $this->sanitizeNationalId((string) $this->input('national_id'));
+        }
+
+        // تنظيف وتطبيع التواريخ (الملاحظة 2)
+        if ($this->filled('license_expiry')) {
+            $merge['license_expiry'] = $this->normalizeDate((string) $this->input('license_expiry'));
+        }
+        if ($this->filled('insurance_expiry')) {
+            $merge['insurance_expiry'] = $this->normalizeDate((string) $this->input('insurance_expiry'));
+        }
+        if ($this->filled('stamp_expiry')) {
+            $merge['stamp_expiry'] = $this->normalizeDate((string) $this->input('stamp_expiry'));
+        }
+        if ($this->filled('technical_inspection_expiry')) {
+            $merge['technical_inspection_expiry'] = $this->normalizeDate((string) $this->input('technical_inspection_expiry'));
+        }
+
+        if (!empty($merge)) {
+            $this->merge($merge);
+        }
+    }
+
+    /**
+     * تنظيف الرقم الوطني وتحويل الأرقام الشرقية وإزالة المسافات والشرطات
+     */
+    private function sanitizeNationalId(string $value): string
+    {
+        $arabicDigits = ['٠','١','٢','٣','٤','٥','٦','٧','٨','٩'];
+        $englishDigits = ['0','1','2','3','4','5','6','7','8','9'];
+        $value = str_replace($arabicDigits, $englishDigits, trim($value));
+
+        return preg_replace('/[^0-9]/', '', $value) ?? $value;
+    }
+
+    /**
+     * تطبيع التواريخ وتحويل الصيغ مثل YYYY/MM/DD أو ISO Timestamps إلى YYYY-MM-DD
+     */
+    private function normalizeDate(string $value): string
+    {
+        $arabicDigits = ['٠','١','٢','٣','٤','٥','٦','٧','٨','٩'];
+        $englishDigits = ['0','1','2','3','4','5','6','7','8','9'];
+        $value = str_replace($arabicDigits, $englishDigits, trim($value));
+
+        // استخراج صيغة التاريخ YYYY-MM-DD في حال إرسال timestamp أو فواصل مائلة /
+        if (preg_match('/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/', $value, $matches)) {
+            $year = $matches[1];
+            $month = str_pad($matches[2], 2, '0', STR_PAD_LEFT);
+            $day = str_pad($matches[3], 2, '0', STR_PAD_LEFT);
+            return "{$year}-{$month}-{$day}";
+        }
+
+        return str_replace('/', '-', $value);
     }
 
     public function rules(): array
@@ -66,6 +143,8 @@ class CompleteProfileRequest extends FormRequest
             'license_number'   => 'required|string|max:50',
             'license_expiry'   => 'required|date|after:today',
             'insurance_expiry' => 'required|date|after:today',
+            'stamp_expiry'                => 'required|date|after:today',
+            'technical_inspection_expiry' => 'required|date|after:today',
 
             // بيانات المركبة
             'plate_number'    => 'required|string|max:20',
@@ -82,6 +161,9 @@ class CompleteProfileRequest extends FormRequest
             'doc_license'     => 'required|file|mimes:jpeg,png,jpg,webp,heic,heif,pdf|max:10240',
             'doc_logbook'     => 'required|file|mimes:jpeg,png,jpg,webp,heic,heif,pdf|max:10240',
             'doc_insurance'   => 'required|file|mimes:jpeg,png,jpg,webp,heic,heif,pdf|max:10240',
+            'doc_booklet_page'         => 'required|file|mimes:jpeg,png,jpg,webp,heic,heif,pdf|max:10240',
+            'doc_stamp'                => 'required|file|mimes:jpeg,png,jpg,webp,heic,heif,pdf|max:10240',
+            'doc_technical_inspection' => 'required|file|mimes:jpeg,png,jpg,webp,heic,heif,pdf|max:10240',
         ];
     }
 
@@ -126,6 +208,28 @@ class CompleteProfileRequest extends FormRequest
             'doc_insurance.file'        => 'ملف وثيقة التأمين يجب أن يكون ملفاً صالحاً.',
             'doc_insurance.mimes'       => 'يُسمح بالصور أو ملفات PDF لوثيقة التأمين.',
             'doc_insurance.max'         => 'حجم ملف وثيقة التأمين يجب ألا يتجاوز 10 ميجابايت.',
+
+            'stamp_expiry.required'                => 'تاريخ انتهاء الدمغة مطلوب.',
+            'stamp_expiry.date'                     => 'تاريخ انتهاء الدمغة غير صالح.',
+            'stamp_expiry.after'                    => 'تاريخ انتهاء الدمغة يجب أن يكون في المستقبل.',
+            'technical_inspection_expiry.required'  => 'تاريخ انتهاء الفحص الفني مطلوب.',
+            'technical_inspection_expiry.date'      => 'تاريخ انتهاء الفحص الفني غير صالح.',
+            'technical_inspection_expiry.after'     => 'تاريخ انتهاء الفحص الفني يجب أن يكون في المستقبل.',
+
+            'doc_booklet_page.required' => 'يرجى إرفاق صورة بيانات الكتيب الشخصية.',
+            'doc_booklet_page.file'     => 'ملف بيانات الكتيب يجب أن يكون ملفاً صالحاً.',
+            'doc_booklet_page.mimes'    => 'يُسمح بالصور أو ملفات PDF لصورة بيانات الكتيب.',
+            'doc_booklet_page.max'      => 'حجم ملف بيانات الكتيب يجب ألا يتجاوز 10 ميجابايت.',
+
+            'doc_stamp.required'        => 'يرجى إرفاق صورة الدمغة.',
+            'doc_stamp.file'            => 'ملف الدمغة يجب أن يكون ملفاً صالحاً.',
+            'doc_stamp.mimes'           => 'يُسمح بالصور أو ملفات PDF للدمغة.',
+            'doc_stamp.max'             => 'حجم ملف الدمغة يجب ألا يتجاوز 10 ميجابايت.',
+
+            'doc_technical_inspection.required' => 'يرجى إرفاق صورة الفحص الفني.',
+            'doc_technical_inspection.file'     => 'ملف الفحص الفني يجب أن يكون ملفاً صالحاً.',
+            'doc_technical_inspection.mimes'    => 'يُسمح بالصور أو ملفات PDF للفحص الفني.',
+            'doc_technical_inspection.max'      => 'حجم ملف الفحص الفني يجب ألا يتجاوز 10 ميجابايت.',
         ];
     }
 

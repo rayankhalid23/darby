@@ -1,26 +1,102 @@
 <?php
 
-namespace App\Http\Requests\Api\Parent; 
+namespace App\Http\Requests\Api\Parent;
 
-class UpdateChildRequest extends StoreChildRequest
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+use Carbon\Carbon;
+use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Support\Facades\Log;
+use App\Enums\Shared\SubscriptionDuration;
+
+class UpdateChildRequest extends FormRequest
 {
-    public function rules(): array
+    public function authorize(): bool
     {
-        $rules = parent::rules();
-        
-        // 1. تحويل جميع القواعد إلى 'sometimes'
-        foreach ($rules as $field => $rule) {
-            if (is_string($rule)) {
-                $rules[$field] = 'sometimes|' . str_replace('required|', '', $rule);
-            } elseif (is_array($rule)) {
-                // إذا كانت مصفوفة، نضمن وجود 'sometimes' ونحذف 'required' إذا وجدت
-                $rules[$field] = array_merge(['sometimes'], array_diff($rule, ['required']));
-            }
+        return true;
+    }
+
+    public function prepareForValidation(): void
+    {
+        // دعم المسميات البديلة للصور
+        if ($this->hasFile('child_photo') && !$this->hasFile('photo')) {
+            $this->files->set('photo', $this->file('child_photo'));
+        }
+        if ($this->hasFile('image') && !$this->hasFile('photo')) {
+            $this->files->set('photo', $this->file('image'));
         }
 
-        // 2. حماية حقل الـ QR Code (يُمنع تعديله تماماً)
-        unset($rules['qr_code_token']);
+        // دعم تحويل الجنس بالعربية والإنجليزية
+        if ($this->filled('gender')) {
+            $gender = strtolower(trim((string)$this->input('gender')));
+            if (in_array($gender, ['male', 'ذكر', '1', 'm'], true)) {
+                $this->merge(['gender' => 'male']);
+            } elseif (in_array($gender, ['female', 'أنثى', '2', 'f'], true)) {
+                $this->merge(['gender' => 'female']);
+            }
+        }
+    }
 
-        return $rules;
+    public function rules(): array
+    {
+        $minDate = Carbon::now()->subYears(21)->format('Y-m-d');
+        $maxDate = Carbon::now()->subYears(4)->format('Y-m-d');
+
+        return [
+            'school_id'           => 'sometimes|nullable|exists:schools,id',
+            'address_id'          => 'sometimes|nullable|exists:addresses,id',
+            'full_name'           => ['sometimes', 'nullable', 'string', 'min:3', 'max:150'],
+            'birth_date'          => "sometimes|nullable|date|after_or_equal:{$minDate}|before_or_equal:{$maxDate}",
+            'gender'              => ['sometimes', 'nullable', Rule::in(['male', 'female'])],
+            'grade'               => 'sometimes|nullable|integer|min:0|max:12',
+            'photo'               => 'sometimes|nullable|file|mimes:jpeg,png,jpg,webp,heic,heif|max:10240',
+            'medical_notes'       => 'sometimes|nullable|string|max:1000',
+            'notification_radius' => 'sometimes|nullable|integer|min:50|max:5000',
+
+            // البيانات اللوجستية والاشتراك (كلها اختيارية وجزئية)
+            'preferred_time_slot' => ['sometimes', 'nullable', Rule::in(['morning', 'evening', 'both'])],
+            'trip_direction'      => ['sometimes', 'nullable', Rule::in(['go', 'return', 'both'])],
+            'pickup_time'         => 'sometimes|nullable|date_format:H:i',
+            'dropoff_time'        => 'sometimes|nullable|date_format:H:i',
+            'start_date'          => 'sometimes|nullable|date',
+            'end_date'            => 'sometimes|nullable|date',
+            'subscription_type'   => ['sometimes', 'nullable', Rule::in(SubscriptionDuration::childValues())],
+            'is_active'           => 'sometimes|nullable|boolean',
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'school_id.exists'           => 'المدرسة المختارة غير مسجلة في النظام.',
+            'address_id.exists'          => 'العنوان المختار غير موجود بالنظام.',
+            'full_name.min'              => 'اسم الطفل يجب ألا يقل عن 3 أحرف.',
+            'birth_date.after_or_equal'  => 'عمر الطفل لا يمكن أن يتجاوز 21 سنة.',
+            'birth_date.before_or_equal' => 'عمر الطفل لا يمكن أن يقل عن 4 سنوات.',
+            'gender.in'                  => 'يرجى تحديد جنس الطفل (ذكر أو أنثى).',
+            'grade.min'                  => 'الصف الدراسي يبدأ من 0 (روضة) وحتى 12 (ثانوي).',
+            'grade.max'                  => 'الصف الدراسي لا يتجاوز 12.',
+            'photo.mimes'                => 'صيغة الصورة يجب أن تكون: jpeg, png, jpg, webp, heic, heif.',
+            'photo.max'                  => 'حجم الصورة كبير جداً، الحد الأقصى 10 ميجابايت.',
+            'preferred_time_slot.in'     => 'الفترة المختارة غير صالحة (morning, evening, both).',
+            'trip_direction.in'          => 'اتجاه الرحلة غير صالح (go, return, both).',
+            'subscription_type.in'       => 'نوع الاشتراك غير صحيح (single_day أو multi_day).',
+        ];
+    }
+
+    protected function failedValidation(Validator $validator)
+    {
+        Log::warning('UpdateChild Validation Error', [
+            'user_id'       => auth()->id(),
+            'failed_fields' => $validator->errors()->toArray(),
+            'payload_sent'  => $this->except(['photo']),
+        ]);
+
+        throw new HttpResponseException(response()->json([
+            'success' => false,
+            'message' => 'بيانات مدخلة غير صالحة، يرجى مراجعة الحقول.',
+            'errors'  => $validator->errors()
+        ], 422));
     }
 }

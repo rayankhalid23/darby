@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Api\Driver;
 
 use App\Http\Controllers\Controller;
-use App\Http\Resources\Api\Shared\SubscriptionRequestResource;
+use App\Http\Resources\Api\Driver\DriverSubscriptionResource; 
 use App\Services\Shared\SubscriptionRequestService;
+use App\Services\Trip\RouteFeasibilityService;
 use App\Models\Shared\SubscriptionRequest;
 use App\Models\Shared\ActiveSubscription;
+use App\Http\Resources\Api\Driver\SubscriptionRequestDetailsResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use App\Models\Driver\Driver;
@@ -16,130 +18,106 @@ use Exception;
 class DriverSubscriptionController extends Controller
 {
     protected SubscriptionRequestService $subscriptionService;
-    protected \App\Services\Trip\RouteFeasibilityService $feasibilityService;
+    protected RouteFeasibilityService $feasibilityService;
 
     public function __construct(
         SubscriptionRequestService $subscriptionService,
-        \App\Services\Trip\RouteFeasibilityService $feasibilityService
+        RouteFeasibilityService $feasibilityService
     ) {
         $this->subscriptionService = $subscriptionService;
         $this->feasibilityService = $feasibilityService;
     }
 
     /**
-     * عرض قائمة طلبات الاشتراك الأولية الخاصة بالسائق مع فلتر اختياري
+     * جلب ملف السائق المرتبط بالمستخدم الحاضر
      */
-    public function index(Request $request): JsonResponse
+    private function getAuthenticatedDriver(Request $request): ?Driver
     {
-        try {
-            $requests = $this->subscriptionService->getDriverSubscriptionRequests(
-                auth()->id(),
-                $request->query('filter')
-            );
-
-            return response()->json([
-                'success' => true,
-                'count'   => $requests->count(),
-                'data'    => SubscriptionRequestResource::collection($requests)
-            ], 200);
-
-        } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage()
-            ], $e->getCode() == 403 ? 403 : 500);
-        }
+        return $request->user()->driver ?? Driver::where('user_id', $request->user()->id)->first();
     }
 
     /**
-     * عرض قائمة الاشتراكات النشطة للسائق
+     * استجابة موحدة في حال عدم وجود ملف سائق
      */
+    private function driverNotFoundResponse(): JsonResponse
+    {
+        return response()->json([
+            'success' => false,
+            'message' => 'بيانات السائق غير موجودة.',
+            'error'   => 'دراااااااااافيرلم يتم العثور عل     ى ملف السائق الخاص بك.'
+        ], 403);
+    }
+
+    public function index(Request $request)
+    {
+        $driver = $this->getAuthenticatedDriver($request);
+        if (!$driver) {
+            return $this->driverNotFoundResponse();
+        }
+
+        $requests = SubscriptionRequest::query()
+            ->with(['parent.user', 'children.school', 'children.address'])
+            ->where('driver_id', $driver->id)
+            ->when($request->filled('status'), fn($q) => $q->where('status', $request->status))
+            ->latest()
+            ->paginate($request->get('per_page', 15));
+
+        return DriverSubscriptionResource::collection($requests)->additional([
+            'status'  => true,
+            'message' => 'تم جلب طلبات الاشتراك بنجاح',
+        ]);
+    }
     public function activeSubscriptions(Request $request): JsonResponse
     {
         try {
             $request->validate([
                 'filter' => 'nullable|string|in:current_active,pending_start,completed,cancelled'
             ]);
-
-            $driverId = auth()->id();
-            $filter   = $request->query('filter');
-
-            $activeSubscriptions = $this->subscriptionService->getDriverActiveSubscriptions($driverId, $filter);
-
-            $formattedData = $activeSubscriptions->map(function ($item) {
-                $contract    = $item->contract;
-                $parentUser  = $item->parent;   // User model (via parent_id)
-                $driver      = $item->driver;
-                $vehicle     = $driver?->vehicles?->where('status', 'Active')->first()
-                             ?? $driver?->vehicles?->first();
-
-                // احتساب السعر لكل طفل
-                $childrenCount = optional(optional($contract)->subscriptionRequest)->children_count ?? 1;
-                $totalPrice    = (float) (optional($contract)->total_price ?? 0);
-                $childPrice    = $childrenCount > 0 ? round($totalPrice / $childrenCount, 2) : $totalPrice;
-
-                // احتساب الأيام المتبقية
-                $endDate       = optional($contract)->end_date;
-                $remainingDays = $endDate
-                    ? max(0, (int) now()->startOfDay()->diffInDays(Carbon::parse($endDate)->startOfDay(), false))
-                    : null;
-
-                return [
-                    'id'          => $item->id,
-                    'status'      => $item->status,
-                    'statusLabel' => match($item->status) {
-                        'active'    => 'نشط',
-                        'cancelled' => 'ملغى',
-                        'completed' => 'مكتمل',
-                        default     => 'قيد الانتظار',
-                    },
-                    'child' => [
-                        'id'             => optional($item->child)->id,
-                        'name'           => optional($item->child)->full_name,
-                        'avatar'         => optional($item->child)->photo_url,
-                        'avatarInitials' => mb_substr(optional($item->child)->full_name ?? '', 0, 2),
-                        'schoolName'     => optional(optional($item->child)->school)->name,
-                    ],
-                    'parent' => [
-                        'id'    => optional($parentUser)->id,
-                        'name'  => optional($parentUser)->full_name ?? optional($parentUser)->name,
-                        'phone' => optional($parentUser)->phone_number ?? optional($parentUser)->phone,
-                    ],
-                    'schedule' => [
-                        'shift'          => optional($contract)->timing,
-                        'direction'      => optional($contract)->direction,
-                        'pickupZoneName' => $item->pickup_label,
-                        'schoolName'     => optional(optional($item->child)->school)->name,
-                    ],
-                    'billing' => [
-                        'subscriptionType' => optional($contract)->subscription_type,
-                        'totalPrice'       => $totalPrice,
-                        'childPrice'       => $childPrice,
-                        'currency'         => 'د.ل',
-                        'startsAt'         => optional($contract)->start_date
-                            ? Carbon::parse($contract->start_date)->toDateString()
-                            : null,
-                        'endsAt'           => $endDate
-                            ? Carbon::parse($endDate)->toDateString()
-                            : null,
-                        'remainingDays'    => $remainingDays,
-                    ],
-                    'vehicle' => $vehicle ? [
-                        'model'       => $vehicle->model,
-                        'color'       => $vehicle->color,
-                        'plateNumber' => $vehicle->plate_number,
-                    ] : null,
-                    'createdAt' => $item->created_at?->toIso8601String(),
-                ];
-            });
-
+    
+            $user = $request->user();
+    
+            // 1. التحقق من وجود مستخدم مسجل الدخول بالتوكن
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'حدث خطأ أثناء جلب الاشتراكات النشطة.',
+                    'error'   => 'غير مصرح بالوصول، التوكن غير صحيح أو منتهي الصلاحية.'
+                ], 401);
+            }
+    
+            // 2. جلب ملف السائق
+            $driver = $this->getAuthenticatedDriver($request);
+    
+            // 3. إرجاع تفاصيل تشخيصية إذا لم يتم العثور على ملف السائق
+            if (!$driver) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'حدث خطأ أثناء جلب الاشتراكات النشطة.',
+                    'error'   => 'لم يتم العثور على ملف السائق الخاص بك.',
+                    'debug_details' => [
+                        'user_id'    => $user->id,
+                        'user_name'  => $user->full_name ?? $user->name,
+                        'user_phone' => $user->phone_number ?? $user->phone,
+                        'reason'     => "لا يوجد أي سجل في جدول (drivers) يربط بـ user_id = {$user->id}",
+                        'sql_check'  => "SELECT * FROM drivers WHERE user_id = {$user->id};"
+                    ]
+                ], 404);
+            }
+    
+            // 4. جلب الاشتراكات النشطة باستخدام id المستخدم
+            $activeSubscriptions = $this->subscriptionService->getDriverActiveSubscriptions(
+                $user->id, 
+                $request->query('filter')
+            );
+    
+            // 5. تنسيق وإرجاع البيانات مباشرة عبر الـ Resource المطلوب
             return response()->json([
                 'success' => true,
                 'message' => 'تم جلب البيانات بنجاح.',
-                'data'    => $formattedData
+                'data'    => SubscriptionRequestDetailsResource::collection($activeSubscriptions)
             ], 200);
-
-        } catch (Exception $e) {
+    
+        } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'حدث خطأ أثناء جلب الاشتراكات النشطة.',
@@ -147,11 +125,8 @@ class DriverSubscriptionController extends Controller
             ], 500);
         }
     }
+   
 
-    /**
-     * قبول أو رفض طلب اشتراك من قبل السائق
-     * PUT /api/driver/requests/{id}/status
-     */
     public function updateStatus(Request $request, $id): JsonResponse
     {
         $request->validate([
@@ -159,38 +134,19 @@ class DriverSubscriptionController extends Controller
             'rejection_reason' => 'required_if:status,rejected|nullable|string|max:500',
         ]);
 
-        $user   = auth()->user();
-        if (!$user) {
-            return response()->json([
-                'success' => false,
-                'message' => 'غير مصرح بالوصول.'
-            ], 401);
-        }
-
-        $driver = Driver::where('user_id', $user->id)->first();
-
+        $driver = $this->getAuthenticatedDriver($request);
         if (!$driver) {
-            return response()->json([
-                'success' => false,
-                'message' => 'بيانات السائق غير موجودة.'
-            ], 403);
+            return $this->driverNotFoundResponse();
         }
 
         $subscriptionRequest = SubscriptionRequest::find($id);
 
         if (!$subscriptionRequest) {
-            return response()->json([
-                'success' => false,
-                'message' => 'طلب الاشتراك غير موجود.'
-            ], 404);
+            return response()->json(['success' => false, 'message' => 'طلب الاشتراك غير موجود.'], 404);
         }
 
-        $driverIdMatches = ($subscriptionRequest->driver_id == $driver->id) || ($subscriptionRequest->driver_id == $user->id);
-        if (!$driverIdMatches) {
-            return response()->json([
-                'success' => false,
-                'message' => 'هذا الطلب غير موجه لك ولا يمكنك التحكم به.'
-            ], 403);
+        if ($subscriptionRequest->driver_id != $driver->id) {
+            return response()->json(['success' => false, 'message' => 'هذا الطلب غير موجه لك ولا يمكنك التحكم به.'], 403);
         }
 
         try {
@@ -203,34 +159,26 @@ class DriverSubscriptionController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => $request->status === 'accepted' ? 'تم قبول الطلب وتفعيل الاشتراك بنجاح.' : 'تم رفض الطلب بنجاح.',
-                'data'    => new SubscriptionRequestResource($updatedRequest)
+                'data'    => new SubscriptionRequestDetailsResource($updatedRequest)
             ], 200);
 
         } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'حدث خطأ في النظام: ' . $e->getMessage()
-            ], 500);
+            return response()->json(['success' => false, 'message' => 'حدث خطأ في النظام: ' . $e->getMessage()], 500);
         }
     }
 
-    /**
-     * عرض تفاصيل اشتراك نشط معين خاص بالسائق بالشكل الكامل
-     * GET /api/driver/active-subscriptions/{id}
-     */
-    public function activeSubscriptionDetails($id): JsonResponse
+    public function activeSubscriptionDetails(Request $request, $id): JsonResponse
     {
-        $driver = auth()->user()->driver;
-
+        $driver = $this->getAuthenticatedDriver($request);
         if (!$driver) {
-            return response()->json(['success' => false, 'message' => 'بيانات السائق غير موجودة.'], 403);
+            return $this->driverNotFoundResponse();
         }
 
         try {
             $s = ActiveSubscription::where('id', $id)
                 ->where('driver_id', $driver->id)
                 ->with([
-                    'contract.subscriptionRequest',
+                    'subscriptionRequest',
                     'child.school',
                     'child.address',
                     'parent',
@@ -239,48 +187,34 @@ class DriverSubscriptionController extends Controller
                 ])
                 ->firstOrFail();
 
-            $child    = $s->child;
-            $contract = $s->contract;
-            $parent   = $s->parent;
-            $school   = optional($child?->school ?? $s->school);
-            $address  = optional($child?->address);
+            $child   = $s->child;
+            $subReq  = $s->subscriptionRequest;
+            $parent  = $s->parent;
+            $school  = optional($child?->school ?? $s->school);
+            $address = optional($child?->address);
 
-            // جلب مركبة السائق (الأولى النشطة أو أي مركبة)
-            $vehicle = optional($driver->vehicles)->where('status', 'Active')->first()
-                    ?? optional($driver->vehicles)->first();
+            $vehicle = optional($driver->vehicles)->firstWhere('status', 'Active') ?? optional($driver->vehicles)->first();
+            $age     = ($child && $child->birth_date) ? Carbon::parse($child->birth_date)->age : null;
 
-            // حساب عمر الطفل
-            $age = null;
-            if ($child && $child->birth_date) {
-                $age = Carbon::parse($child->birth_date)->age;
-            }
-
-            $parentName  = optional($parent)->full_name ?? optional($parent)->name;
-            $parentPhone = optional($parent)->phone_number ?? optional($parent)->phone;
-            $parentImage = optional($parent)->avatar_url ?? optional($parent)->photo_url;
+            $childrenCount = $subReq?->children_count ?? 1;
+            $totalPrice    = (float) ($subReq?->total_price ?? 0);
+            $childPrice    = $childrenCount > 0 ? round($totalPrice / $childrenCount, 2) : $totalPrice;
 
             return response()->json([
                 'success' => true,
                 'message' => 'تم جلب تفاصيل الاشتراك النشط بنجاح.',
                 'data'    => [
-
-                    // 1. معلومات الاشتراك
                     'subscription_info' => [
                         'subscription_id' => $s->id,
-                        'request_id'      => optional($contract)->subscription_request_id,
-                        'contract_number' => optional($contract)->contract_number,
+                        'request_id'      => $subReq?->id,
                         'status'          => $s->status,
                         'created_at'      => $s->created_at?->toIso8601String(),
                     ],
-
-                    // 2. ولي الأمر
                     'parent' => [
-                        'name'  => $parentName,
-                        'image' => $parentImage,
-                        'phone' => $parentPhone,
+                        'name'  => optional($parent)->full_name ?? optional($parent)->name,
+                        'image' => optional($parent)->avatar_url ?? optional($parent)->photo_url,
+                        'phone' => optional($parent)->phone_number ?? optional($parent)->phone,
                     ],
-
-                    // 3. الطفل
                     'child' => [
                         'name'              => optional($child)->full_name,
                         'image'             => optional($child)->photo_url,
@@ -289,8 +223,6 @@ class DriverSubscriptionController extends Controller
                         'educational_stage' => optional($child)->grade,
                         'medical_notes'     => optional($child)->medical_notes,
                     ],
-
-                    // 4. المواقع
                     'locations' => [
                         'home' => [
                             'address_name' => $s->pickup_label ?? $address->label ?? $address->address,
@@ -304,127 +236,67 @@ class DriverSubscriptionController extends Controller
                             'longitude' => $school->longitude ?? $s->dropoff_lng,
                         ],
                     ],
-
-                    // 5. تفاصيل الاشتراك
                     'subscription_details' => [
-                        'subscription_type'        => optional($contract)->subscription_type,
-                        'direction'                => optional($contract)->direction,
-                        'period'                   => optional($contract)->timing,
-                        'pickup_time'              => $s->pickup_time  ?? optional($contract)->pickup_time,
-                        'dropoff_time'             => $s->dropoff_time ?? optional($contract)->dropoff_time,
-                        'start_date'               => optional($contract)->start_date ? Carbon::parse($contract->start_date)->toDateString() : null,
-                        'end_date'                 => optional($contract)->end_date   ? Carbon::parse($contract->end_date)->toDateString()   : null,
-                        'subscription_days'        => optional($contract)->days_count,
-                        'child_subscription_price' => (float) (optional($contract)->total_price / max(1, optional(optional($contract)->subscriptionRequest)->children_count ?? 1)),
-                        'total_contract_value'     => (float) optional($contract)->total_price,
+                        'subscription_type'        => $subReq?->subscription_type,
+                        'direction'                => $subReq?->direction,
+                        'period'                   => $subReq?->timing,
+                        'pickup_time'              => $s->pickup_time  ?? $subReq?->pickup_time,
+                        'dropoff_time'             => $s->dropoff_time ?? $subReq?->dropoff_time,
+                        'start_date'               => $subReq?->start_date ? Carbon::parse($subReq->start_date)->toDateString() : null,
+                        'end_date'                 => $subReq?->end_date   ? Carbon::parse($subReq->end_date)->toDateString()   : null,
+                        'subscription_days'        => $subReq?->days_count,
+                        'child_subscription_price' => $childPrice,
+                        'total_contract_value'     => $totalPrice,
                     ],
-
-                    // 6. المركبة
                     'vehicle' => $vehicle ? [
                         'manufacturer' => $vehicle->brand,
                         'model'        => $vehicle->model,
                         'color'        => $vehicle->color,
                         'plate_number' => $vehicle->plate_number,
                     ] : null,
-
-                    // 7. العقد
-                    'contract' => [
-                        'status'    => optional($contract)->status,
-                        'signed_at' => optional($contract)->signed_at ? Carbon::parse($contract->signed_at)->toIso8601String() : null,
-                        'pdf_url'   => optional($contract)->pdf_path ? url('storage/' . $contract->pdf_path) : null,
-                    ],
-
                 ]
             ], 200);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'الاشتراك النشط غير موجود أو ليس لديك صلاحية للوصول إليه.'
-            ], 404);
+            return response()->json(['success' => false, 'message' => 'الاشتراك النشط غير موجود أو ليس لديك صلاحية للوصول إليه.'], 404);
         } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage()
-            ], 500);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * عرض تفاصيل طلب اشتراك معين
-     */
-    public function show($id): JsonResponse
+    public function show(Request $request, $id)
     {
-        $user = auth()->user();
-        if (!$user) {
-            return response()->json(['success' => false, 'message' => 'غير مصرح بالوصول.'], 401);
+        $driver = $this->getAuthenticatedDriver($request);
+        if (!$driver) {
+            return $this->driverNotFoundResponse();
         }
 
-        $driver = $user->driver;
+        $subscriptionRequest = SubscriptionRequest::query()
+            ->with(['parent.user', 'children.school', 'children.address'])
+            ->where('driver_id', $driver->id)
+            ->findOrFail($id);
+
+        return (new SubscriptionRequestDetailsResource($subscriptionRequest))
+            ->additional([
+                'status'  => true,
+                'message' => 'تم جلب تفاصيل طلب الاشتراك بنجاح',
+            ]);
+    }
+
+    public function tripDetails(Request $request, $id): JsonResponse
+    {
+        $driver = $this->getAuthenticatedDriver($request);
         if (!$driver) {
-            return response()->json(['success' => false, 'message' => 'بيانات السائق غير موجودة.'], 403);
+            return $this->driverNotFoundResponse();
         }
 
         $subscriptionRequest = SubscriptionRequest::where('id', $id)
             ->where('driver_id', $driver->id)
-            ->with([
-                'parent.user',
-                'driver.user',
-                'school',
-                'children.school',
-                'children.address',
-                'contract',
-            ])
+            ->with(['parent.user', 'school', 'children.school', 'children.address'])
             ->first();
 
         if (!$subscriptionRequest) {
-            return response()->json([
-                'success'    => false,
-                'message'    => 'الطلب غير موجود أو أنه غير مخصص لهذا السائق.',
-                'debug_info' => [
-                    'requested_id' => $id,
-                    'driver_id'    => $driver->id
-                ]
-            ], 404);
-        }
-
-        return response()->json([
-            'success' => true,
-            'data'    => new SubscriptionRequestResource($subscriptionRequest)
-        ], 200);
-    }
-
-    /**
-     * عرض تفاصيل الرحلة الخاصة بطلب الاشتراك (مواقع الإنزال، الاستلام، وأوقات الرحلة للسائق)
-     * GET /api/driver/requests/{id}/trip-details
-     */
-    public function tripDetails($id): JsonResponse
-    {
-        $user = auth()->user();
-        if (!$user) {
-            return response()->json(['success' => false, 'message' => 'غير مصرح بالوصول.'], 401);
-        }
-
-        $driver = $user->driver;
-        if (!$driver) {
-            return response()->json(['success' => false, 'message' => 'بيانات السائق غير موجودة.'], 403);
-        }
-
-        $subscriptionRequest = SubscriptionRequest::where('id', $id)
-            ->where('driver_id', $driver->id)
-            ->with([
-                'parent.user',
-                'school',
-                'children.school',
-                'children.address',
-            ])
-            ->first();
-
-        if (!$subscriptionRequest) {
-            return response()->json([
-                'success' => false,
-                'message' => 'الطلب غير موجود أو غير مخصص لك.'
-            ], 404);
+            return response()->json(['success' => false, 'message' => 'الطلب غير موجود أو غير مخصص لك.'], 404);
         }
 
         $tripDetails = [
@@ -444,39 +316,25 @@ class DriverSubscriptionController extends Controller
                 'latitude'  => (float) ($subscriptionRequest->school?->lat  ?? $subscriptionRequest->school?->latitude  ?? 0),
                 'longitude' => (float) ($subscriptionRequest->school?->lng ?? $subscriptionRequest->school?->longitude ?? 0),
             ],
-            'children' => $subscriptionRequest->children->map(function ($child) {
-                return [
-                    'id'           => $child->id,
-                    'name'         => $child->full_name ?? $child->name ?? 'طفل',
-                    'gender'       => $child->gender ?? null,
-                    'home_address' => $child->pivot?->home_label ?? $child->address?->label ?? $child->address?->address ?? 'العنوان غير محدد',
-                    'latitude'     => (float) ($child->pivot?->home_lat  ?? $child->address?->lat  ?? $child->latitude  ?? 0),
-                    'longitude'    => (float) ($child->pivot?->home_lng ?? $child->address?->lng ?? $child->longitude ?? 0),
-                    'notes'        => $child->pivot?->child_notes ?? $child->notes ?? null,
-                ];
-            })
+            'children' => $subscriptionRequest->children->map(fn($child) => [
+                'id'           => $child->id,
+                'name'         => $child->full_name ?? $child->name ?? 'طفل',
+                'gender'       => $child->gender ?? null,
+                'home_address' => $child->pivot?->home_label ?? $child->address?->label ?? $child->address?->address ?? 'العنوان غير محدد',
+                'latitude'     => (float) ($child->pivot?->home_lat  ?? $child->address?->lat  ?? $child->latitude  ?? 0),
+                'longitude'    => (float) ($child->pivot?->home_lng ?? $child->address?->lng ?? $child->longitude ?? 0),
+                'notes'        => $child->pivot?->child_notes ?? $child->notes ?? null,
+            ])
         ];
 
-        return response()->json([
-            'success' => true,
-            'data'    => $tripDetails
-        ], 200);
+        return response()->json(['success' => true, 'data' => $tripDetails], 200);
     }
 
-    /**
-     * فحص إمكانية إضافة أطفال طلب اشتراك معلق إلى المسار الحالي دون حفظ أي شيء (Feasibility Check)
-     * GET /api/driver/requests/{id}/feasibility-check
-     */
-    public function feasibilityCheck($id): JsonResponse
+    public function feasibilityCheck(Request $request, $id): JsonResponse
     {
-        $user = auth()->user();
-        if (!$user) {
-            return response()->json(['success' => false, 'message' => 'غير مصرح بالوصول.'], 401);
-        }
-
-        $driver = $user->driver;
+        $driver = $this->getAuthenticatedDriver($request);
         if (!$driver) {
-            return response()->json(['success' => false, 'message' => 'بيانات السائق غير موجودة.'], 403);
+            return $this->driverNotFoundResponse();
         }
 
         $subscriptionRequest = SubscriptionRequest::where('id', $id)
@@ -485,45 +343,24 @@ class DriverSubscriptionController extends Controller
             ->first();
 
         if (!$subscriptionRequest) {
-            return response()->json([
-                'success' => false,
-                'message' => 'الطلب غير موجود أو غير مخصص لهذا السائق.'
-            ], 404);
+            return response()->json(['success' => false, 'message' => 'الطلب غير موجود أو غير مخصص لهذا السائق.'], 404);
         }
 
         try {
             $result = $this->feasibilityService->checkForRequest($subscriptionRequest);
-
-            return response()->json([
-                'success' => true,
-                'data'    => $result
-            ], 200);
+            return response()->json(['success' => true, 'data' => $result], 200);
         } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'حدث خطأ أثناء فحص إمكانية إضافة الطلب: ' . $e->getMessage()
-            ], 500);
+            return response()->json(['success' => false, 'message' => 'حدث خطأ أثناء فحص إمكانية إضافة الطلب: ' . $e->getMessage()], 500);
         }
     }
 
-    /**
-     * إلغاء اشتراك نشط من قِبل السائق
-     * POST /api/driver/active-subscriptions/{id}/cancel
-     */
     public function cancelActiveSubscription(Request $request, int $id): JsonResponse
     {
-        $request->validate([
-            'reason' => 'nullable|string|max:500',
-        ]);
+        $request->validate(['reason' => 'nullable|string|max:500']);
 
-        $user = auth()->user();
-        if (!$user) {
-            return response()->json(['success' => false, 'message' => 'غير مصرح بالوصول.'], 401);
-        }
-
-        $driver = Driver::where('user_id', $user->id)->first();
+        $driver = $this->getAuthenticatedDriver($request);
         if (!$driver) {
-            return response()->json(['success' => false, 'message' => 'بيانات السائق غير موجودة.'], 403);
+            return $this->driverNotFoundResponse();
         }
 
         try {
@@ -540,36 +377,19 @@ class DriverSubscriptionController extends Controller
             ], 200);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'الاشتراك النشط غير موجود أو لا تملك صلاحية الوصول إليه.',
-            ], 404);
+            return response()->json(['success' => false, 'message' => 'الاشتراك النشط غير موجود أو لا تملك صلاحية الوصول إليه.'], 404);
         } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-            ], 422);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
     }
 
-    /**
-     * جلب قائمة محادثات السائق
-     */
     public function getDriverChatList(Request $request): JsonResponse
     {
         try {
             $chats = $this->subscriptionService->getDriverChats($request->user()->id);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'تم جلب قائمة المحادثات بنجاح.',
-                'data'    => $chats
-            ], 200);
+            return response()->json(['success' => true, 'message' => 'تم جلب قائمة المحادثات بنجاح.', 'data' => $chats], 200);
         } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'حدث خطأ: ' . $e->getMessage()
-            ], 400);
+            return response()->json(['success' => false, 'message' => 'حدث خطأ: ' . $e->getMessage()], 400);
         }
     }
 }

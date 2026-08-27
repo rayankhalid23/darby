@@ -28,30 +28,39 @@ class DriverPreferenceService
     public function updatePreferences(Driver $driver, array $data): Driver
     {
         return DB::transaction(function () use ($driver, $data) {
-
-            $driver->update([
-                'morning_go'        => (bool) ($data['morning_go']      ?? false),
-                'morning_return'    => (bool) ($data['morning_return']   ?? false),
-                'afternoon_go'      => (bool) ($data['afternoon_go']     ?? false),
-                'afternoon_return'  => (bool) ($data['afternoon_return'] ?? false),
-                'subscription_type' => $data['subscription_type'] ?? $driver->subscription_type,
-                'school_stages'     => $data['school_stages']     ?? $driver->school_stages,
-            ]);
-
-            $zoneIds = $data['zones'] ?? [];
-
-            if (!empty($zoneIds)) {
-                $subMunicipalityIds = Zone::whereIn('id', $zoneIds)
-                    ->pluck('sub_municipality_id')
-                    ->filter()
-                    ->unique();
-
-                if ($subMunicipalityIds->count() > 1) {
-                    throw new Exception('عذراً، يجب أن تكون جميع المناطق المختارة تابعة لنفس البلدية الفرعية.');
+            $driverUpdate = [];
+            foreach (['morning_go', 'morning_return', 'afternoon_go', 'afternoon_return'] as $slot) {
+                if (array_key_exists($slot, $data)) {
+                    $driverUpdate[$slot] = (bool) $data[$slot];
                 }
             }
+            if (array_key_exists('subscription_type', $data)) {
+                $driverUpdate['subscription_type'] = $data['subscription_type'];
+            }
+            if (array_key_exists('school_stages', $data)) {
+                $driverUpdate['school_stages'] = $data['school_stages'];
+            }
 
-            $driver->zones()->sync($zoneIds);
+            if (!empty($driverUpdate)) {
+                $driver->update($driverUpdate);
+            }
+
+            if (array_key_exists('zones', $data)) {
+                $zoneIds = $data['zones'] ?? [];
+
+                if (!empty($zoneIds)) {
+                    $subMunicipalityIds = Zone::whereIn('id', $zoneIds)
+                        ->pluck('sub_municipality_id')
+                        ->filter()
+                        ->unique();
+
+                    if ($subMunicipalityIds->count() > 1) {
+                        throw new Exception('عذراً، يجب أن تكون جميع المناطق المختارة تابعة لنفس البلدية الفرعية.');
+                    }
+                }
+
+                $driver->zones()->sync($zoneIds);
+            }
 
             // مزامنة سجلات المقاعد مع الفترات المفعّلة
             $this->syncSeatSlots($driver);

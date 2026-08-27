@@ -5,12 +5,17 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\Auth\LoginController;
 use App\Http\Controllers\Api\Auth\PasswordController;
 use App\Http\Controllers\Api\Shared\NotificationController as SharedNotificationController;
+use App\Http\Controllers\Api\Shared\MediaController;
 
 /*
 |--------------------------------------------------------------------------
 | API Routes
 |--------------------------------------------------------------------------
 */
+
+// 🖼️ تقديم ملفات وثائق/مركبات السائقين عبر لارافيل لضمان ترويسات CORS (عام، بلا توكن —
+// وسوم <img> والمكتبات المستخدمة في تحميل الصور لا ترسل Authorization)
+Route::get('/media/{path}', [MediaController::class, 'show'])->where('path', '.*');
 
 // مسار تسجيل الدخول
 Route::post('/auth/login', [LoginController::class, 'login']);

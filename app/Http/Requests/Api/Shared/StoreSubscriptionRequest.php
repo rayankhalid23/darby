@@ -3,155 +3,185 @@
 namespace App\Http\Requests\Api\Shared;
 
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
-use App\Models\Shared\SubscriptionRequest;
-use App\Enums\Shared\SubscriptionDuration;
 use Carbon\Carbon;
 
 class StoreSubscriptionRequest extends FormRequest
 {
     /**
-     * تحديد ما إذا كان المستخدم مخولاً لإجراء هذا الطلب.
+     * Determine if the user is authorized to make this request.
      */
     public function authorize(): bool
     {
-        // تفعيل الصلاحية (يمكنك ربطها بـ Guard ولي الأمر لاحقاً)
-        return true; 
+        return true;
     }
 
     /**
-     * قواعد التحقق الصارمة لضمان سلامة البيانات ومنع التلاعب.
+     * Prepare data for validation (Normalization & Fallback Mapping).
+     */
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('children') && is_array($this->children)) {
+            $children = collect($this->children)->map(function ($child) {
+                // تحويل القيم المبعوثة للاتجاه إلى القيم المعتمدة (go, return, both)
+                if (isset($child['trip_direction']) || isset($child['direction'])) {
+                    $dir = strtolower($child['trip_direction'] ?? $child['direction']);
+                    
+                    $child['trip_direction'] = match ($dir) {
+                        'go', 'morning', 'one_way_morning'     => 'go',
+                        'return', 'evening', 'one_way_evening' => 'return',
+                        'both', 'two_way'                      => 'both',
+                        default                                => $dir,
+                    };
+                }
+
+                return $child;
+            })->toArray();
+
+            $this->merge(['children' => $children]);
+        }
+    }
+
+    /**
+     * Get the validation rules that apply to the request.
+     *
+     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
      */
     public function rules(): array
-{
-    return [
-        'driver_id'         => 'required|integer|exists:drivers,id',
-        'school_id'         => 'required|integer|exists:schools,id',
-        'subscription_type' => ['required', 'string', Rule::in(SubscriptionDuration::childValues())],
-        
-        // تم توحيد القيم لتطابق الموديل
-        'direction' => 'required|string|in:' . 
-    SubscriptionRequest::DIRECTION_GO . ',' . 
-    SubscriptionRequest::DIRECTION_RETURN . ',' . 
-    SubscriptionRequest::DIRECTION_BOTH,
-        
-        'timing'            => 'required|string|in:MORNING,EVENING,BOTH',
-        'start_date'        => 'required|date',
-        'end_date'          => 'nullable|date',
-        
-        'children'          => 'required|array|min:1',
-        'children.*.child_id'         => 'required|integer|exists:children,id',
-        'children.*.pickup_address_id'  => 'required|integer|exists:addresses,id',
-        'children.*.dropoff_address_id' => 'required|integer',
-        'children.*.price_per_child'    => 'required|numeric|min:0',
-    ];
-}
-    /**
-     * رسائل الخطأ المخصصة
-     */
-    public function messages(): array
     {
         return [
-            'driver_id.exists'              => 'السائق المحدد غير موجود في النظام.',
-            'school_id.exists'              => 'المدرسة المحددة غير مسجلة لدينا.',
-            'timing.in'                     => 'التوقيت غير صحيح، يجب أن يكون MORNING أو EVENING أو BOTH.',
-            'children.required'             => 'يجب تحديد طفل واحد على الأقل لإتمام طلب الاشتراك.',
-            'children.*.child_id.exists'    => 'أحد الأطفال المحددين غير موجود في النظام.',
-            'children.*.price_per_child.required' => 'سعر الاشتراك مطلوب لكل طفل.',
-            'children.*.price_per_child.numeric'  => 'سعر الطفل يجب أن يكون رقماً.',
+            'driver_id' => [
+                'required',
+                'integer',
+                'exists:drivers,id',
+            ],
+            
+            // مصفوفة الأطفال المطلوبة للاشتراك
+            'children' => [
+                'required',
+                'array',
+                'min:1',
+            ],
+            'children.*.child_id' => [
+                'required',
+                'integer',
+                'exists:children,id',
+            ],
+            'children.*.subscription_type' => [
+                'required',
+                'string',
+                'in:single_day,multi_day',
+            ],
+            'children.*.trip_direction' => [
+                'required',
+                'string',
+                'in:go,return,both',
+            ],
+            'children.*.timing' => [
+                'nullable',
+                'string',
+                'max:50',
+            ],
+            
+            // حقول التسعير والمسافة (تأتي عادة من دالة حساب السعر)
+            'children.*.distance_km' => [
+                'nullable',
+                'numeric',
+                'min:0',
+            ],
+            'children.*.trip_price' => [
+                'nullable',
+                'numeric',
+                'min:0',
+            ],
+            'children.*.price_per_child' => [
+                'nullable',
+                'numeric',
+                'min:0',
+            ],
+            
+            'children.*.start_date' => [
+                'required',
+                'date',
+                function ($attribute, $value, $fail) {
+                    $startDate = Carbon::parse($value)->startOfDay();
+                    $today = Carbon::today();
+                    $tomorrow = Carbon::tomorrow();
+
+                    if ($startDate->lt($today)) {
+                        $fail('تاريخ بدء الاشتراك لا يمكن أن يكون في الماضي.');
+                        return;
+                    }
+
+                    if ($startDate->equalTo($tomorrow)) {
+                        $now = Carbon::now();
+                        if ($now->greaterThanOrEqualTo($today->copy()->endOfDay())) {
+                            $fail('عذراً، تم إغلاق استقبال طلبات التوصيل لغدٍ عند الساعة 12:00 منتصف الليل.');
+                        }
+                    }
+                },
+            ],
+            'children.*.end_date' => [
+                'required',
+                'date',
+                'after_or_equal:children.*.start_date',
+            ],
+            'children.*.days_of_week' => [
+                'nullable',
+                'array',
+            ],
+            'children.*.days_of_week.*' => [
+                'string',
+                'in:Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday',
+            ],
+
+            // السعر الإجمالي الكلي اختياري (لأنه يحسب في Service)
+            'total_price' => [
+                'nullable',
+                'numeric',
+                'min:0',
+            ],
+
+            // الحقول العامة للاشتراك
+            'notes' => [
+                'nullable',
+                'string',
+                'max:1000',
+            ],
         ];
     }
 
     /**
-     * شروط التواريخ لطلب الاشتراك الفعلي
+     * Get custom messages for validator errors.
+     *
+     * @return array
      */
-    public function withValidator($validator): void
+    public function messages(): array
     {
-        $validator->after(function ($v) {
-            $type  = $this->input('subscription_type');
-            $start = $this->input('start_date') ? Carbon::parse($this->input('start_date'))->startOfDay() : null;
-            $end   = $this->input('end_date')   ? Carbon::parse($this->input('end_date'))->startOfDay()   : null;
-            $now   = Carbon::now();
+        return [
+            'driver_id.required' => 'يرجى تحديد السائق المطلوب.',
+            'driver_id.exists'   => 'السائق المحدد غير موجود بالمنظومة.',
 
-            if (!$start) {
-                return;
-            }
+            'children.required'  => 'يجب إضافة طفل واحد على الأقل للاشتراك.',
+            'children.array'     => 'صيغة بيانات الأطفال غير صحيحة.',
+            'children.min'       => 'يجب تحديد طفل واحد على الأقل.',
 
-            // 1. لا تواريخ ماضية
-            if ($start->lt($now->copy()->startOfDay())) {
-                $v->errors()->add('start_date', 'لا يمكن اختيار تاريخ في الماضي.');
-                return;
-            }
+            'children.*.child_id.required'           => 'معرف الطفل مطلوب.',
+            'children.*.child_id.exists'             => 'أحد الأطفال المحددین غير موجود.',
 
-            // 2. حد الإغلاق الليلي — بعد 22:00 يُضاف يوم إضافي
-            $minStart = $now->copy()->addDay()->startOfDay();
-            if ($now->hour >= 22) {
-                $minStart->addDay();
-            }
-            while ($minStart->isFriday() || $minStart->isSaturday()) {
-                $minStart->addDay();
-            }
+            'children.*.subscription_type.required' => 'نوع الاشتراك مطلوب لكل طفل.',
+            'children.*.subscription_type.in'       => 'نوع الاشتراك غير صالح (مسموح فقط: single_day أو multi_day).',
+            'children.*.trip_direction.required'    => 'اتجاه الرحلة مطلوب لكل طفل.',
+            'children.*.trip_direction.in'          => 'اتجاه الرحلة غير صالح (مسموح فقط: go للذهاب، return للإياب، both للاتجاهين).',
 
-            if ($start->lt($minStart)) {
-                $msg = $now->hour >= 22
-                    ? 'بعد الساعة 10 مساءً لا يُقبل الحجز إلا من بعد غد على الأقل.'
-                    : 'يجب أن يكون تاريخ البدء غداً على الأقل لإتاحة الوقت للسائق.';
-                $v->errors()->add('start_date', $msg);
-                return;
-            }
+            'children.*.start_date.required' => 'تاريخ بدء الاشتراك مطلوب لكل طفل.',
+            'children.*.start_date.date'     => 'صيغة تاريخ بدء الاشتراك غير صحيحة.',
 
-            // 3. لا بداية في عطلة
-            if ($start->isFriday() || $start->isSaturday()) {
-                $v->errors()->add('start_date', 'لا يمكن أن يبدأ الاشتراك في يوم عطلة (جمعة أو سبت).');
-                return;
-            }
+            'children.*.end_date.required'       => 'تاريخ نهاية الاشتراك مطلوب لكل طفل.',
+            'children.*.end_date.date'           => 'صيغة تاريخ نهاية الاشتراك غير صحيحة.',
+            'children.*.end_date.after_or_equal' => 'تاريخ النهاية يجب أن يكون مساوياً أو بعد تاريخ البدء.',
 
-            // 4. حد أقصى للحجز المسبق: 60 يوماً
-            if ($start->gt($now->copy()->addDays(60)->startOfDay())) {
-                $v->errors()->add('start_date', 'لا يمكن الحجز لأكثر من 60 يوماً مقدماً.');
-                return;
-            }
-
-            if (!$end) {
-                return;
-            }
-
-            // 5. النهاية لا تسبق البداية
-            if ($end->lt($start)) {
-                $v->errors()->add('end_date', 'تاريخ الانتهاء لا يمكن أن يكون قبل تاريخ البدء.');
-                return;
-            }
-
-            // 6. single_day: البداية = النهاية
-            if ($type === SubscriptionDuration::SINGLE_DAY->value && !$start->eq($end)) {
-                $v->errors()->add('end_date', 'اشتراك يوم واحد يجب أن يكون تاريخ البدء والانتهاء نفس اليوم.');
-                return;
-            }
-
-            // 7. multi_day: يومي عمل على الأقل + حد 120 يوم
-            if ($type === SubscriptionDuration::MULTI_DAY->value) {
-                if ($start->eq($end)) {
-                    $v->errors()->add('end_date', 'اشتراك عدة أيام يجب أن يكون تاريخ الانتهاء بعد تاريخ البدء.');
-                    return;
-                }
-
-                $workingDays = 0;
-                $cur = $start->copy();
-                while ($cur->lte($end)) {
-                    if (!$cur->isFriday() && !$cur->isSaturday()) {
-                        $workingDays++;
-                    }
-                    $cur->addDay();
-                }
-                if ($workingDays < 2) {
-                    $v->errors()->add('end_date', 'اشتراك عدة أيام يجب أن يحتوي على يومي عمل على الأقل.');
-                    return;
-                }
-
-                if ($end->gt($start->copy()->addDays(120))) {
-                    $v->errors()->add('end_date', 'مدة الاشتراك لا يمكن أن تتجاوز 120 يوماً (4 أشهر).');
-                }
-            }
-        });
+            'total_price.numeric' => 'يجب أن يكون السعر الإجمالي رقماً.',
+            'total_price.min'     => 'لا يمكن أن يكون السعر الإجمالي أقل من صفر.',
+        ];
     }
 }

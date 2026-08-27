@@ -3,6 +3,9 @@
 namespace App\Http\Requests\Api\Parent;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Validation\Rule;
 
 class StoreAddressRequest extends FormRequest
 {
@@ -16,38 +19,71 @@ class StoreAddressRequest extends FormRequest
         $parentId = auth()->id();
 
         return [
+            // مسمى العنوان (عربي فقط - حرفين على الأقل - إجباري - غير مكرر)
             'label' => [
                 'required',
                 'string',
+                'min:2',
                 'max:100',
-                // شرط ديناميكي: يمنع تكرار الاسم لنفس ولي الأمر عند الإضافة
-                \Illuminate\Validation\Rule::unique('addresses', 'label')->where(function ($query) use ($parentId) {
+                'regex:/^[\p{Arabic}\s]+$/u',
+                Rule::unique('addresses', 'label')->where(function ($query) use ($parentId) {
                     return $query->where('parent_id', $parentId)->whereNull('deleted_at');
                 })
             ],
+
+            // إحداثيات خط العرض
             'lat' => [
                 'required',
                 'numeric',
                 'between:-90,90',
-                // شرط ديناميكي مشترك: يمنع تكرار نفس الإحداثيات لنفس ولي الأمر
-                \Illuminate\Validation\Rule::unique('addresses', 'lat')->where(function ($query) use ($parentId) {
+                Rule::unique('addresses', 'lat')->where(function ($query) use ($parentId) {
                     return $query->where('parent_id', $parentId)->where('lng', $this->lng);
                 })
             ],
-            'lng' => 'required|numeric|between:-180,180',
+
+            // إحداثيات خط الطول
+            'lng' => [
+                'required',
+                'numeric',
+                'between:-180,180'
+            ],
         ];
     }
 
     public function messages(): array
     {
         return [
-            'label.required' => 'يرجى تحديد مسمى للعنوان (مثل: المنزل، بيت الجد).',
-            'label.unique'   => 'لديك عنوان مسجل مسبقاً بنفس هذا الاسم، يرجى اختيار اسم آخر.',
-            'lat.required'   => 'إحداثيات خط العرض مطلوبة لتعيين الموقع على الخريطة.',
-            'lat.unique'     => 'هذا الموقع الجغرافي (الإحداثيات) مضاف لديك بالفعل في قائمة عناوينك.',
-            'lng.required'   => 'إحداثيات خط الطول مطلوبة لتعيين الموقع على الخريطة.',
-            'lat.between'    => 'إحداثيات خط العرض المرسلة غير صالحة جغرافياً.',
-            'lng.between'    => 'إحداثيات خط الطول المرسلة غير صالحة جغرافياً.',
+            // مسمى العنوان
+            'label.required' => 'مسمى العنوان مطلوب.',
+            'label.string'   => 'مسمى العنوان يجب أن يكون نصاً.',
+            'label.min'      => 'مسمى العنوان يجب ألا يقل عن حرفين.',
+            'label.max'      => 'مسمى العنوان يجب ألا يتجاوز 100 حرف.',
+            'label.regex'    => 'مسمى العنوان يجب أن يكون باللغة العربية فقط.',
+            'label.unique'   => 'اسم العنوان مسجل لديك مسبقاً.',
+
+            // خط العرض (Lat)
+            'lat.required' => 'إحداثيات خط العرض مطلوبة.',
+            'lat.numeric'  => 'إحداثيات خط العرض يجب أن تكون رقماً.',
+            'lat.between'  => 'إحداثيات خط العرض غير صالحة جغرافياً.',
+            'lat.unique'   => 'هذا الموقع الجغرافي مسجل لديك مسبقاً.',
+
+            // خط الطول (Lng)
+            'lng.required' => 'إحداثيات خط الطول مطلوبة.',
+            'lng.numeric'  => 'إحداثيات خط الطول يجب أن تكون رقماً.',
+            'lng.between'  => 'إحداثيات خط الطول غير صالحة جغرافياً.',
         ];
+    }
+
+    /**
+     * توحيد تنسيق أخطاء الـ API
+     */
+    protected function failedValidation(Validator $validator)
+    {
+        throw new HttpResponseException(response()->json([
+            'status'     => false,
+            'error_code' => 'VALIDATION_ERROR',
+            'message'    => '',
+            'errors'     => $validator->errors()
+        ], 422));
     }
 }

@@ -17,7 +17,6 @@
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^3.0",
         "laraveldaily/laravel-invoices": "^4.2",
-        "niklasravnsborg/laravel-pdf": "^4.1",
         "spatie/laravel-permission": "^7.4",
         "twilio/sdk": "*"
     },

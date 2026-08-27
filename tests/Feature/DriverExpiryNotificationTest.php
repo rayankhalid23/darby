@@ -5,12 +5,10 @@ namespace Tests\Feature;
 use Tests\TestCase;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Notification;
 use App\Models\User;
 use App\Models\Admin\Admin;
 use App\Models\Driver\Driver;
 use App\Models\Driver\DriverDocument;
-use App\Notifications\CustomDatabaseNotification;
 use App\Services\Driver\DriverExpiryNotificationService;
 use App\Services\Driver\DriverProfileService;
 use App\Services\Parent\DriverMatchingService;
@@ -30,6 +28,15 @@ class DriverExpiryNotificationTest extends TestCase
         DB::table('roles')->insertOrIgnore([
             ['id' => 4, 'name' => 'DriverRole4', 'display_name' => 'سائق'],
         ]);
+    }
+
+    /** عدد صفوف الإشعارات الفعلية في جدول notifications لمستخدم معيّن (NotificationService يكتب مباشرة، بدون Notification facade) */
+    protected function notificationCountFor(User $user): int
+    {
+        return DB::table('notifications')
+            ->where('notifiable_type', User::class)
+            ->where('notifiable_id', $user->id)
+            ->count();
     }
 
     protected function makeDriver(?string $licenseExpiry = null, ?string $email = null): Driver
@@ -77,14 +84,12 @@ class DriverExpiryNotificationTest extends TestCase
     /** Test 1: تذكير عند بلوغ نقطة 15 يوم لانتهاء الرخصة */
     public function test_sends_reminder_when_license_reaches_15_day_milestone(): void
     {
-        Notification::fake();
-
         $driver = $this->makeDriver(now()->addDays(15)->format('Y-m-d'));
 
         $stats = $this->service->run();
 
         $this->assertEquals(1, $stats['license_reminders']);
-        Notification::assertSentTo($driver->user, CustomDatabaseNotification::class);
+        $this->assertEquals(1, $this->notificationCountFor($driver->user));
 
         $this->assertEquals(15, $driver->fresh()->license_expiry_notified_milestone);
     }
@@ -92,21 +97,17 @@ class DriverExpiryNotificationTest extends TestCase
     /** Test 2: عدم تكرار نفس التذكير عند تشغيل الدالة مرتين لنفس اليوم */
     public function test_does_not_duplicate_reminder_for_same_milestone(): void
     {
-        Notification::fake();
-
         $driver = $this->makeDriver(now()->addDays(7)->format('Y-m-d'));
 
         $this->service->run();
         $this->service->run();
 
-        Notification::assertSentToTimes($driver->user, CustomDatabaseNotification::class, 1);
+        $this->assertEquals(1, $this->notificationCountFor($driver->user));
     }
 
     /** Test 3: انتهاء الرخصة فعلياً يُعلّم المستند Expired وينبّه السائق + الإدارة */
     public function test_marks_license_document_expired_and_notifies_driver_and_admin(): void
     {
-        Notification::fake();
-
         $driver = $this->makeDriver(now()->subDay()->format('Y-m-d'));
         $licenseDoc = $this->makeLicenseDoc($driver);
 
@@ -125,15 +126,13 @@ class DriverExpiryNotificationTest extends TestCase
         $this->assertEquals(1, $stats['license_expired']);
         $this->assertEquals('Expired', $licenseDoc->fresh()->status);
 
-        Notification::assertSentTo($driver->user, CustomDatabaseNotification::class);
-        Notification::assertSentTo($adminUser, CustomDatabaseNotification::class);
+        $this->assertEquals(1, $this->notificationCountFor($driver->user));
+        $this->assertEquals(1, $this->notificationCountFor($adminUser));
     }
 
     /** Test 4: لا يُعاد إرسال تنبيه الانتهاء مرة أخرى بعد تعليم المستند Expired مسبقاً */
     public function test_does_not_resend_expired_alert_once_already_marked(): void
     {
-        Notification::fake();
-
         $driver = $this->makeDriver(now()->subDays(5)->format('Y-m-d'));
         $this->makeLicenseDoc($driver);
 
@@ -141,14 +140,12 @@ class DriverExpiryNotificationTest extends TestCase
         $stats = $this->service->run();
 
         $this->assertEquals(0, $stats['license_expired']);
-        Notification::assertSentToTimes($driver->user, CustomDatabaseNotification::class, 1);
+        $this->assertEquals(1, $this->notificationCountFor($driver->user));
     }
 
     /** Test 5: تذكير وانتهاء التأمين (نفس منطق الرخصة لكن على مستوى المستند) */
     public function test_insurance_expiry_reminder_and_expiration_flow(): void
     {
-        Notification::fake();
-
         $driver = $this->makeDriver(now()->addYears(2)->format('Y-m-d'));
         $doc = $this->makeInsuranceDoc($driver, now()->addDays(3)->format('Y-m-d'));
 

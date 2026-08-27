@@ -14,7 +14,7 @@ class ActiveSubscription extends Model
     protected $table = 'active_subscriptions';
 
     protected $fillable = [
-        'contract_id',
+        'subscription_request_id',
         'child_id',
         'driver_id',
         'route_id',
@@ -45,6 +45,14 @@ class ActiveSubscription extends Model
     public function contract(): BelongsTo
     {
         return $this->belongsTo(Contract::class, 'contract_id');
+    }
+
+    /**
+     * طلب الاشتراك الأصلي — مصدر كل بيانات الاتفاق (المدة، السعر، الفترة، الاتجاه)
+     */
+    public function subscriptionRequest(): BelongsTo
+    {
+        return $this->belongsTo(SubscriptionRequest::class, 'subscription_request_id');
     }
 
     public function child(): BelongsTo

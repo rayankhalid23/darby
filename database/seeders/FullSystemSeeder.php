@@ -335,8 +335,7 @@ class FullSystemSeeder extends Seeder
             [
                 'request_id' => $subRequest1->id,
                 'child_id' => $child1->id,
-                'pickup_address_id' => $address1->id,
-                'dropoff_address_id' => $address1->id,
+              
                 'home_lat' => 32.89200000,
                 'home_lng' => 13.17500000,
                 'home_label' => 'ط§ظ„ط¨ظٹطھ ط§ظ„ط±ط¦ظٹط³ظٹ',
@@ -348,8 +347,7 @@ class FullSystemSeeder extends Seeder
             [
                 'request_id' => $subRequest1->id,
                 'child_id' => $child2->id,
-                'pickup_address_id' => $address1->id,
-                'dropoff_address_id' => $address1->id,
+               
                 'home_lat' => 32.89200000,
                 'home_lng' => 13.17500000,
                 'home_label' => 'ط§ظ„ط¨ظٹطھ ط§ظ„ط±ط¦ظٹط³ظٹ',
@@ -437,8 +435,7 @@ class FullSystemSeeder extends Seeder
         DB::table('request_children')->insert([
             'request_id' => $subRequest2->id,
             'child_id' => $child3->id,
-            'pickup_address_id' => $address2->id,
-            'dropoff_address_id' => $address2->id,
+        
             'home_lat' => 32.90100000,
             'home_lng' => 13.21500000,
             'home_label' => 'ظ…ظ†ط²ظ„ ظ…ط­ظ…ظˆط¯ ط§ظ„ظˆط±ظپظ„ظٹ',

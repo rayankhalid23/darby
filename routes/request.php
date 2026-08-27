@@ -39,20 +39,19 @@ Route::middleware('auth:sanctum')->group(function () {
     // ============================================================
     Route::prefix('parent')->group(function () {
 
-    Route::post('/', [ParentSubscriptionController::class, 'store']); 
+        Route::post('/', [ParentSubscriptionController::class, 'store']); 
+        Route::post('/requests', [ParentSubscriptionController::class, 'store']); 
         // المسار الموحد لجلب طلبات الاشتراك (الطلبات الأولية المعلقة والمرفوضة)
         Route::get('/requests', [ParentSubscriptionController::class, 'index']); 
         // مسار إلغاء طلب الاشتراك (المعلق)
-        Route::post('requests/{id}/cancel', [ParentSubscriptionController::class, 'cancel']);
+        Route::post('/requests/{id}/cancel', [ParentSubscriptionController::class, 'cancel']);
         
         // المسار الموحد والوحيد الجديد لجلب الاشتراكات المفعّلة والموافَق عليها بالفلاتر
         Route::get('/active-subscriptions', [ParentSubscriptionController::class, 'activeSubscriptions']); 
-              // المسار الخاص بجلب تفاصيل اشتراك نشط معين
-              Route::get('/active-subscriptions/{id}', [ParentSubscriptionController::class, 'showActive']);
-              Route::get('/chats', [ChatController::class, 'getParentChatList']);
-              //مش خادمه الدوال متعها مسار بس
-              Route::post('/active-subscriptions/{id}/cancel', [ParentSubscriptionController::class, 'cancelActiveSubscription']);
-        
+        // المسار الخاص بجلب تفاصيل اشتراك نشط معين
+        Route::get('/active-subscriptions/{id}', [ParentSubscriptionController::class, 'showActive']);
+        Route::get('/chats', [ChatController::class, 'getParentChatList']);
+        Route::post('/active-subscriptions/{id}/cancel', [ParentSubscriptionController::class, 'cancelActiveSubscription']);
         
         Route::get('/requests/{id}', [ParentSubscriptionController::class, 'showRequest']); 
         
@@ -76,12 +75,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/active-subscriptions/{id}/cancel', [DriverSubscriptionController::class, 'cancelActiveSubscription']);
         Route::get('/chats', [ChatController::class, 'getDriverChatList']);
   
-        
         Route::get('/routes', [DriverRouteController::class, 'index']); 
         Route::post('/trips/start', [DriverTripController::class, 'startTrip']);
         
         // 2. مسارات تحتوي على متغيرات (Dynamic Parameters) - توضع أخيراً
         Route::put('/routes/{route}', [DriverRouteController::class, 'update']);
+        Route::put('/requests/{id}/status', [DriverSubscriptionController::class, 'updateStatus']); 
         Route::put('{id}/status', [DriverSubscriptionController::class, 'updateStatus']); 
     });
     

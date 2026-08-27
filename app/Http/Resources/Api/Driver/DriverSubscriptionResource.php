@@ -2,162 +2,104 @@
 
 namespace App\Http\Resources\Api\Driver;
 
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Carbon\Carbon;
-use Carbon\CarbonPeriod;
 
 class DriverSubscriptionResource extends JsonResource
 {
-    /**
-     * تحويل البيانات لتشمل تفاصيل الاشتراك الكاملة للسائق بدون بيانات السائق نفسه
-     */
-    public function toArray($request)
+    public function toArray(Request $request): array
     {
-        // 1. حساب عدد أيام العمل بين تاريخ البداية والنهاية (مستبعداً الجمعة والسبت)
-        $workingDaysCount = 0;
-        $startDate = optional($this->contract)->start_date ?? ($this->start_date ?? null);
-        $endDate   = optional($this->contract)->end_date   ?? ($this->end_date   ?? null);
-
-        if ($startDate && $endDate) {
-            try {
-                $start = Carbon::parse($startDate);
-                $end   = Carbon::parse($endDate);
-                
-                if ($start->lte($end)) {
-                    $period = CarbonPeriod::create($start, $end);
-                    foreach ($period as $date) {
-                        // 5 = الجمعة، 6 = السبت في Carbon
-                        if (!in_array($date->dayOfWeek, [Carbon::FRIDAY, Carbon::SATURDAY])) {
-                            $workingDaysCount++;
-                        }
-                    }
-                }
-            } catch (\Exception $e) {
-                $workingDaysCount = 0;
-            }
+        if (!$this->resource) {
+            return [];
         }
 
-        // 2. دالة مساعدة لاستخراج أول إحداثي غير صفري لمنع ظهور الرقم 0
-        $getValidCoord = function (...$values) {
-            foreach ($values as $val) {
-                if (!is_null($val) && (float)$val != 0) {
-                    return (float)$val;
-                }
-            }
-            return 0.0;
-        };
+        $parentUser = optional(optional($this->parent)->user);
+        $discountFactor = 0.92; 
 
-        // استخراج إحداثيات المنزل بدقة
-        $homeLat = $getValidCoord(
-            $this->pickup_lat,
-            optional(optional($this->child)->address)->lat,
-            optional(optional(optional($this->parent)->addresses)->first())->lat
-        );
+        $rawTotal = (float) ($this->total_price ?? 0);
+        $netTotalAmount = round($rawTotal * $discountFactor, 2);
 
-        $homeLng = $getValidCoord(
-            $this->pickup_lng,
-            optional(optional($this->child)->address)->lng,
-            optional(optional(optional($this->parent)->addresses)->first())->lng
-        );
-
-        // استخراج إحداثيات المدرسة بدقة
-        $schoolLat = $getValidCoord(
-            $this->dropoff_lat,
-            optional($this->school)->lat,
-            optional(optional($this->child)->school)->lat
-        );
-
-        $schoolLng = $getValidCoord(
-            $this->dropoff_lng,
-            optional($this->school)->lng,
-            optional(optional($this->child)->school)->lng
-        );
-
-        // 3. بناء هيكل الـ JSON المرجع للـ API
         return [
-            'id'             => $this->id,
-            'status'         => $this->status,
-            'pickup_time'    => $this->pickup_time ? Carbon::parse($this->pickup_time)->format('H:i') : null,
-            'dropoff_time'   => $this->dropoff_time ? Carbon::parse($this->dropoff_time)->format('H:i') : null,
-            
-            // نوع الرحلة: ذهاب، إياب، أو الزوز
-            'trip_type'      => $this->direction ?? ($this->subscription_type ?? 'both'),
-            
-            // نقاط الركوب والتوصيل
-            'pickup_location' => [
-                'latitude'  => $homeLat,
-                'longitude' => $homeLng,
-                'label'     => $this->pickup_label ?? 'المنزل',
+            'id'                   => $this->id,
+            'status'               => [
+                'value' => $this->status,
             ],
-            'dropoff_location' => [
-                'latitude'  => $schoolLat,
-                'longitude' => $schoolLng,
-                'label'     => $this->dropoff_label ?? 'المدرسة',
+            // الملاحظة العامة لطلب الاشتراك (تأكد من اسم الحقل في جدول subscription_requests إذا كان notes أو general_notes)
+            'notes'                => $this->notes ?? $this->general_notes ?? null, 
+            'total_amount'         => $netTotalAmount,
+            'currency'             => 'د.ل', 
+            'children_count'       => (int) ($this->children_count ?? ($this->relationLoaded('children') ? $this->children->count() : 1)),
+
+            'parent' => [
+                'id'       => optional($this->parent)->id,
+                'name'     => $parentUser->full_name ?? $parentUser->name ?? 'غير محدد',
+                'phone'    => $parentUser->phone_number ?? $parentUser->phone ?? null,
+                'email'    => $parentUser->email ?? null,
+                'avatar'   => $parentUser->avatar_url ?? null,
             ],
 
-            // إحداثيات الطول والعرض المفصلة للمنزل والمدرسة
-            'coordinates' => [
-                'home' => [
-                    'latitude'  => $homeLat,
-                    'longitude' => $homeLng,
-                ],
-                'school' => [
-                    'latitude'  => $schoolLat,
-                    'longitude' => $schoolLng,
-                ],
-            ],
+            'children' => $this->whenLoaded('children', function () use ($discountFactor) {
+                return $this->children->map(function ($child) use ($discountFactor) {
+                    $pivot   = $child->pivot ?? null;
+                    $school  = optional($child->school);
+                    $address = optional($child->address);
 
-            // تفاصيل ولي الأمر (لأن السائق يحتاج لمعرفة من هو ولي أمر الطالب وطريقة التواصل معه)
-            'parent' => $this->whenLoaded('parent', function() {
-                $parentUser = optional($this->parent->user);
-                return [
-                    'id'    => optional($this->parent)->id,
-                    'name'  => $parentUser->full_name ?? ($parentUser->name ?? 'غير معروف'),
-                    'phone' => $parentUser->phone ?? ($parentUser->phone_number ?? null),
-                    'email' => $parentUser->email ?? null,
-                ];
+                    $rawChildTotal = (float) ($pivot->price_per_child ?? $pivot->total_price ?? $child->price ?? 0);
+                    $rawTripPrice  = (float) ($pivot->trip_price ?? ($rawChildTotal / 2));
+
+                    $netChildTotal = round($rawChildTotal * $discountFactor, 2);
+                    $netTripPrice  = round($rawTripPrice * $discountFactor, 2);
+
+                    return [
+                        'id'         => $child->id,
+                        'name'       => $child->full_name ?? $child->name,
+                        'gender'     => $child->gender,
+                        'age'        => $child->age,
+                        'grade'      => $child->grade ?? $child->class_name ?? 'غير محدد',
+                        'photo_url'  => $child->photo_url,
+
+                        // ملاحظات الطفل (ملاحظات الطلب الخاصة بالطفل من جدول الـ pivot + الملاحظات الطبية من جدول children)
+                        'notes' => [
+                          
+                            'child_notes' => $child->medical_notes ?? null,
+                        ],
+
+                        'pricing' => [
+                            'trip_price'  => $netTripPrice,
+                            'total_price' => $netChildTotal,
+                        ],
+
+                        'subscription_period' => [
+                            'start_date' => $pivot->start_date ?? null,
+                            'end_date'   => $pivot->end_date ?? null,
+                            'working_days_count' => (int) ($pivot->working_days_count ?? 0),
+                        ],
+
+                        'trip_details' => [
+                            'subscription_type' => $pivot->subscription_type ?? 'monthly',
+                            'trip_direction'    => $pivot->trip_direction ?? 'two_way',
+                            'timing'            => $pivot->timing ?? null,
+                        ],
+
+                        'school' => [
+                            'id'      => $school->id,
+                            'name'    => $school->name,
+                            'address' => $school->address,
+                            'lat'     => (float) ($school->lat ?? 0),
+                            'lng'     => (float) ($school->lng ?? 0),
+                        ],
+
+                        'home' => [
+                            'address' => $address->label ?? 'منزل ولي الأمر',
+                            'lat'     => (float) ($address->lat ?? 0),
+                            'lng'     => (float) ($address->lng ?? 0),
+                        ],
+                    ];
+                });
             }),
 
-            // تفاصيل الطفل الكاملة (شاملة كافة البيانات المتاحة عن الطفل)
-            'child' => $this->whenLoaded('child', function() {
-                return [
-                    'id'            => $this->child->id,
-                    'name'          => $this->child->full_name ?? ($this->child->name ?? null),
-                    'first_name'    => $this->child->first_name ?? null,
-                    'last_name'     => $this->child->last_name ?? null,
-                    'age'           => $this->child->age ?? null,
-                    'gender'        => $this->child->gender ?? null,
-                    'grade'         => $this->child->grade ?? ($this->child->school_grade ?? null),
-                    'photo_url'     => $this->child->photo_url ?? null,
-                    'notes'         => $this->child->notes ?? ($this->child->medical_notes ?? null),
-                    'school'        => $this->whenLoaded('school', function() {
-                        return [
-                            'id'      => optional($this->school)->id,
-                            'name'    => optional($this->school)->name,
-                            'address' => optional($this->school)->address,
-                        ];
-                    }, [
-                        'id'      => optional($this->child->school)->id,
-                        'name'    => optional($this->child->school)->name ?? (optional($this->school)->name ?? null),
-                        'address' => optional($this->child->school)->address ?? null,
-                    ]),
-                ];
-            }),
-
-            // تفاصيل العقد وأيام العمل
-            'contract' => $this->whenLoaded('contract', function() use ($workingDaysCount) {
-                return [
-                    'id'                 => $this->contract->id,
-                    'contract_number'    => $this->contract->contract_number,
-                    'start_date'         => $this->contract->start_date,
-                    'end_date'           => $this->contract->end_date,
-                    'total_working_days' => $workingDaysCount,
-                    'total_price'        => (float) $this->contract->total_price,
-                    'status'             => $this->contract->status,
-                ];
-            }),
-            
-            'created_at' => $this->created_at ? $this->created_at->toDateTimeString() : null,
+            'created_at' => $this->created_at?->toIso8601String(),
+            'created_at_formatted' => $this->created_at?->format('Y-m-d H:i'),
         ];
     }
 }

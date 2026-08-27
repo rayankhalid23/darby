@@ -12,6 +12,7 @@ use App\Http\Resources\Api\Admin\AdminPendingChangeResource; // الجديد ا�
 use App\Services\Admin\AdminDriverService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Exception;
 
 class AdminDriverController extends Controller
@@ -79,9 +80,34 @@ class AdminDriverController extends Controller
      */
     public function update(\App\Http\Requests\Api\Admin\UpdateDriverByAdminRequest $request, int $id): JsonResponse
     {
+        $uploadedPaths = [];
         try {
             $adminId = auth()->user()->admin->id ?? auth()->id();
             $data = $request->validated();
+
+            // رفع صورة المركبة الجديدة إن أُرسلت
+            if ($request->hasFile('vehicle_image')) {
+                $path = $request->file('vehicle_image')->store('drivers/vehicles', 'public');
+                $data['vehicle_image_path'] = 'storage/' . $path;
+                $uploadedPaths[] = $path;
+            }
+
+            // رفع صور المستندات الجديدة إن أُرسلت
+            $docFileMap = [
+                'doc_license'              => 'doc_license_path',
+                'doc_logbook'              => 'doc_logbook_path',
+                'doc_insurance'            => 'doc_insurance_path',
+                'doc_booklet_page'         => 'doc_booklet_page_path',
+                'doc_stamp'                => 'doc_stamp_path',
+                'doc_technical_inspection' => 'doc_technical_inspection_path',
+            ];
+            foreach ($docFileMap as $fileField => $pathKey) {
+                if ($request->hasFile($fileField)) {
+                    $path = $request->file($fileField)->store('drivers/documents', 'public');
+                    $data[$pathKey] = 'storage/' . $path;
+                    $uploadedPaths[] = $path;
+                }
+            }
 
             $driver = $this->adminDriverService->updateDriver($id, $data, $adminId);
 
@@ -98,6 +124,9 @@ class AdminDriverController extends Controller
                 'message' => 'عذراً، السائق المطلوب غير موجود في النظام.'
             ], 404);
         } catch (Exception $e) {
+            foreach ($uploadedPaths as $path) {
+                Storage::disk('public')->delete($path);
+            }
             Log::error("Admin Update Driver Error: " . $e->getMessage());
             return response()->json([
                 'success' => false,
@@ -106,6 +135,7 @@ class AdminDriverController extends Controller
             ], 500);
         }
     }
+    
 
     /**
      * 3. اتخاذ قرار القبول والتفعيل الاحتفالي أو الرفض المسبب للسائق (الطلب الأولي)
@@ -200,27 +230,48 @@ class AdminDriverController extends Controller
      * 6. معالجة قرار الموافقة والتطبيق الفوري أو الرفض المسبب لتعديلات السائق
      * POST: /api/admin/drivers/pending-changes/{id}/review
      */
+    /**
+     * 6. معالجة قرار الموافقة والتطبيق الفوري أو الرفض المسبب لتعديلات السائق
+     * POST: /api/admin/drivers/pending-changes/{id}/review
+     */
     public function reviewProfileChange(ReviewProfileChangeRequest $request, int $id): JsonResponse
     {
         try {
-            $adminId = auth()->user()->admin->id ?? 1;
+            // 🚀 جلب id الأدمن من جدول admins مباشرة عن طريق user_id
+            $userId = auth()->id();
             
+            $adminId = \Illuminate\Support\Facades\DB::table('admins')
+                ->where('user_id', $userId)
+                ->value('id');
+    
+            // إذا لم يُعثر على أدمن مربوط، نأخذ أول id أدمن متاح في الجدول
+            if (!$adminId) {
+                $adminId = \Illuminate\Support\Facades\DB::table('admins')->value('id') ?? 1;
+            }
+    
             $decision = $request->input('decision');
             $rejectionReason = $request->input('rejection_reason');
-
+    
             $this->adminDriverService->reviewProfileChangeRequest($id, $decision, $rejectionReason, $adminId);
-
+    
             $messageText = $decision === 'Approved' 
                 ? 'تمت الموافقة على التعديلات وتطبيقها على حساب المركبة والسائق فوراً بنجاح.' 
-                : 'تم رفض طلب تعديل البيانات، وإرسال مبررات الرفض إلي سائق .';
-
+                : 'تم رفض طلب تعديل البيانات، وإرسال مبررات الرفض إلى السائق.';
+    
             return response()->json([
                 'status'  => true,
                 'message' => $messageText
             ], 200);
-        } catch (Exception $e) {
+    
+        } catch (\Exception $e) {
             Log::error("Admin Review Profile Change Error: " . $e->getMessage());
-            return response()->json(['status' => false, 'message' => 'تعذر معالجة طلب التعديل: ' . $e->getMessage()], 500);
+            
+            $statusCode = in_array($e->getCode(), [400, 404, 422]) ? $e->getCode() : 500;
+            
+            return response()->json([
+                'status'  => false, 
+                'message' => 'تعذر معالجة طلب التعديل: ' . $e->getMessage()
+            ], $statusCode);
         }
     }
 }

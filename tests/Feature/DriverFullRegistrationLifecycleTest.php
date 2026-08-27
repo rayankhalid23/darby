@@ -70,8 +70,10 @@ class DriverFullRegistrationLifecycleTest extends TestCase
         $verifyRes->assertJsonPath('status', true);
         $token = $verifyRes->json('token');
         $userId = $verifyRes->json('user_id');
+        $driverId = $verifyRes->json('driver_id');
         $this->assertNotEmpty($token);
         $this->assertNotEmpty($userId);
+        $this->assertNotEmpty($driverId);
 
         $user = User::find($userId);
         $this->assertNotNull($user);
@@ -80,6 +82,7 @@ class DriverFullRegistrationLifecycleTest extends TestCase
 
         $driver = Driver::where('user_id', $userId)->first();
         $this->assertNotNull($driver);
+        $this->assertEquals($driverId, $driver->id);
         $this->assertEquals('Offline', $driver->status);
 
         // 3. استكمال ملف السائق ورفع بيانات المركبة والوثائق (Complete Profile)
@@ -90,6 +93,8 @@ class DriverFullRegistrationLifecycleTest extends TestCase
                 'license_number'   => 'DL-554433',
                 'license_expiry'   => now()->addYears(3)->format('Y-m-d'),
                 'insurance_expiry' => now()->addYear()->format('Y-m-d'),
+                'stamp_expiry'                => now()->addYear()->format('Y-m-d'),
+                'technical_inspection_expiry' => now()->addYear()->format('Y-m-d'),
                 'plate_number'     => '5-99887',
                 'brand'            => 'Toyota',
                 'model'            => 'Hiace',
@@ -102,6 +107,9 @@ class DriverFullRegistrationLifecycleTest extends TestCase
                 'doc_license'      => UploadedFile::fake()->image('license.png'),
                 'doc_logbook'      => UploadedFile::fake()->create('logbook.pdf', 500, 'application/pdf'),
                 'doc_insurance'    => UploadedFile::fake()->create('insurance.pdf', 500, 'application/pdf'),
+                'doc_booklet_page'         => UploadedFile::fake()->image('booklet-page.jpg'),
+                'doc_stamp'                => UploadedFile::fake()->image('stamp.jpg'),
+                'doc_technical_inspection' => UploadedFile::fake()->create('technical-inspection.pdf', 500, 'application/pdf'),
             ]);
 
         $completeRes->assertStatus(200);
@@ -165,6 +173,8 @@ class DriverFullRegistrationLifecycleTest extends TestCase
                 'license_number'   => 'DL-991122',
                 'license_expiry'   => now()->addYears(2)->format('Y-m-d'),
                 'insurance_expiry' => now()->addYear()->format('Y-m-d'),
+                'stamp_expiry'                => now()->addYear()->format('Y-m-d'),
+                'technical_inspection_expiry' => now()->addYear()->format('Y-m-d'),
                 'plate_number'     => '1-55443',
                 'brand'            => 'Hyundai',
                 'model'            => 'H1',
@@ -177,6 +187,9 @@ class DriverFullRegistrationLifecycleTest extends TestCase
                 'license_photo'    => UploadedFile::fake()->image('front_license.webp'),
                 'logbook_photo'    => UploadedFile::fake()->image('front_logbook.png'),
                 'insurance_photo'  => UploadedFile::fake()->create('front_insurance.pdf', 300, 'application/pdf'),
+                'doc_booklet_page'         => UploadedFile::fake()->image('front_booklet.jpg'),
+                'doc_stamp'                => UploadedFile::fake()->image('front_stamp.jpg'),
+                'doc_technical_inspection' => UploadedFile::fake()->create('front_technical.pdf', 300, 'application/pdf'),
             ]);
 
         $response->assertStatus(200);
@@ -185,7 +198,7 @@ class DriverFullRegistrationLifecycleTest extends TestCase
         $driver->refresh();
         $this->assertEquals('Pending', $driver->status);
         $this->assertEquals(1, $driver->vehicles()->count());
-        $this->assertEquals(3, $driver->documents()->count());
+        $this->assertEquals(6, $driver->documents()->count());
     }
 
     /**
@@ -219,6 +232,8 @@ class DriverFullRegistrationLifecycleTest extends TestCase
                 'license_number'   => 'DL-1234',
                 'license_expiry'   => now()->addYear()->format('Y-m-d'),
                 'insurance_expiry' => now()->addYear()->format('Y-m-d'),
+                'stamp_expiry'                => now()->addYear()->format('Y-m-d'),
+                'technical_inspection_expiry' => now()->addYear()->format('Y-m-d'),
                 'plate_number'     => '1-1234',
                 'brand'            => 'Toyota',
                 'model'            => 'Coaster',
@@ -231,6 +246,9 @@ class DriverFullRegistrationLifecycleTest extends TestCase
                 'doc_license'      => UploadedFile::fake()->image('lic.jpg'),
                 'doc_logbook'      => UploadedFile::fake()->image('log.jpg'),
                 'doc_insurance'    => UploadedFile::fake()->image('ins.jpg'),
+                'doc_booklet_page'         => UploadedFile::fake()->image('booklet.jpg'),
+                'doc_stamp'                => UploadedFile::fake()->image('stamp.jpg'),
+                'doc_technical_inspection' => UploadedFile::fake()->image('technical.jpg'),
             ]);
 
         $response->assertStatus(403);
@@ -290,5 +308,63 @@ class DriverFullRegistrationLifecycleTest extends TestCase
             'capacity_manual',
             'vehicle_image',
         ]);
+    }
+
+    /**
+     * اختبار التنظيف التلقائي للرقم الوطني (إزالة الشرطات والمسافات والأرقام العربية) وتطبيع التواريخ
+     */
+    public function test_complete_profile_auto_sanitizes_national_id_and_normalizes_dates(): void
+    {
+        Storage::fake('public');
+
+        $user = User::create([
+            'full_name'     => 'سائق تجريبي تنظيف البيانات',
+            'email'         => 'driver.sanitize.' . uniqid() . '@darby.test',
+            'phone_number'  => '091' . rand(1000000, 9999999),
+            'password_hash' => bcrypt('password123'),
+            'role_id'       => 4,
+            'is_active'     => 0,
+        ]);
+
+        $driver = Driver::create([
+            'user_id' => $user->id,
+            'gender'  => 'Male',
+            'status'  => 'Offline',
+        ]);
+
+        // إرسال رقم وطني به مسافات وشرطات وتواريخ بها سلاش ومسافات
+        $response = $this->actingAs($user)
+            ->postJson("/api/v1/driver/complete-profile/{$user->id}", [
+                'national_id'      => '1199-5000-0000', // يحتوي شرطات
+                'license_number'   => 'DL-991122',
+                'license_expiry'   => '2028/12/31',     // يحتوي سلاش بدلاً من الشرطة
+                'insurance_expiry' => '2027-10-15T00:00:00.000Z', // يحتوي ISO timestamp
+                'stamp_expiry'                => now()->addYear()->format('Y-m-d'),
+                'technical_inspection_expiry' => now()->addYear()->format('Y-m-d'),
+                'plate_number'     => '1-55443',
+                'brand'            => 'Hyundai',
+                'model'            => 'H1',
+                'year'             => 2021,
+                'color'            => 'Black',
+                'type'             => 'Van',
+                'capacity_manual'  => 12,
+                'has_ac'           => 1,
+                'vehicle_image'    => UploadedFile::fake()->image('van.jpg'),
+                'doc_license'      => UploadedFile::fake()->image('license.jpg'),
+                'doc_logbook'      => UploadedFile::fake()->image('logbook.jpg'),
+                'doc_insurance'    => UploadedFile::fake()->image('insurance.jpg'),
+                'doc_booklet_page'         => UploadedFile::fake()->image('booklet.jpg'),
+                'doc_stamp'                => UploadedFile::fake()->image('stamp.jpg'),
+                'doc_technical_inspection' => UploadedFile::fake()->image('technical.jpg'),
+            ]);
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('status', true);
+
+        $driver->refresh();
+        // تم تنظيف الرقم الوطني بنجاح
+        $this->assertEquals('119950000000', $driver->national_id);
+        // تم تطبيع تاريخ انتهاء الرخصة
+        $this->assertEquals('2028-12-31', $driver->license_expiry->format('Y-m-d'));
     }
 }

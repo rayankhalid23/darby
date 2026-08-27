@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\Driver\Driver;
 use App\Models\Driver\Vehicle;
 use App\Models\Driver\DriverDocument;
+use App\Jobs\SendDriverOtpEmailJob;
 use App\Services\Shared\EmailService;
 use App\Services\Shared\OtpService;
 use App\Services\Notification\NotificationService;
@@ -32,6 +33,9 @@ class DriverRegisterService
     /**
      * الخطوة 1: إرسال الـ OTP قبل إنشاء الحساب لحماية قاعدة البيانات من السجلات الوهمية
      */
+    /**
+     * الخطوة 1: إرسال الـ OTP قبل إنشاء الحساب لحماية قاعدة البيانات من السجلات الوهمية
+     */
     public function sendVerificationOtp(array $data): bool
     {
         // توليد الرمز وربطه بالبريد الإلكتروني في جدول الـ OTP المؤقت
@@ -41,13 +45,14 @@ class DriverRegisterService
         }
         $otpCode = $otpResult['code'];
 
-        // إرسال البريد
-        $this->emailService->sendOtp(
+        // 🚀 الحل الأسرع: استخدام dispatchSync لتنفيذ الإرسال فوراً وبشكل لحظي بدلاً من الانتظار في الـ Queue
+        SendDriverOtpEmailJob::dispatchSync(
             $data['email'], 
             $data['full_name'], 
             $otpCode, 
             4, // role_id الخاص بالسائق
-            $data['gender']
+            $data['gender'] ?? null,
+            'REGISTER'
         );
 
         return true;
@@ -118,86 +123,90 @@ class DriverRegisterService
      */
     public function completeProfile(int $userId, array $data): Driver
     {
-        return DB::transaction(function () use ($userId, $data) {
-            try {
-                $user = User::findOrFail($userId);
-                $driver = $user->driver;
+        $user = User::with('driver')->findOrFail($userId);
+        $driver = $user->driver;
 
-                if (!$driver) {
-                    throw new Exception("لم يتم العثور على ملف السائق.");
-                }
+        if (!$driver) {
+            throw new Exception("لم يتم العثور على ملف السائق.");
+        }
 
-                // 1. تحديث بيانات السائق
-                $driver->update([
-                    'national_id'    => $data['national_id'],
-                    'license_number' => $data['license_number'],
-                    'license_expiry' => $data['license_expiry'],
-                    'status'         => 'Pending',
-                ]);
+        // المعاملة محصورة في تحديث الجداول فقط لتستغرق بضع ميلي ثوانٍ
+        DB::transaction(function () use ($driver, $data) {
+            // 1. تحديث بيانات السائق
+            $driver->update([
+                'national_id'    => $data['national_id'],
+                'license_number' => $data['license_number'],
+                'license_expiry' => $data['license_expiry'],
+                'status'         => 'Pending',
+            ]);
 
-                // 2. إنشاء المركبة
-                $vehicle = Vehicle::create([
-                    'driver_id'         => $driver->id,
-                    'plate_number'      => $data['plate_number'],
-                    'brand'             => $data['brand'],
-                    'model'             => $data['model'],
-                    'year'              => $data['year'],
-                    'color'             => $data['color'],
-                    'type'              => $data['type'],
-                    'capacity_manual'   => $data['capacity_manual'],
-                    'vehicle_image_url' => $data['vehicle_image_path'],
-                    'has_ac'            => $data['has_ac'],
-                    'status'            => 'Pending',
-                    'is_verified'       => 0
-                ]);
+            // 2. إنشاء المركبة
+            $vehicle = Vehicle::create([
+                'driver_id'         => $driver->id,
+                'plate_number'      => $data['plate_number'],
+                'brand'             => $data['brand'],
+                'model'             => $data['model'],
+                'year'              => $data['year'],
+                'color'             => $data['color'],
+                'type'              => $data['type'],
+                'capacity_manual'   => $data['capacity_manual'],
+                'vehicle_image_url' => $data['vehicle_image_path'],
+                'has_ac'            => $data['has_ac'],
+                'status'            => 'Pending',
+                'is_verified'       => 0
+            ]);
 
-                // 3. إدخال المستندات
-                $documents = [
-                    'LICENSE'         => ['file_url' => $data['doc_license_path']],
-                    'VEHICLE_LOGBOOK' => ['file_url' => $data['doc_logbook_path']],
-                    'INSURANCE'       => [
-                        'file_url'               => $data['doc_insurance_path'],
-                        'insurance_expiry_date'   => $data['insurance_expiry'],
-                    ],
-                ];
+            // 3. إدخال المستندات
+            $documents = [
+                'LICENSE'         => ['file_url' => $data['doc_license_path']],
+                'VEHICLE_LOGBOOK' => ['file_url' => $data['doc_logbook_path']],
+                'INSURANCE'       => [
+                    'file_url'               => $data['doc_insurance_path'],
+                    'insurance_expiry_date'   => $data['insurance_expiry'],
+                ],
+                'BOOKLET_PERSONAL_PAGE' => ['file_url' => $data['doc_booklet_page_path']],
+                'STAMP'                 => [
+                    'file_url'         => $data['doc_stamp_path'],
+                    'stamp_expiry_date' => $data['stamp_expiry'],
+                ],
+                'TECHNICAL_INSPECTION' => [
+                    'file_url'                          => $data['doc_technical_inspection_path'],
+                    'technical_inspection_expiry_date'  => $data['technical_inspection_expiry'],
+                ],
+            ];
 
-                foreach ($documents as $type => $fields) {
-                    DriverDocument::create(array_merge([
-                        'driver_id'   => $driver->id,
-                        'vehicle_id'  => $vehicle->id,
-                        'doc_type'    => $type,
-                        'status'      => 'Pending',
-                        'uploaded_at' => now(),
-                    ], $fields));
-                }
-
-                try {
-                    $admins = \App\Models\User::whereIn('role_id', [1, 2])->get();
-                    // withPush: false — إشعارات الأدمن عبر DB + polling فقط، بلا Firebase Push.
-                    $this->notificationService->sendToUsers($admins, 'new_driver_registered', [
-                        'title'       => 'تسجيل سائق جديد 🚐',
-                        'message'     => "قام السائق ({$user->full_name}) بإكمال بياناته وبانتظار المراجعة.",
-                        'driver_name' => $user->full_name,
-                        'entity_id'   => (string) $driver->id,
-                    ], withPush: false);
-                } catch (\Throwable $e) {
-                    Log::warning("فشل إرسال إشعار الأدمن عن تسجيل السائق الجديد #{$driver->id}: " . $e->getMessage());
-                }
-
-                // الكود الجديد البديل لمنع استعلام الحذف الناعم المنهار
-return $driver->load([
-    'user',
-    'vehicles' => function($query) {
-        $query->withoutGlobalScopes(); // 🚀 تخطي أي شروط حذف ناعم مبرمجة تلقائياً
-    },
-    'documents'
-]);
-
-            } catch (Exception $e) {
-                Log::error("Error completing driver profile: " . $e->getMessage());
-                throw $e;
+            foreach ($documents as $type => $fields) {
+                DriverDocument::create(array_merge([
+                    'driver_id'   => $driver->id,
+                    'vehicle_id'  => $vehicle->id,
+                    'doc_type'    => $type,
+                    'status'      => 'Pending',
+                    'uploaded_at' => now(),
+                ], $fields));
             }
         });
+
+        // إرسال إشعار الإدارة خارج المعاملة لحماية قاعدة البيانات من أي بطء في الإشعارات
+        try {
+            $admins = \App\Models\User::whereIn('role_id', [1, 2])->get();
+            // withPush: false — إشعارات الأدمن عبر DB + polling فقط، بلا Firebase Push.
+            $this->notificationService->sendToUsers($admins, 'new_driver_registered', [
+                'title'       => 'تسجيل سائق جديد 🚐',
+                'message'     => "قام السائق ({$user->full_name}) بإكمال بياناته وبانتظار المراجعة.",
+                'driver_name' => $user->full_name,
+                'entity_id'   => (string) $driver->id,
+            ], withPush: false);
+        } catch (\Throwable $e) {
+            Log::warning("فشل إرسال إشعار الأدمن عن تسجيل السائق الجديد #{$driver->id}: " . $e->getMessage());
+        }
+
+        return $driver->load([
+            'user',
+            'vehicles' => function($query) {
+                $query->withoutGlobalScopes(); // 🚀 تخطي أي شروط حذف ناعم مبرمجة تلقائياً
+            },
+            'documents'
+        ]);
     }
 
     /**

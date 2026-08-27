@@ -30,7 +30,7 @@ class DriverProfileResource extends JsonResource
             'email'             => $user->email ?? '',
             'phone_number'      => $user->phone_number ?? '',
             'alternative_phone' => $user->alternative_phone,
-            'avatar_url'        => $user->avatar_url ? url($user->avatar_url) : null,
+            'avatar_url'        => \App\Http\Controllers\Api\Shared\MediaController::urlFor($user->avatar_url ?? null),
             'gender'            => $this->gender,
             'account_status'    => $this->status, // Pending, Active, Incomplete, Rejected
             'is_active'         => $user->is_active ?? 0,
@@ -42,7 +42,7 @@ class DriverProfileResource extends JsonResource
                 'license_expiry' => $this->license_expiry,
             ],
 
-            // جلب المركبات المرتبطة بالسائق (محملة عبر الريسورس المخصص لها إن وجد أو كمصفوفة مباشرة)
+            // جلب المركبات المرتبطة بالسائق
             'vehicles' => $this->vehicles->map(function ($vehicle) {
                 return [
                     'id'                => $vehicle->id,
@@ -53,7 +53,7 @@ class DriverProfileResource extends JsonResource
                     'color'             => $vehicle->color,
                     'type'              => $vehicle->type,
                     'capacity_manual'   => $vehicle->capacity_manual,
-                    'vehicle_image_url' => $vehicle->vehicle_image_url ? url($vehicle->vehicle_image_url) : null,
+                    'vehicle_image_url' => \App\Http\Controllers\Api\Shared\MediaController::urlFor($vehicle->vehicle_image_url),
                     'has_ac'            => (bool) $vehicle->has_ac,
                     'status'            => $vehicle->status, // Pending, Active, Rejected
                     'is_verified'       => (bool) $vehicle->is_verified,
@@ -62,13 +62,15 @@ class DriverProfileResource extends JsonResource
 
             'documents' => $this->whenLoaded('documents', function () {
                 return $this->documents->map(fn ($doc) => [
-                    'id'                    => $doc->id,
-                    'doc_type'              => $doc->doc_type,
-                    'file_url'              => $doc->file_url ? url($doc->file_url) : null,
-                    'insurance_expiry_date' => $doc->insurance_expiry_date,
-                    'status'                => $doc->status,
-                    'feedback'              => $doc->feedback,
-                    'uploaded_at'           => $doc->uploaded_at,
+                    'id'                               => $doc->id,
+                    'doc_type'                         => $doc->doc_type,
+                    'file_url'                         => \App\Http\Controllers\Api\Shared\MediaController::urlFor($doc->file_url),
+                    'insurance_expiry_date'            => $doc->insurance_expiry_date,
+                    'stamp_expiry_date'                => $doc->stamp_expiry_date,
+                    'technical_inspection_expiry_date' => $doc->technical_inspection_expiry_date,
+                    'status'                           => $doc->status,
+                    'feedback'                         => $doc->feedback,
+                    'uploaded_at'                      => $doc->uploaded_at,
                 ]);
             }),
 

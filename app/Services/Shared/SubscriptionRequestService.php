@@ -5,146 +5,122 @@ namespace App\Services\Shared;
 use App\Models\Shared\SubscriptionRequest;
 use App\Models\Parent\ParentModel;
 use App\Models\Driver\Driver;
-use App\Models\Shared\Contract;
 use App\Models\Shared\ActiveSubscription;
-use App\Services\Shared\ContractService;
 use App\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Models\User;
+use Illuminate\Database\QueryException;
+
+use Throwable;
+
+use Carbon\Carbon;
 use Exception;
 
 class SubscriptionRequestService
 {
-    protected ContractService $contractService;
     protected \App\Services\Trip\MasterRouteStopSyncService $masterRouteStopSyncService;
     protected NotificationService $notificationService;
 
     public function __construct(
-        ContractService $contractService,
         \App\Services\Trip\MasterRouteStopSyncService $masterRouteStopSyncService,
         NotificationService $notificationService
     ) {
-        $this->contractService = $contractService;
         $this->masterRouteStopSyncService = $masterRouteStopSyncService;
         $this->notificationService = $notificationService;
     }
+    public function createRequest(array $data, $user): SubscriptionRequest
+{
+    return DB::transaction(function () use ($data, $user) {
+        $parentId = null;
 
-    /**
-     * حساب عدد أيام العمل بين تاريخ البدء والانتهاء باستثناء الجمعة والسبت
-     */
-    private function calculateWorkingDays(?string $startDate, ?string $endDate): int
-    {
-        if (empty($startDate) || empty($endDate)) {
-            return 0;
-        }
-
-        try {
-            $start = \Carbon\Carbon::parse($startDate)->startOfDay();
-            $end = \Carbon\Carbon::parse($endDate)->startOfDay();
-
-            if ($start->greaterThan($end)) {
-                return 0;
+        if (is_object($user)) {
+            if (method_exists($user, 'parent') && $user->parent) {
+                $parentId = $user->parent->id;
+            } elseif (isset($user->user_id)) { 
+                $parentId = $user->id;
+            } else {
+                $parentId = DB::table('parents')->where('user_id', $user->id)->value('id');
             }
-
-            $period = \Carbon\CarbonPeriod::create($start, $end);
-            $workingDaysCount = 0;
-
-            foreach ($period as $date) {
-                // استثناء يوم الجمعة (5) والسبت (6)
-                if (!in_array($date->dayOfWeek, [\Carbon\Carbon::FRIDAY, \Carbon\Carbon::SATURDAY])) {
-                    $workingDaysCount++;
-                }
-            }
-
-            return $workingDaysCount;
-        } catch (\Exception $e) {
-            return 0;
-        }
-    }
-
-    // ============================================================
-    // إنشاء طلب اشتراك
-    // ============================================================
-
-    public function createRequest(array $data, $userId)
-    {
-        $driverId = $data['driver_id'] ?? null;
-
-        $parent = ParentModel::where('user_id', $userId)->with('user')->first();
-        if (!$parent) {
-            throw new Exception('هذا الحساب غير مسجل كولي أمر في النظام.');
+        } elseif (is_numeric($user)) {
+            $parentId = DB::table('parents')
+                ->where('id', $user)
+                ->orWhere('user_id', $user)
+                ->value('id');
         }
 
-        $driver = Driver::with(['user', 'seatSlots'])->find($driverId);
-        if (!$driver) {
-            throw new Exception("السائق المحدد غير موجود في النظام.");
+        if (!$parentId) {
+            throw new \InvalidArgumentException("حساب ولي الأمر (Parent Profile) غير مكتمل أو غير موجود لهذا المستخدم.");
         }
 
-        // ✅ الفلتر 1: التحقق من تطابق الفترة/الاتجاه مع تفضيلات السائق
-        $this->validateDriverShiftCompatibility($driver, $data['timing'] ?? 'MORNING', $data['direction'] ?? 'both');
+        $totalAmount = collect($data['children'])->sum('price_per_child');
 
-        // ✅ الفلتر 2: التحقق من توفر المقاعد لكل فترة/اتجاه مطلوبة
-        $this->validateSeatAvailability($driver, $data['timing'] ?? 'MORNING', $data['direction'] ?? 'both', count($data['children'] ?? []));
+        $subscriptionRequest = SubscriptionRequest::create([
+            'parent_id'   => $parentId,
+            'driver_id'   => $data['driver_id'],
+            'status'      => defined(SubscriptionRequest::class . '::STATUS_PENDING') ? SubscriptionRequest::STATUS_PENDING : 'pending',
+            'total_price' => $data['total_price'] ?? $totalAmount,
+            'notes'       => $data['notes'] ?? null,
+        ]);
 
-        return DB::transaction(function () use ($data, $parent, $driver) {
-            $startDate = $data['start_date'] ?? null;
-            $endDate = $data['end_date'] ?? null;
-
-            // 1. حساب عدد أيام العمل وتعريف المتغير هنا لتجنب الخطأ
-            $daysCount = $this->calculateWorkingDays($startDate, $endDate);
-
-            $totalPrice = collect($data['children'])->sum(fn($c) => $c['price_per_child'] ?? 0);
-
-            $subscriptionRequest = SubscriptionRequest::create([
-                'parent_id'         => $parent->id,
-                'driver_id'         => $driver->id,
-                'school_id'         => $data['school_id'] ?? null,
-                'subscription_type' => $data['subscription_type'] ?? 'multi_day',
-                'direction'         => $data['direction'],
-                'timing'            => $data['timing'],
-                'start_date'        => $startDate,
-                'end_date'          => $endDate,
-                'days_count'        => $daysCount, // 2. استخدامه هنا بشكل صحيح
-                'total_price'       => $totalPrice,
-                'pickup_time'       => $data['pickup_time'] ?? null,
-                'dropoff_time'      => $data['dropoff_time'] ?? null,
-                'max_waiting_time'  => $data['max_waiting_time'] ?? 15,
-                'status'            => SubscriptionRequest::STATUS_PENDING,
-                'notes'             => $data['notes'] ?? null,
-                'children_count'          => count($data['children']),
-                'children_acceptance_mode' => $data['children_acceptance_mode'] ?? 'all',
-            ]);
-
-            foreach ($data['children'] as $childData) {
-                DB::table('request_children')->insert([
-                    'request_id'         => $subscriptionRequest->id,
-                    'child_id'           => $childData['child_id'],
-                    'pickup_address_id'  => $childData['pickup_address_id'] ?? null,
-                    'home_lat'           => $childData['home_lat'] ?? null,
-                    'home_lng'           => $childData['home_lng'] ?? null,
-                    'home_label'         => $childData['home_label'] ?? null,
-                    'dropoff_address_id' => $childData['dropoff_address_id'] ?? null,
-                    'school_lat'         => $childData['school_lat'] ?? null,
-                    'school_lng'         => $childData['school_lng'] ?? null,
-                    'school_label'       => $childData['school_label'] ?? null,
-                    'price_per_child'    => $childData['price_per_child'] ?? 0,
-                    'child_notes'        => $childData['child_notes'] ?? null,
-                ]);
-            }
-
-            // إرسال الإشعار للسائق
-            $this->notifyUser(
-                $driver->user,
-                'طلب اشتراك جديد',
-                "لديك طلب اشتراك جديد من {$parent->user->full_name}.",
-                'new_subscription_request',
-                (string) $subscriptionRequest->id,
-                ['parent_id' => (string) $parent->id]
+        $childrenPivotData = [];
+        foreach ($data['children'] as $child) {
+            $workingDays = $this->calculateWorkingDays(
+                $child['start_date'], 
+                $child['end_date'] ?? $child['start_date']
             );
 
-            return $subscriptionRequest->load(['children', 'driver.user', 'parent.user', 'school']);
-        });
+            // تجميع البيانات المتطابقة تماماً مع أعمدة جدول request_children
+            $childrenPivotData[$child['child_id']] = [
+                'subscription_type'  => $child['subscription_type'],
+                'trip_direction'     => $child['trip_direction'] ?? $child['direction'] ?? 'both',
+                'timing'             => $child['timing'] ?? 'BOTH',
+                'start_date'         => $child['start_date'],
+                'end_date'           => $child['end_date'] ?? $child['start_date'],
+                'working_days_count' => $workingDays,
+                'distance_km'        => $child['distance_km'] ?? 0,
+                'trip_price'         => $child['trip_price'] ?? 0, // ✅ سعر الرحلة الواحدة
+                'price_per_child'    => $child['price_per_child'] ?? 0, // السعر الإجمالي للطفل
+                'created_at'         => now(),
+                'updated_at'         => now(),
+            ];
+        }
+
+        $subscriptionRequest->children()->attach($childrenPivotData);
+
+        return $subscriptionRequest->load(['children.address', 'children.school', 'parent', 'driver']);
+    });
+}
+
+    /**
+     * حساب عدد أيام العمل الفعلية (استثناء الجمعة والسبت)
+     */
+    public function calculateWorkingDays(string $startDateStr, string $endDateStr): int
+    {
+        $start = Carbon::parse($startDateStr)->startOfDay();
+        $end   = Carbon::parse($endDateStr)->startOfDay();
+
+        if ($start->gt($end)) {
+            return 0;
+        }
+
+        $workingDays = 0;
+        $current = $start->copy();
+
+        while ($current->lte($end)) {
+            if (!$current->isFriday() && !$current->isSaturday()) {
+                $workingDays++;
+            }
+            $current->addDay();
+        }
+
+        return $workingDays;
     }
+
+    
+    
+
+
 
     // ============================================================
     // تحقق الفلتر 1: تطابق الفترة/الاتجاه مع تفضيلات السائق
@@ -232,20 +208,20 @@ class SubscriptionRequestService
     {
         $overlapping = ActiveSubscription::where('driver_id', $driverId)
             ->where('status', 'active')
-            ->whereHas('contract', function ($q) use ($startDate, $endDate) {
+            ->whereHas('subscriptionRequest', function ($q) use ($startDate, $endDate) {
                 $q->where('start_date', '<=', $endDate)
                   ->where('end_date', '>=', $startDate);
             })
-            ->with('contract:id,timing,direction,start_date,end_date')
-            ->get(['id', 'contract_id'])
+            ->with('subscriptionRequest:id,timing,direction,start_date,end_date')
+            ->get(['id', 'subscription_request_id'])
             ->filter(function ($sub) use ($slot) {
-                $contract = $sub->contract;
-                if (!$contract) {
+                $subReq = $sub->subscriptionRequest;
+                if (!$subReq) {
                     return false;
                 }
                 $subSlots = \App\Models\Driver\DriverSeatSlot::resolveSlots(
-                    $contract->timing    ?? 'MORNING',
-                    $contract->direction ?? 'both'
+                    $subReq->timing    ?? 'MORNING',
+                    $subReq->direction ?? 'both'
                 );
                 return in_array($slot, $subSlots);
             });
@@ -263,9 +239,9 @@ class SubscriptionRequestService
             if (!in_array($cur->dayOfWeek, [\Carbon\Carbon::FRIDAY, \Carbon\Carbon::SATURDAY])) {
                 $dayStr   = $cur->toDateString();
                 $dayCount = $overlapping->filter(function ($sub) use ($dayStr) {
-                    $contract = $sub->contract;
-                    $sStart   = $contract?->start_date;
-                    $sEnd     = $contract?->end_date;
+                    $subReq   = $sub->subscriptionRequest;
+                    $sStart   = $subReq?->start_date;
+                    $sEnd     = $subReq?->end_date;
                     if (!$sStart || !$sEnd) {
                         return false;
                     }
@@ -348,8 +324,11 @@ class SubscriptionRequestService
             $endDate
         );
 
-        // 2. تحديث حالة الطلب الحالي إلى مقبول
-        $req->update(['status' => SubscriptionRequest::STATUS_ACCEPTED]);
+        // 2. تحديث حالة الطلب الحالي إلى مقبول مع توثيق وقت الاستجابة
+        $req->update([
+            'status'       => SubscriptionRequest::STATUS_ACCEPTED,
+            'responded_at' => now(),
+        ]);
 
         // 3. إلغاء الطلبات الأخرى المعلقة لنفس العميل ونفس التوقيت
         SubscriptionRequest::where('parent_id', $req->parent_id)
@@ -358,14 +337,11 @@ class SubscriptionRequestService
             ->where('id', '!=', $req->id)
             ->update(['status' => SubscriptionRequest::STATUS_CANCELLED]);
 
-        // 4. توليد العقد
-        $contract = $this->contractService->generateContract($req);
-
-        // 5. تحديد الـ slot الأساسي (الفترة/الاتجاه) بناءً على تفضيلات السائق الثابتة
+        // 4. تحديد الـ slot الأساسي (الفترة/الاتجاه) بناءً على تفضيلات السائق الثابتة
         $slots = \App\Models\Driver\DriverSeatSlot::resolveSlots($req->timing ?? 'MORNING', $req->direction ?? 'both');
         $primarySlot = $slots[0] ?? null;
 
-        // 6. البحث عن مسار رئيسي (Master Route) نشط بالفعل لنفس السائق لنفس الفترة/الاتجاه
+        // 5. البحث عن مسار رئيسي (Master Route) نشط بالفعل لنفس السائق لنفس الفترة/الاتجاه
         //    حتى لا يُنشأ مسار جديد مع كل طلب اشتراك مقبول، بل يُضاف الطفل إلى المسار الثابت الموجود.
         $route = $primarySlot
             ? \App\Models\Shared\Route::where('driver_id', $req->driver_id)
@@ -410,47 +386,47 @@ class SubscriptionRequestService
             $routeType = ($timingUpper === 'EVENING' || $timingUpper === 'AFTERNOON') ? 'Afternoon' : 'Morning';
 
             $route = \App\Models\Shared\Route::create([
-                'contract_id'        => $contract->id,
-                'driver_id'          => $req->driver_id,
-                'vehicle_id'         => $vehicle->id,
-                'route_name'         => \App\Models\Shared\Route::generateGenericRouteName($req->timing, $req->direction),
-                'route_type'         => $routeType,
-                'shift_slot'         => $primarySlot,
-                'start_time'         => $req->pickup_time ?? '07:00:00',
-                'optimized_points'   => $routeData ? json_encode($routeData) : null,
-                'total_distance'     => $distanceKm,
-                'estimated_duration' => $durationMinutes,
-                'status'             => 'Active'
+                'subscription_request_id' => $req->id,
+                'driver_id'               => $req->driver_id,
+                'vehicle_id'              => $vehicle->id,
+                'route_name'              => \App\Models\Shared\Route::generateGenericRouteName($req->timing, $req->direction),
+                'route_type'              => $routeType,
+                'shift_slot'              => $primarySlot,
+                'start_time'              => $req->pickup_time ?? '07:00:00',
+                'optimized_points'        => $routeData ? json_encode($routeData) : null,
+                'total_distance'          => $distanceKm,
+                'estimated_duration'      => $durationMinutes,
+                'status'                  => 'Active'
             ]);
         }
 
-        // 7. تفعيل اشتراكات الأطفال لجدول active_subscriptions وتفريغ المقاعد
-        $this->createActiveSubscriptions($req, $contract, $route);
+        // 6. تفعيل اشتراكات الأطفال لجدول active_subscriptions وتفريغ المقاعد
+        $this->createActiveSubscriptions($req, $route);
 
-        // 7.5 مزامنة المسار الرئيسي (Master Route) لكل فترة/اتجاه مطلوبة (route_stops)
+        // 6.5 مزامنة المسار الرئيسي (Master Route) لكل فترة/اتجاه مطلوبة (route_stops)
         try {
-            $this->masterRouteStopSyncService->syncOnAcceptance($req, $contract, $route, $slots);
+            $this->masterRouteStopSyncService->syncOnAcceptance($req, $route, $slots);
         } catch (\Throwable $e) {
             Log::warning("فشل مزامنة المسار الرئيسي (route_stops) للطلب ID: {$req->id} - " . $e->getMessage());
         }
 
-        // 8. إرسال إشعار القبول مع حمايته من إلغاء الـ Transaction
+        // 7. إرسال إشعار القبول مع حمايته من إلغاء الـ Transaction
         try {
             if ($parent && $parent->user) {
                 $this->notifyUser(
                     $parent->user,
                     'تم قبول طلب الاشتراك',
-                    "تم قبول طلبك مع السائق " . ($req->driver->user->full_name ?? 'السائق') . ". رقم العقد: {$contract->contract_number}",
+                    "تم قبول طلبك مع السائق " . ($req->driver->user->full_name ?? 'السائق') . ". رقم الطلب: #{$req->id}",
                     'request_accepted',
                     (string) $req->id,
-                    ['contract_id' => (string) $contract->id]
+                    ['request_id' => (string) $req->id]
                 );
             }
         } catch (\Throwable $e) {
             Log::warning("فشل إرسال إشعار FCM عند قبول الطلب ID {$req->id}: " . $e->getMessage());
         }
 
-        return $req->refresh()->load(['children', 'driver.user', 'parent.user', 'contract']);
+        return $req->refresh()->load(['children', 'driver.user', 'parent.user']);
     }
 
     // ============================================================
@@ -485,11 +461,11 @@ class SubscriptionRequestService
     // 4. إنشاء سجلات الاشتراكات النشطة (مطابق لجدول active_subscriptions)
     // ============================================================
 
-    private function createActiveSubscriptions(SubscriptionRequest $req, Contract $contract, ?\App\Models\Shared\Route $route = null): void
+    private function createActiveSubscriptions(SubscriptionRequest $req, ?\App\Models\Shared\Route $route = null): void
     {
         $pickupTime  = $req->pickup_time  ?? '07:00:00';
         $dropoffTime = $req->dropoff_time ?? '14:00:00';
-        $parentUserId = $req->parent?->user_id ?? $contract->parent_id ?? $req->parent_id;
+        $parentUserId = $req->parent?->user_id ?? $req->parent_id;
 
         // الـ slots المطلوبة — نحتاجها لتحديث عداد المقاعد المحجوزة
         $slots = \App\Models\Driver\DriverSeatSlot::resolveSlots($req->timing ?? 'MORNING', $req->direction ?? 'both');
@@ -504,20 +480,20 @@ class SubscriptionRequestService
             $dropoffLbl = $child->pivot->school_label ?? $req->school->name      ?? $req->dropoff_label     ?? 'المدرسة';
 
             ActiveSubscription::create([
-                'contract_id'   => $contract->id,
-                'route_id'      => $route?->id,
-                'status'        => 'active',
-                'child_id'      => $child->id,
-                'driver_id'     => $req->driver_id,
-                'parent_id'     => $parentUserId,
-                'pickup_lat'    => $pickupLat,
-                'pickup_lng'    => $pickupLng,
-                'pickup_label'  => $pickupLbl,
-                'pickup_time'   => $pickupTime,
-                'dropoff_lat'   => $dropoffLat,
-                'dropoff_lng'   => $dropoffLng,
-                'dropoff_label' => $dropoffLbl,
-                'dropoff_time'  => $dropoffTime,
+                'subscription_request_id' => $req->id,
+                'route_id'                => $route?->id,
+                'status'                  => 'active',
+                'child_id'                => $child->id,
+                'driver_id'               => $req->driver_id,
+                'parent_id'               => $parentUserId,
+                'pickup_lat'              => $pickupLat,
+                'pickup_lng'              => $pickupLng,
+                'pickup_label'            => $pickupLbl,
+                'pickup_time'             => $pickupTime,
+                'dropoff_lat'             => $dropoffLat,
+                'dropoff_lng'             => $dropoffLng,
+                'dropoff_label'           => $dropoffLbl,
+                'dropoff_time'            => $dropoffTime,
             ]);
 
             // زيادة عداد المقاعد المحجوزة لكل slot (مقابل decrement في releaseSeatsForSubscription)
@@ -561,7 +537,7 @@ class SubscriptionRequestService
                 }
             }
 
-            return $activeSub->load(['contract', 'child', 'driver.user']);
+            return $activeSub->load(['subscriptionRequest', 'child', 'driver.user']);
         });
     }
 
@@ -619,7 +595,7 @@ class SubscriptionRequestService
                 );
             }
 
-            return $activeSub->fresh(['contract', 'child', 'driver.user']);
+            return $activeSub->fresh(['subscriptionRequest', 'child', 'driver.user']);
         });
     }
 
@@ -675,7 +651,7 @@ class SubscriptionRequestService
                 );
             }
 
-            return $activeSub->fresh(['contract', 'child', 'driver.user']);
+            return $activeSub->fresh(['subscriptionRequest', 'child', 'driver.user']);
         });
     }
 
@@ -685,15 +661,15 @@ class SubscriptionRequestService
 
     private function releaseSeatsForSubscription(ActiveSubscription $activeSub): void
     {
-        $activeSub->loadMissing('contract');
-        $contract = $activeSub->contract;
-        if (!$contract) {
+        $activeSub->loadMissing('subscriptionRequest');
+        $subReq = $activeSub->subscriptionRequest;
+        if (!$subReq) {
             return;
         }
 
         $slots = \App\Models\Driver\DriverSeatSlot::resolveSlots(
-            $contract->timing    ?? 'MORNING',
-            $contract->direction ?? 'both'
+            $subReq->timing    ?? 'MORNING',
+            $subReq->direction ?? 'both'
         );
 
         foreach ($slots as $slot) {
@@ -822,10 +798,10 @@ class SubscriptionRequestService
         $activeSub = ActiveSubscription::where('id', $activeSubscriptionId)
             ->where('driver_id', $driverId)
             ->with([
-                'contract',
+                'subscriptionRequest',
                 'child.school',
                 'child.address',
-                'parent', // تم تعديلها لتتوافق مع نموذج الأب مباشرة
+                'parent',
                 'school'
             ])
             ->first();
@@ -852,7 +828,6 @@ class SubscriptionRequestService
                 'driver.user',
                 'school:id,name',
                 'children.school',
-                'contract'
             ]);
 
         switch ($filter) {
@@ -927,7 +902,7 @@ class SubscriptionRequestService
 
         // 2. بناء الاستعلام مع العلاقات الأساسية
         $query = ActiveSubscription::with([
-            'contract', 
+            'subscriptionRequest', 
             'child', 
             'driver.user', 
             'driver.vehicles',
@@ -956,7 +931,7 @@ class SubscriptionRequestService
     {
         $driver = Driver::where('user_id', $userId)->first();
         if (!$driver) {
-            throw new Exception('لم يتم العثور على ملف السائق الخاص بك.', 403);
+            throw new Exception( ' من  الاساسيه السيرفرلم يتم العثور على ملف السائق الخاص بك .', 403);
         }
 
         $query = SubscriptionRequest::where('driver_id', $driver->id)
@@ -996,45 +971,46 @@ class SubscriptionRequestService
           ->exists();
     }
 
-    public function getDriverActiveSubscriptions(int $userId, ?string $filter = null)
-    {
-        $driver = Driver::where('user_id', $userId)->first();
-        if (!$driver) {
-            throw new Exception('لم يتم العثور على ملف السائق الخاص بك.');
+
+public function getDriverActiveSubscriptions(int $userId, ?string $filter = null)
+{
+    try {
+        // 1. التحقق هل المستخدم موجود أصلاً في جدول المستخدمين
+        $userExists = User::where('id', $userId)->exists();
+        if (!$userExists) {
+            throw new Exception("السبب: المستخدم رقم ({$userId}) غير موجود تماماً في جدول المستخدمين (users).");
         }
 
-        $query = ActiveSubscription::where('driver_id', $driver->id)
-            ->with([
-                'contract.subscriptionRequest',
-                'child.school',
-                'parent',
-                'driver.user',
-                'driver.vehicles',
-            ]);
+        // 2. التحقق هل توجد له بيانات في جدول السائقين
+        $driver = Driver::where('user_id', $userId)->first();
+        if (!$driver) {
+            throw new Exception("السبب: المستخدم ({$userId}) موجود، ولكن ليس لديه سجل مرادف في جدول السائقين (drivers).");
+        }
 
-        $today = now()->toDateString();
+        // ✅ تصحيح العلاقات بحسب هيكلة الجداول لديك
+$query = ActiveSubscription::where('driver_id', $driver->id)
+->with([
+    'subscriptionRequest',
+    'child.school',
+    'parent',           // جلب ولي الأمر مباشرة
+    'driver.vehicles',  // جلب المركبات المرتبطة بالسائق
+]);
 
-        // تطبيق فلاتر الحالات مباشرة
-        switch ($filter) {
-            case 'active':
-                $query->where('status', 'active');
-                break;
-
-            case 'pending':
-                $query->where('status', 'pending');
-                break;
-
-            case 'completed':
-                $query->where('status', 'completed');
-                break;
-
-            case 'cancelled':
-                $query->where('status', 'cancelled');
-                break;
+        if (!empty($filter)) {
+            $query->where('status', strtolower($filter));
         }
 
         return $query->orderBy('id', 'desc')->get();
+
+    } catch (QueryException $e) {
+        // في حال وجود خطأ في SQL أو أسماء الأعمدة/الجداول في قاعدة البيانات
+        throw new Exception("خطأ قاعدة البيانات (DB Error): " . $e->getMessage());
+
+    } catch (Throwable $e) {
+        // لشفافية الخطأ ومعرفة السبب والنص الأصلي بدقة
+        throw new Exception("خطأ أثناء التنفيذ: " . $e->getMessage());
     }
+}
 
     public function getSubscriptionDetails($id)
     {
@@ -1043,7 +1019,6 @@ class SubscriptionRequestService
             'driver.user',
             'children.school',
             'children.address',
-            'contract',
         ])->findOrFail($id);
     }
     /**

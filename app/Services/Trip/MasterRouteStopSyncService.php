@@ -25,13 +25,13 @@ class MasterRouteStopSyncService
      * يضبط shift_slot على المسار الأساسي، ويزامن محطاته، وينشئ/يزامن مسار الـ slot الثاني
      * (فقط عندما تكون direction=both، مثال: morning_go + morning_return).
      */
-    public function syncOnAcceptance(SubscriptionRequest $req, Contract $contract, Route $primaryRoute, array $slots): void
+    public function syncOnAcceptance(SubscriptionRequest $req, Route $primaryRoute, array $slots): void
     {
         if (empty($slots)) {
             return;
         }
 
-        $activeSubs = ActiveSubscription::where('contract_id', $contract->id)
+        $activeSubs = ActiveSubscription::where('subscription_request_id', $req->id)
             ->with('child')
             ->get();
 
@@ -55,14 +55,14 @@ class MasterRouteStopSyncService
 
             if (!$secondaryRoute) {
                 $secondaryRoute = Route::create([
-                    'driver_id'          => $primaryRoute->driver_id,
-                    'vehicle_id'         => $primaryRoute->vehicle_id,
-                    'contract_id'        => $contract->id,
-                    'route_name'         => 'مسار رئيسي - ' . (DriverSeatSlot::slotLabels()[$slot] ?? $slot),
-                    'route_type'         => str_starts_with($slot, 'morning') ? 'Morning' : 'Afternoon',
-                    'shift_slot'         => $slot,
-                    'start_time'         => $primaryRoute->start_time ?? '07:00:00',
-                    'status'             => 'Active',
+                    'driver_id'               => $primaryRoute->driver_id,
+                    'vehicle_id'              => $primaryRoute->vehicle_id,
+                    'subscription_request_id' => $req->id,
+                    'route_name'              => 'مسار رئيسي - ' . (DriverSeatSlot::slotLabels()[$slot] ?? $slot),
+                    'route_type'              => str_starts_with($slot, 'morning') ? 'Morning' : 'Afternoon',
+                    'shift_slot'              => $slot,
+                    'start_time'              => $primaryRoute->start_time ?? '07:00:00',
+                    'status'                  => 'Active',
                 ]);
             }
 
@@ -131,6 +131,44 @@ class MasterRouteStopSyncService
                 $this->resequenceRoute($route->fresh());
             }
         }
+    }
+
+    /**
+     * يُحدّث إحداثيات/تسمية محطة منزل طفل معيّن في كل المسارات الرئيسية النشطة لنفس السائق
+     * (تُستخدم عند موافقة السائق على طلب تغيير موقع الاستلام من ولي الأمر)، ثم يعيد ترتيب
+     * كل مسار متأثر. أيضاً يُحدّث محطات الرحلات (trip_stops) المُجدولة مستقبلاً والتي لم
+     * تبدأ بعد (status = pending) حتى تنعكس عليها نقطة الاستلام الجديدة فوراً.
+     */
+    public function updateChildHomeStop(int $childId, int $driverId, float $lat, float $lng, ?string $label): void
+    {
+        $routeIds = RouteStop::where('stop_type', RouteStop::TYPE_HOME)
+            ->where('child_id', $childId)
+            ->whereHas('route', function ($q) use ($driverId) {
+                $q->where('driver_id', $driverId)->where('status', 'Active');
+            })
+            ->pluck('route_id')
+            ->unique();
+
+        foreach ($routeIds as $routeId) {
+            RouteStop::where('route_id', $routeId)
+                ->where('stop_type', RouteStop::TYPE_HOME)
+                ->where('child_id', $childId)
+                ->update(['lat' => $lat, 'lng' => $lng, 'label' => $label]);
+
+            $route = Route::find($routeId);
+            if ($route) {
+                $this->resequenceRoute($route);
+            }
+        }
+
+        \App\Models\Shared\TripStop::whereHas('trip', function ($q) use ($driverId) {
+                $q->where('driver_id', $driverId)
+                  ->where('trip_date', '>=', now()->toDateString());
+            })
+            ->where('stop_type', RouteStop::TYPE_HOME)
+            ->where('child_id', $childId)
+            ->where('status', \App\Models\Shared\TripStop::STATUS_PENDING)
+            ->update(['lat' => $lat, 'lng' => $lng, 'label' => $label]);
     }
 
     private function addChildStopsToRoute(Route $route, \Illuminate\Support\Collection $activeSubs): void

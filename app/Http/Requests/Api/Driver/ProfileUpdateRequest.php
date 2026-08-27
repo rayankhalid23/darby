@@ -11,8 +11,59 @@ class ProfileUpdateRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        if (!auth()->check()) return false;
-        return auth()->user()->is_active !== 0; 
+        return auth()->check() && (int) (auth()->user()->role_id ?? 0) === 4;
+    }
+
+    public function validationData(): array
+    {
+        $data = parent::validationData();
+
+        if ($this->hasFile('avatar_url') && empty($data['avatar'])) {
+            $data['avatar'] = $this->file('avatar_url');
+        }
+        if ($this->hasFile('photo') && empty($data['avatar'])) {
+            $data['avatar'] = $this->file('photo');
+        }
+
+        if (!empty($data['phone_number']) && is_string($data['phone_number'])) {
+            $data['phone_number'] = $this->sanitizeDigits($data['phone_number']);
+        }
+        if (!empty($data['alternative_phone']) && is_string($data['alternative_phone'])) {
+            $data['alternative_phone'] = $this->sanitizeDigits($data['alternative_phone']);
+        }
+
+        return $data;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        if ($this->hasFile('avatar_url') && !$this->hasFile('avatar')) {
+            $this->files->set('avatar', $this->file('avatar_url'));
+        }
+        if ($this->hasFile('photo') && !$this->hasFile('avatar')) {
+            $this->files->set('avatar', $this->file('photo'));
+        }
+
+        $merge = [];
+        if ($this->filled('phone_number')) {
+            $merge['phone_number'] = $this->sanitizeDigits((string) $this->input('phone_number'));
+        }
+        if ($this->filled('alternative_phone')) {
+            $merge['alternative_phone'] = $this->sanitizeDigits((string) $this->input('alternative_phone'));
+        }
+
+        if (!empty($merge)) {
+            $this->merge($merge);
+        }
+    }
+
+    private function sanitizeDigits(string $value): string
+    {
+        $arabicDigits = ['٠','١','٢','٣','٤','٥','٦','٧','٨','٩'];
+        $englishDigits = ['0','1','2','3','4','5','6','7','8','9'];
+        $value = str_replace($arabicDigits, $englishDigits, trim($value));
+
+        return preg_replace('/[^0-9]/', '', $value) ?? $value;
     }
 
     public function rules(): array
@@ -46,7 +97,7 @@ class ProfileUpdateRequest extends FormRequest
                 'nullable', 'string', 'min:6', 'regex:/^(?=.*[a-zA-Z])(?=.*\d).+$/'
             ],
             'gender' => ['sometimes', 'in:male,female'],
-            'avatar' => ['nullable', 'image', 'mimes:jpeg,png,jpg', 'max:2048']
+            'avatar' => ['sometimes', 'nullable', 'file', 'mimes:jpeg,png,jpg,webp,heic,heif', 'max:10240']
         ];
     }
 

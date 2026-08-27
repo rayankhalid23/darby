@@ -187,10 +187,10 @@ class ParentChildController extends Controller
 
             $subscription = ActiveSubscription::where('child_id', $childId)
                 ->where('status', 'active')
-                ->with('contract')
+                ->with('subscriptionRequest')
                 ->first();
 
-            if (!$subscription || !$subscription->contract) {
+            if (!$subscription || !$subscription->subscriptionRequest) {
                 return response()->json([
                     'status'  => 'success',
                     'data'    => ['child_id' => (int) $childId, 'available_dates' => []],
@@ -198,9 +198,9 @@ class ParentChildController extends Controller
                 ]);
             }
 
-            $contract  = $subscription->contract;
-            $startDate = Carbon::parse($contract->start_date);
-            $endDate   = Carbon::parse($contract->end_date ?? now()->addMonths(3));
+            $subReq    = $subscription->subscriptionRequest;
+            $startDate = Carbon::parse($subReq->start_date);
+            $endDate   = Carbon::parse($subReq->end_date ?? now()->addMonths(3));
             $today     = Carbon::today();
             $fromDate  = $startDate->lt($today) ? $today->copy() : $startDate->copy();
             $limit     = $endDate->lt(Carbon::today()->addDays(60)) ? $endDate : Carbon::today()->addDays(60);

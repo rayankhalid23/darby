@@ -9,7 +9,7 @@ use Carbon\Carbon;
 class OtpService
 {
     /**
-     * توليد كود تحقق جديد مع حماية ضد الطلبات المتكررة
+     * توليد كود تحقق جديد
      */
     public function generate(string $email, string $purpose): array
     {
@@ -19,12 +19,15 @@ class OtpService
             ->latest()
             ->first();
 
-            if ($lastOtp && Carbon::parse($lastOtp->created_at)->gt(Carbon::now()->subSeconds(60))) {
-                $secondsLeft = 60 - Carbon::now()->diffInSeconds(Carbon::parse($lastOtp->created_at));
-            return [
-                'success' => false,
-                'message' => "يرجى الانتظار {$secondsLeft} ثانية قبل طلب رمز جديد."
-            ];
+        if ($lastOtp) {
+            $secondsPassed = Carbon::parse($lastOtp->created_at)->diffInSeconds(now());
+            if ($secondsPassed < 60) {
+                $secondsLeft = 60 - $secondsPassed;
+                return [
+                    'success' => false,
+                    'message' => "انتظر {$secondsLeft} ثانية قبل طلب رمز جديد."
+                ];
+            }
         }
 
         $code = strval(random_int(100000, 999999));
@@ -40,7 +43,7 @@ class OtpService
             'email'      => $email,
             'purpose'    => $purpose,
             'code_hash'  => Hash::make($code),
-            'expires_at' => Carbon::now()->addMinutes(5),
+            'expires_at' => now()->addMinutes(5),
             'is_used'    => 0,
             'attempts'   => 0
         ]);
@@ -52,50 +55,65 @@ class OtpService
     }
 
     /**
-     * التحقق من كود الـ OTP الممرر بدقة وعناية
+     * التحقق من كود الـ OTP
      */
     public function verify(string $email, string $code, string $purpose): array
     {
-        $otp = OtpCode::where('email', $email)
+        // 1. جلب الرمز النشط حالياً
+        $activeOtp = OtpCode::where('email', $email)
             ->where('purpose', $purpose)
             ->where('is_used', 0)
             ->latest()
             ->first();
 
-        if (!$otp) {
-            return ['success' => false, 'message' => 'انتهت صلاحية الرمز يرجى إعادة طلب رمز التحقق.'];
-        }
-        
-        // 1. التحقق من تجاوز المحاولات الفاشلة
-        if ($otp->attempts >= 3) {
-            $otp->update(['is_used' => 1]);
-            return ['success' => false, 'message' => 'تم تجاوز عدد المحاولات المسموح بها لحماية حسابك.'];
+        if (!$activeOtp) {
+            return ['success' => false, 'message' => 'لا يوجد رمز نشط، يرجى طلب رمز جديد.'];
         }
 
-        // 2. التحقق من صلاحية الوقت
-        if (Carbon::parse($otp->expires_at)->isPast()) {
-            $otp->update(['is_used' => 1]);
-            return ['success' => false, 'message' => 'الكود منتهي الصلاحية، يرجى طلب كود جديد.'];
+        // 2. التحقق من انتهاء الصلاحية (5 دقائق)
+        if (Carbon::parse($activeOtp->expires_at)->isPast()) {
+            $activeOtp->update(['is_used' => 1]);
+            return ['success' => false, 'message' => 'الرمز منتهي الصلاحية، يرجى طلب رمز جديد.'];
         }
 
-        // 3. مطابقة الكود
-        if (Hash::check($code, $otp->code_hash)) {
-            $otp->update(['is_used' => 1]);
+        // 3. التحقق من تجاوز المحاولات الفاشلة
+        if ($activeOtp->attempts >= 3) {
+            $activeOtp->update(['is_used' => 1]);
+            return ['success' => false, 'message' => 'تم تجاوز عدد المحاولات المسموح بها.'];
+        }
+
+        // 4. مطابقة الكود مع الرمز النشط
+        if (Hash::check($code, $activeOtp->code_hash)) {
+            $activeOtp->update(['is_used' => 1]);
             return ['success' => true, 'message' => 'تم التحقق بنجاح.'];
         }
 
-        // 4. زيادة المحاولات وحظر الكود فوراً إذا وصل للحد الأقصى
-        $otp->increment('attempts');
-        $remainingAttempts = 3 - $otp->attempts;
+        // 5. فحص ما إذا كان المستخدم قد أدخل الرمز القديم الملغى
+        $oldOtp = OtpCode::where('email', $email)
+            ->where('purpose', $purpose)
+            ->where('is_used', 1)
+            ->latest()
+            ->first();
+
+        if ($oldOtp && Hash::check($code, $oldOtp->code_hash)) {
+            return [
+                'success' => false,
+                'message' => 'تم إلغاء صلاحية هذا الرمز لطلب رمز جديد، استخدم الرمز الأخير.'
+            ];
+        }
+
+        // 6. إذا كان الكود خطأ تماماً: زيادة المحاولات على الرمز النشط
+        $activeOtp->increment('attempts');
+        $remainingAttempts = 3 - $activeOtp->attempts;
 
         if ($remainingAttempts <= 0) {
-            $otp->update(['is_used' => 1]);
-            return ['success' => false, 'message' => 'تم تجاوز عدد المحاولات المسموح بها لحماية حسابك.'];
+            $activeOtp->update(['is_used' => 1]);
+            return ['success' => false, 'message' => 'تم تجاوز عدد المحاولات المسموح بها.'];
         }
 
         return [
             'success' => false, 
-            'message' => 'رمز التحقق غير صحيح. متبقي لديك ' . $remainingAttempts . ' محاولات.'
+            'message' => "رمز غير صحيح. متبقي لديك {$remainingAttempts} محاولات."
         ];
     }
 }

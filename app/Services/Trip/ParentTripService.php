@@ -203,7 +203,7 @@ class ParentTripService
             $q->whereIn('parent_id', $parentIds);
         })
         ->where('status', 'active')
-        ->with(['child', 'driver.user', 'school', 'contract'])
+        ->with(['child', 'driver.user', 'school', 'subscriptionRequest'])
         ->get();
 
         $upcoming = [];

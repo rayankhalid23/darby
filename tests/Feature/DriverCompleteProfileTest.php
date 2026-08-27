@@ -49,6 +49,8 @@ class DriverCompleteProfileTest extends TestCase
             'license_number'    => 'LIC' . rand(100000, 999999),
             'license_expiry'    => now()->addYears(2)->format('Y-m-d'),
             'insurance_expiry'  => now()->addYear()->format('Y-m-d'),
+            'stamp_expiry'                => now()->addYear()->format('Y-m-d'),
+            'technical_inspection_expiry' => now()->addYear()->format('Y-m-d'),
             'plate_number'      => 'ABC-' . rand(1000, 9999),
             'brand'             => 'Toyota',
             'model'             => 'Hiace',
@@ -61,6 +63,9 @@ class DriverCompleteProfileTest extends TestCase
             'doc_license'       => UploadedFile::fake()->image('license.jpg'),
             'doc_logbook'       => UploadedFile::fake()->image('logbook.jpg'),
             'doc_insurance'     => UploadedFile::fake()->image('insurance.jpg'),
+            'doc_booklet_page'         => UploadedFile::fake()->image('booklet-page.jpg'),
+            'doc_stamp'                => UploadedFile::fake()->image('stamp.jpg'),
+            'doc_technical_inspection' => UploadedFile::fake()->image('technical-inspection.jpg'),
         ];
     }
 

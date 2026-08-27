@@ -8,6 +8,7 @@ use App\Http\Requests\Api\Driver\UpdateLegalDocumentsRequest;
 use App\Services\Driver\DriverProfileService;
 use App\Http\Resources\Api\Driver\DriverResource;
 use App\Http\Resources\Api\Driver\DriverProfileResource;
+use App\Http\Controllers\Api\Shared\MediaController;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -250,9 +251,12 @@ class ProfileController extends Controller
             $data = $request->validated();
 
             $docFileMap = [
-                'doc_license'   => 'doc_license_path',
-                'doc_logbook'   => 'doc_logbook_path',
-                'doc_insurance' => 'doc_insurance_path',
+                'doc_license'              => 'doc_license_path',
+                'doc_logbook'              => 'doc_logbook_path',
+                'doc_insurance'            => 'doc_insurance_path',
+                'doc_booklet_page'         => 'doc_booklet_page_path',
+                'doc_stamp'                => 'doc_stamp_path',
+                'doc_technical_inspection' => 'doc_technical_inspection_path',
             ];
 
             foreach ($docFileMap as $fileField => $pathKey) {
@@ -286,30 +290,41 @@ class ProfileController extends Controller
     /**
      * 6. تحديث بيانات وتفاصيل المركبة وتجميدها لحين مراجعة الأدمن
      */
-    public function updateVehicle(Request $request, $vehicleId): JsonResponse
+    public function updateVehicle(Request $request, $vehicleId = null): JsonResponse
     {
         $uploadedPaths = [];
         try {
+            if ($request->hasFile('vehicle_photo') && !$request->hasFile('vehicle_image')) {
+                $request->files->set('vehicle_image', $request->file('vehicle_photo'));
+            }
+            if ($request->filled('vehicle_type') && !$request->filled('type')) {
+                $request->merge(['type' => $request->input('vehicle_type')]);
+            }
+
             $validatedData = $request->validate([
-                'has_ac'          => 'nullable|boolean',
-                'plate_number'    => 'nullable|string',
-                'brand'           => 'nullable|string',
-                'model'           => 'nullable|string',
-                'year'            => 'nullable|integer',
-                'color'           => 'nullable|string',
-                'type'            => 'nullable|string',
-                'capacity_manual' => 'nullable|integer',
-                'vehicle_image'   => 'nullable|image|mimes:jpeg,png,jpg|max:4096',
+                'has_ac'          => 'sometimes|nullable|boolean',
+                'plate_number'    => 'sometimes|nullable|string|max:20',
+                'brand'           => 'sometimes|nullable|string|max:50',
+                'model'           => 'sometimes|nullable|string|max:50',
+                'year'            => 'sometimes|nullable|integer|min:2000|max:' . (date('Y') + 1),
+                'color'           => 'sometimes|nullable|string|max:30',
+                'type'            => 'sometimes|nullable|string|max:30',
+                'capacity_manual' => 'sometimes|nullable|integer|min:1|max:60',
+                'vehicle_image'   => 'sometimes|nullable|file|mimes:jpeg,png,jpg,webp,heic,heif|max:10240',
             ]);
 
-            if ($request->hasFile('vehicle_image')) {
-                $path = $request->file('vehicle_image')->store('drivers/vehicles', 'public');
+            $vehicleFile = $request->file('vehicle_image') ?? $request->file('vehicle_photo');
+            if ($vehicleFile) {
+                $path = $vehicleFile->store('drivers/vehicles', 'public');
                 $validatedData['vehicle_image_path'] = 'storage/' . $path;
                 $uploadedPaths[] = $path;
             }
 
             $user = auth()->user();
-            $vehicle = $this->profileService->updateVehicleDetails($user->id, (int)$vehicleId, $validatedData);
+            $targetVehicleId = $vehicleId ? (int)$vehicleId : ($user->driver?->vehicles()->first()?->id ?? 0);
+            $vehicle = $this->profileService->updateVehicleDetails($user->id, $targetVehicleId, $validatedData);
+
+            $vehicleImageUrl = MediaController::urlFor($vehicle->vehicle_image_url);
 
             return response()->json([
                 'status'  => true,
@@ -323,7 +338,7 @@ class ProfileController extends Controller
                     'color'             => $vehicle->color,
                     'type'              => $vehicle->type,
                     'capacity_manual'   => $vehicle->capacity_manual,
-                    'vehicle_image_url' => $vehicle->vehicle_image_url ? url($vehicle->vehicle_image_url) : null,
+                    'vehicle_image_url' => $vehicleImageUrl,
                     'has_ac'            => (bool) $vehicle->has_ac,
                     'status'            => $vehicle->status,
                     'is_verified'       => (bool) $vehicle->is_verified,
@@ -358,6 +373,34 @@ public function showLegalData(Request $request)
         ], 404);
     }
 
+    $documents = $user->driver->documents ?? collect();
+
+    // بناء روابط ومصفوفات مخصصة وسهلة للواجهة الأمامية
+    $documentsMap = [];
+    $uploadedFiles = $documents->map(function ($document) use (&$documentsMap) {
+        $fileUrl = MediaController::urlFor($document->file_url);
+
+        if ($document->doc_type && $fileUrl) {
+            $documentsMap[$document->doc_type] = $fileUrl;
+        }
+
+        return [
+            'id'                               => $document->id,
+            'vehicle_id'                       => $document->vehicle_id,
+            'doc_type'                         => $document->doc_type,
+            'file_url'                         => $fileUrl,
+            'license_expiry_date'              => $document->license_expiry_date,
+            'insurance_expiry_date'            => $document->insurance_expiry_date,
+            'stamp_expiry_date'                => $document->stamp_expiry_date,
+            'technical_inspection_expiry_date' => $document->technical_inspection_expiry_date,
+            'document_status'                  => $document->status,
+            'feedback'                         => $document->feedback,
+            'uploaded_at'                      => $document->uploaded_at 
+                ? \Carbon\Carbon::parse($document->uploaded_at)->toDateTimeString() 
+                : null,
+        ];
+    });
+
     return response()->json([
         'status'  => true,
         'message' => 'تم استرجاع الوثائق الرسمية بنجاح.',
@@ -368,23 +411,16 @@ public function showLegalData(Request $request)
             'license_expiry' => $user->driver->license_expiry,
             'driver_status'  => $user->driver->status, // حالة السائق العامة
 
-            'uploaded_files' => $user->driver->documents->map(function ($document) {
-                return [
-                    'id'                    => $document->id,
-                    'vehicle_id'            => $document->vehicle_id,
-                    'doc_type'              => $document->doc_type,
-                    'file_url'              => $document->file_url ? url($document->file_url) : null,
-                    'license_expiry_date'   => $document->license_expiry_date,
-                    'insurance_expiry_date' => $document->insurance_expiry_date,
-                    'document_status'       => $document->status,
-                    'feedback'              => $document->feedback,
-                    
-                    // التعديل هنا: نستخدم Carbon::parse لمعالجة النص القادم من قاعدة البيانات بأمان
-                    'uploaded_at'           => $document->uploaded_at 
-                        ? \Carbon\Carbon::parse($document->uploaded_at)->toDateTimeString() 
-                        : null,
-                ];
-            })
+            // 2. قائمة الوثائق الكاملة
+            'uploaded_files' => $uploadedFiles,
+
+            // 3. خريطة مباشرة للوصول للوثائق حسب نوعها لدعم تطبيقات الموبايل
+            'documents_map'  => $documentsMap,
+
+            // 4. اختصارات مباشرة للروابط الأكثر استخداماً في الفرونت
+            'doc_license_url'   => $documentsMap['LICENSE'] ?? null,
+            'doc_logbook_url'   => $documentsMap['VEHICLE_LOGBOOK'] ?? null,
+            'doc_insurance_url' => $documentsMap['INSURANCE'] ?? null,
         ]
     ], 200);
 }
@@ -423,7 +459,7 @@ public function showVehicle(Request $request)
             'capacity_manual'   => $vehicle->capacity_manual,
             'capacity_ai'       => $vehicle->capacity_ai,
             'is_verified'       => (bool) $vehicle->is_verified,
-            'vehicle_image_url' => $vehicle->vehicle_image_url ? url($vehicle->vehicle_image_url) : null,
+            'vehicle_image_url' => MediaController::urlFor($vehicle->vehicle_image_url),
             'has_ac'            => (bool) $vehicle->has_ac,
             'status'            => $vehicle->status,
         ]

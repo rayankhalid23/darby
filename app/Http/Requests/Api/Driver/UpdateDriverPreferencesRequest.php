@@ -24,25 +24,29 @@ class UpdateDriverPreferencesRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'morning_go'        => ['required', 'boolean'],
-            'morning_return'    => ['required', 'boolean'],
-            'afternoon_go'      => ['required', 'boolean'],
-            'afternoon_return'  => ['required', 'boolean'],
-            'subscription_type' => ['required', 'string', Rule::in(SubscriptionDuration::driverValues())],
-            'school_stages'     => ['required', 'array', 'min:1'],
+            'morning_go'        => ['sometimes', 'boolean'],
+            'morning_return'    => ['sometimes', 'boolean'],
+            'afternoon_go'      => ['sometimes', 'boolean'],
+            'afternoon_return'  => ['sometimes', 'boolean'],
+            'subscription_type' => ['sometimes', 'string', Rule::in(SubscriptionDuration::driverValues())],
+            'school_stages'     => ['sometimes', 'array', 'min:1'],
             'school_stages.*'   => ['required', 'string', Rule::in(array_column(SchoolStage::cases(), 'value'))],
-            'zones'             => ['required', 'array', 'min:1'],
+            'zones'             => ['sometimes', 'array', 'min:1'],
             'zones.*'           => ['required', 'integer', 'exists:zones,id'],
         ];
     }
 
     /**
-     * تحقق إضافي: يجب اختيار فترة عمل واحدة على الأقل
+     * تحقق إضافي: في حال أرسل المستخدم جميع الفترات كـ false يرفض الطلب
      */
     public function withValidator($validator): void
     {
         $validator->after(function ($v) {
-            if (
+            $shiftKeys = ['morning_go', 'morning_return', 'afternoon_go', 'afternoon_return'];
+            $sentShiftKeys = array_intersect($shiftKeys, array_keys($this->all()));
+
+            // فقط إذا أرسل المستخدم جميع الفترات الأربعة كـ false
+            if (count($sentShiftKeys) === 4 &&
                 !$this->boolean('morning_go') &&
                 !$this->boolean('morning_return') &&
                 !$this->boolean('afternoon_go') &&

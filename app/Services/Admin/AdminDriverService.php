@@ -4,6 +4,8 @@ namespace App\Services\Admin;
 
 use App\Models\Driver\Driver;
 use App\Models\Driver\DriverApproval;
+use App\Models\Driver\DriverDocument;
+use App\Models\Driver\Vehicle;
 
 use App\Services\Notification\NotificationService;
 
@@ -71,6 +73,10 @@ class AdminDriverService
     /**
      * 2. جلب التفاصيل العميقة لسائق معين لمراجعته من قبل الإدارة
      */
+   
+    
+
+
    /**
      * جلب تفاصيل سائق محدد بالكامل دون أي حجب صامت أو قيود معالجة الوثائق
      */
@@ -134,6 +140,26 @@ class AdminDriverService
                 $driver->user->update([
                     'is_active' => true
                 ]);
+
+                // تفعيل وتأكيد المركبة التابعة للسائق تلقائياً
+                Vehicle::where('driver_id', $driver->id)->update([
+                    'status'      => 'Active',
+                    'is_verified' => true,
+                ]);
+
+                // اعتماد جميع وثائق السائق المرفوعة
+                DriverDocument::where('driver_id', $driver->id)
+                    ->whereIn('status', ['Pending', 'Expired'])
+                    ->update(['status' => 'Verified']);
+            } elseif ($status === 'Rejected') {
+                Vehicle::where('driver_id', $driver->id)->update([
+                    'status'      => 'Out',
+                    'is_verified' => false,
+                ]);
+
+                DriverDocument::where('driver_id', $driver->id)
+                    ->where('status', 'Pending')
+                    ->update(['status' => 'Rejected']);
             }
 
             DriverApproval::create([
@@ -233,10 +259,131 @@ class AdminDriverService
                 $driver->update($driverUpdates);
             }
 
-            $driver->refresh()->load('user');
+            // ── ب) تحديث بيانات المركبة (اختياري — فقط إذا أرسل الأدمن أي حقل من حقولها) ──
+            $vehicleFields = ['plate_number', 'brand', 'model', 'year', 'color', 'type', 'capacity_manual', 'has_ac', 'vehicle_image_path'];
+            $vehicleOldSnapshot = [];
+            $vehicleNewSnapshot = [];
+
+            if (collect($vehicleFields)->contains(fn ($f) => array_key_exists($f, $data))) {
+                $vehicle = null;
+                if (!empty($data['vehicle_id'])) {
+                    $vehicle = Vehicle::where('id', $data['vehicle_id'])->where('driver_id', $driver->id)->first();
+                }
+                if (!$vehicle) {
+                    $vehicle = Vehicle::where('driver_id', $driver->id)->where('is_verified', true)->first()
+                        ?? Vehicle::where('driver_id', $driver->id)->latest('id')->first();
+                }
+                if (!$vehicle) {
+                    throw new Exception('لا توجد مركبة مسجلة لهذا السائق لتحديثها.');
+                }
+
+                $vehicleOldSnapshot = [
+                    'vehicle_plate_number'    => $vehicle->plate_number,
+                    'vehicle_brand'           => $vehicle->brand,
+                    'vehicle_model'           => $vehicle->model,
+                    'vehicle_year'            => $vehicle->year,
+                    'vehicle_color'           => $vehicle->color,
+                    'vehicle_type'            => $vehicle->type,
+                    'vehicle_capacity_manual' => $vehicle->capacity_manual,
+                    'vehicle_has_ac'          => (bool) $vehicle->has_ac,
+                ];
+
+                $vehicleUpdates = [];
+                foreach (['plate_number', 'brand', 'model', 'year', 'color', 'type', 'capacity_manual'] as $field) {
+                    if (array_key_exists($field, $data)) {
+                        $vehicleUpdates[$field] = $data[$field];
+                    }
+                }
+                if (array_key_exists('has_ac', $data)) {
+                    $vehicleUpdates['has_ac'] = (bool) $data['has_ac'];
+                }
+                if (!empty($data['vehicle_image_path'])) {
+                    $vehicleUpdates['vehicle_image_url'] = $data['vehicle_image_path'];
+                }
+
+                $vehicle->update($vehicleUpdates);
+                $vehicle->refresh();
+
+                $vehicleNewSnapshot = [
+                    'vehicle_plate_number'    => $vehicle->plate_number,
+                    'vehicle_brand'           => $vehicle->brand,
+                    'vehicle_model'           => $vehicle->model,
+                    'vehicle_year'            => $vehicle->year,
+                    'vehicle_color'           => $vehicle->color,
+                    'vehicle_type'            => $vehicle->type,
+                    'vehicle_capacity_manual' => $vehicle->capacity_manual,
+                    'vehicle_has_ac'          => (bool) $vehicle->has_ac,
+                ];
+            }
+
+            // ── ج) تحديث الوثائق الرسمية (اختياري — رفع ملفات جديدة و/أو تعديل تواريخ الانتهاء) ──
+            $docFileMap = [
+                'doc_license_path'              => 'LICENSE',
+                'doc_logbook_path'               => 'VEHICLE_LOGBOOK',
+                'doc_insurance_path'             => 'INSURANCE',
+                'doc_booklet_page_path'          => 'BOOKLET_PERSONAL_PAGE',
+                'doc_stamp_path'                 => 'STAMP',
+                'doc_technical_inspection_path'  => 'TECHNICAL_INSPECTION',
+            ];
+
+            // كل نوع وثيقة له تاريخ انتهاء خاص بها (اسم الحقل في $data => اسم عمود driver_documents)
+            $expiryFieldMap = [
+                'INSURANCE'             => ['input' => 'insurance_expiry',             'column' => 'insurance_expiry_date'],
+                'STAMP'                 => ['input' => 'stamp_expiry',                 'column' => 'stamp_expiry_date'],
+                'TECHNICAL_INSPECTION'  => ['input' => 'technical_inspection_expiry',  'column' => 'technical_inspection_expiry_date'],
+            ];
+
+            $expiryOldSnapshot = [];
+            foreach ($expiryFieldMap as $docType => $map) {
+                $expiryOldSnapshot[$map['input']] = DriverDocument::where('driver_id', $driver->id)->where('doc_type', $docType)->value($map['column']);
+            }
+
+            foreach ($docFileMap as $pathKey => $docType) {
+                if (!empty($data[$pathKey])) {
+                    $updateFields = [
+                        'file_url'    => $data[$pathKey],
+                        'status'      => 'Pending',
+                        'uploaded_at' => now(),
+                    ];
+
+                    if (isset($expiryFieldMap[$docType])) {
+                        $updateFields['expiry_notified_milestone'] = null;
+                        $expiryInput = $expiryFieldMap[$docType]['input'];
+                        if (array_key_exists($expiryInput, $data)) {
+                            $updateFields[$expiryFieldMap[$docType]['column']] = $data[$expiryInput];
+                        }
+                    }
+
+                    DriverDocument::updateOrCreate(
+                        ['driver_id' => $driver->id, 'doc_type' => $docType],
+                        $updateFields
+                    );
+                }
+            }
+
+            // السماح بتعديل أي تاريخ انتهاء (تأمين/دمغة/فحص فني) بشكل مستقل دون رفع صورة جديدة
+            foreach ($expiryFieldMap as $docType => $map) {
+                $pathKey = array_search($docType, $docFileMap, true);
+                if (array_key_exists($map['input'], $data) && empty($data[$pathKey])) {
+                    DriverDocument::where('driver_id', $driver->id)
+                        ->where('doc_type', $docType)
+                        ->update([
+                            $map['column']              => $data[$map['input']],
+                            'expiry_notified_milestone' => null,
+                            'status'                    => 'Pending',
+                        ]);
+                }
+            }
+
+            $expiryNewSnapshot = [];
+            foreach ($expiryFieldMap as $docType => $map) {
+                $expiryNewSnapshot[$map['input']] = DriverDocument::where('driver_id', $driver->id)->where('doc_type', $docType)->value($map['column']);
+            }
+
+            $driver->refresh()->load(['user', 'vehicles', 'documents']);
 
             // لقطة القيم الجديدة
-            $newSnapshot = [
+            $newSnapshot = array_merge([
                 'full_name'      => $driver->user->full_name,
                 'phone_number'   => $driver->user->phone_number,
                 'is_active'      => (bool) $driver->user->is_active,
@@ -244,7 +391,9 @@ class AdminDriverService
                 'license_number' => $driver->license_number,
                 'license_expiry' => $driver->license_expiry ? \Carbon\Carbon::parse($driver->license_expiry)->format('Y-m-d') : null,
                 'status'         => $driver->status,
-            ];
+            ], $expiryNewSnapshot, $vehicleNewSnapshot);
+
+            $oldSnapshot = array_merge($oldSnapshot, $expiryOldSnapshot, $vehicleOldSnapshot);
 
             // حساب التغييرات مع التسميات العربية
             $changes = $this->auditLogService->diff($oldSnapshot, $newSnapshot);
@@ -266,97 +415,203 @@ class AdminDriverService
             return $driver;
         });
     }
-
     /*
     |--------------------------------------------------------------------------
-    | 🚀 الدوال المضافة الخاصة بإدارة التعديلات اللاحقة
+    | 🚀 إدارة التعديلات اللاحقة لبيانات السائقين (Admin Driver Service)
     |--------------------------------------------------------------------------
-    |*/
+    */
 
     /**
-     * 4. عرض كافة طلبات التعديلات المعلقة بانتظار موافقة الآدمن
+     * 1. عرض كافة طلبات التعديل المعلقة بانتظار موافقة الأدمن مع الترقيم الصفحات
+     *
+     * @param int $perPage
+     * @return \Illuminate\Contracts\Pagination\LengthAwarePaginator
      */
-    public function getPendingChangesList(): LengthAwarePaginator
+   /**
+     * 1. عرض كافة طلبات التعديل المعلقة بانتظار موافقة الأدمن مع الترقيم الصفحات
+     *
+     * @param int $perPage
+     * @return \Illuminate\Contracts\Pagination\LengthAwarePaginator
+     */
+    public function getPendingChangesList(int $perPage = 15): LengthAwarePaginator
     {
         return DB::table('driver_profile_changes')
             ->join('drivers', 'driver_profile_changes.driver_id', '=', 'drivers.id')
             ->join('users', 'drivers.user_id', '=', 'users.id')
             ->select(
-                'driver_profile_changes.*', 
-                'users.full_name as driver_name', 
+                'driver_profile_changes.id',
+                'driver_profile_changes.driver_id',
+                'driver_profile_changes.status',
+                'driver_profile_changes.old_values', // 👈 إضافة old_values
+                'driver_profile_changes.new_values', // 👈 إضافة new_values
+                'driver_profile_changes.created_at',
+                'users.full_name as driver_name',
                 'users.phone_number as driver_phone'
             )
             ->where('driver_profile_changes.status', 'Pending')
             ->orderBy('driver_profile_changes.created_at', 'asc')
-            ->paginate(15);
+            ->paginate($perPage);
     }
 
     /**
-     * 5. عرض تفصيلي لطلب تعديل محدد
+     * 2. عرض تفصيلي لطلب تعديل محدد للمقارنة الشاملة
      */
-    public function getPendingChangeDetails(int $changeId): object
+     public function getPendingChangeDetails(int $changeId): object
     {
         $change = DB::table('driver_profile_changes')->where('id', $changeId)->first();
-        
+
         if (!$change) {
-            throw new Exception('طلب التعديل هذا غير موجود أو تم معالجته مسبقاً.');
+            throw new \Exception('طلب التعديل هذا غير موجود في النظام.', 404);
         }
 
-        // جلب السائق الحالي للمقارنة
-        $change->driver = Driver::with(['user', 'vehicles'])->find($change->driver_id);
-        $change->new_values_decoded = json_decode($change->new_values, true);
+        // جلب نموذج السائق مع المستخدم والمركبات والوثائق المرتفقة
+        $change->driver = Driver::with(['user', 'vehicles', 'documents'])->find($change->driver_id);
+
+        // 🚀 فك التشفير بأمان وحماية الكائن من أخطاء الخواص المفقودة
+        $oldRaw = property_exists($change, 'old_values') ? $change->old_values : null;
+        $newRaw = property_exists($change, 'new_values') ? $change->new_values : null;
+
+        $change->old_values_decoded = is_string($oldRaw) ? json_decode($oldRaw, true) : ($oldRaw ?? []);
+        $change->new_values_decoded = is_string($newRaw) ? json_decode($newRaw, true) : ($newRaw ?? []);
 
         return $change;
     }
 
     /**
-     * 6. الموافقة أو الرفض على طلب التعديل المعلق مع تطبيق التغييرات وإرسال إشعار داخلي فوراً
+     * 3. اتخاذ القرار (الموافقة أو الرفض) على طلب التعديل المعلق مع تطبيق التغييرات وإرسال الإشعارات والتدقيق
+     *
+     * @param int $changeId
+     * @param string $decision ('Approved' | 'Rejected')
+     * @param string|null $rejectionReason
+     * @param int $adminId
+     * @return bool
+     * @throws \Exception
      */
     public function reviewProfileChangeRequest(int $changeId, string $decision, ?string $rejectionReason, int $adminId): bool
     {
+        if (!in_array($decision, ['Approved', 'Rejected'], true)) {
+            throw new \Exception('القرار المدخل غير صالح. يجب أن يكون Approved أو Rejected.', 422);
+        }
+
+        if ($decision === 'Rejected' && empty(trim((string)$rejectionReason))) {
+            throw new \Exception('يرجى تحديد سبب الرفض لإبلاغ السائق به.', 422);
+        }
+
         return DB::transaction(function () use ($changeId, $decision, $rejectionReason, $adminId) {
-            
-            // جلب سجل التعديل وقفله
-            $change = DB::table('driver_profile_changes')->lockForUpdate()->where('id', $changeId)->first();
-            
-            if (!$change || $change->status !== 'Pending') {
-                throw new Exception('لا يمكن معالجة هذا الطلب، قد يكون مقبولاً أو مرفوضاً مسبقاً.');
+
+            // 1. قفل السجل لضمان منع المعالجة المزدوجة أثناء التزامن (Race Conditions)
+            $change = DB::table('driver_profile_changes')
+                ->where('id', $changeId)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$change) {
+                throw new \Exception('طلب التعديل غير موجود.', 404);
             }
 
-            $driver = Driver::with('user')->findOrFail($change->driver_id);
+            if ($change->status !== 'Pending') {
+                throw new \Exception('تم معالجة هذا الطلب مسبقاً وتتغير حالته إلى: ' . $change->status, 422);
+            }
+
+            $driver = Driver::with('user')->find($change->driver_id);
+
+            if (!$driver || !$driver->user) {
+                throw new \Exception('لم يتم العثور على ملف السائق أو حساب المستخدم الخاص به.', 404);
+            }
+
+            $newValues = is_string($change->new_values) ? json_decode($change->new_values, true) : ($change->new_values ?? []);
+            $oldValues = is_string($change->old_values) ? json_decode($change->old_values, true) : ($change->old_values ?? []);
 
             if ($decision === 'Approved') {
-                $newValues = json_decode($change->new_values, true);
 
-                // أ) فرز وتحديث حقول جدول الـ users إن وجدت
+                // أ) تحديث بيانات حساب المستخدم (User)
                 $userFields = ['full_name', 'phone_number', 'alternative_phone', 'avatar_url'];
                 $userDataToUpdate = array_intersect_key($newValues, array_flip($userFields));
                 if (!empty($userDataToUpdate)) {
                     $driver->user->update($userDataToUpdate);
                 }
 
-                // ب) فرز وتحديث حقول جدول الـ drivers الحساسة
+                // ب) تحديث البيانات الأساسية لملف السائق (Driver)
                 $driverFields = ['national_id', 'license_number', 'license_expiry'];
                 $driverDataToUpdate = array_intersect_key($newValues, array_flip($driverFields));
                 if (!empty($driverDataToUpdate)) {
                     $driver->update($driverDataToUpdate);
                 }
 
-                // ج) فرز وتحديث بيانات المركبة المرتبطة إن وجدت
-                $vehicleFields = ['plate_number', 'brand', 'model', 'year', 'color', 'type', 'capacity_manual', 'vehicle_image_path', 'has_ac'];
+                // ج) تحديث بيانات المركبة المرتبطة (Vehicle)
+                $vehicleFields = ['plate_number', 'brand', 'model', 'year', 'color', 'type', 'capacity_manual', 'has_ac'];
                 $vehicleDataToUpdate = array_intersect_key($newValues, array_flip($vehicleFields));
-                if (!empty($vehicleDataToUpdate)) {
-                    // تحديث السيارة الحالية النشطة للسائق
-                    $driver->vehicles()->where('is_verified', true)->update($vehicleDataToUpdate);
+
+                if (isset($newValues['vehicle_image_path'])) {
+                    $vehicleDataToUpdate['vehicle_image_url'] = $newValues['vehicle_image_path'];
                 }
 
-                // د) تحديث حالة الطلب إلى Approved
+                if (!empty($vehicleDataToUpdate)) {
+                    $vehicleDataToUpdate['status'] = 'Active';
+                    $vehicleDataToUpdate['is_verified'] = true;
+
+                    $vehicleId = $newValues['vehicle_id'] ?? $driver->vehicles()->first()?->id;
+
+                    if ($vehicleId) {
+                        Vehicle::where('id', $vehicleId)->where('driver_id', $driver->id)->update($vehicleDataToUpdate);
+                    }
+                }
+
+                // د) تحديث وحفظ المستندات والوثائق الرسمية
+                $docMap = [
+                    'doc_license_path'              => 'LICENSE',
+                    'doc_logbook_path'               => 'VEHICLE_LOGBOOK',
+                    'doc_insurance_path'             => 'INSURANCE',
+                    'doc_booklet_page_path'          => 'BOOKLET_PERSONAL_PAGE',
+                    'doc_stamp_path'                 => 'STAMP',
+                    'doc_technical_inspection_path'  => 'TECHNICAL_INSPECTION',
+                ];
+
+                foreach ($docMap as $pathKey => $docType) {
+                    if (!empty($newValues[$pathKey])) {
+                        DriverDocument::updateOrCreate(
+                            ['driver_id' => $driver->id, 'doc_type' => $docType],
+                            [
+                                'file_url'    => $newValues[$pathKey],
+                                'status'      => 'Verified',
+                                'uploaded_at' => now(),
+                            ]
+                        );
+                    }
+                }
+
+                // هـ) تحديث تواريخ الانتهاء المخصصة للوثائق
+                $expiryMap = [
+                    'insurance_expiry'            => ['doc' => 'INSURANCE',            'col' => 'insurance_expiry_date'],
+                    'stamp_expiry'                => ['doc' => 'STAMP',                'col' => 'stamp_expiry_date'],
+                    'technical_inspection_expiry' => ['doc' => 'TECHNICAL_INSPECTION', 'col' => 'technical_inspection_expiry_date'],
+                ];
+
+                foreach ($expiryMap as $inputKey => $config) {
+                    if (!empty($newValues[$inputKey])) {
+                        DriverDocument::where('driver_id', $driver->id)
+                            ->where('doc_type', $config['doc'])
+                            ->update([
+                                $config['col'] => $newValues[$inputKey],
+                                'status'       => 'Verified'
+                            ]);
+                    }
+                }
+
+                // و) تحويل كافة وثائق السائق المعلقة (Pending) إلى معتمدة (Verified)
+                DriverDocument::where('driver_id', $driver->id)
+                    ->where('status', 'Pending')
+                    ->update(['status' => 'Verified']);
+
+                // ز) تحديث حالة سجل الطلب إلى مقبوض وموثق
                 DB::table('driver_profile_changes')->where('id', $changeId)->update([
-                    'status'    => 'Approved',
-                    'action_at' => now()
+                    'status'     => 'Approved',
+                    'action_by'  => $adminId,
+                    'action_at'  => now(),
+                    'updated_at' => now(),
                 ]);
 
-                // 🚀 هـ) إرسال إشعار القبول عبر NotificationService (database + push)
+                // ح) إشعار السائق بقبول التعديل
                 try {
                     $this->notificationService->sendToUser($driver->user, 'driver_account_approved', [
                         'title'       => '🎉 تم قبول تحديث بياناتك',
@@ -365,18 +620,21 @@ class AdminDriverService
                         'entity_id'   => (string) $changeId,
                     ]);
                 } catch (\Throwable $e) {
-                    Log::warning("Failed sending approval notification: " . $e->getMessage());
+                    Log::warning("فشل إرسال إشعار موافقة الأدمن للسائق: " . $e->getMessage());
                 }
 
             } else {
-                // أ) في حال الرفض: تحديث حالة الطلب وإثبات سبب الرفض
+
+                // أ) حالة الرفض: تحديث حالة سجل الطلب مع السبب
                 DB::table('driver_profile_changes')->where('id', $changeId)->update([
                     'status'           => 'Rejected',
                     'rejection_reason' => $rejectionReason,
-                    'action_at'        => now()
+                    'action_by'        => $adminId,
+                    'action_at'        => now(),
+                    'updated_at'       => now(),
                 ]);
 
-                // 🚀 ب) إرسال إشعار الرفض عبر NotificationService (database + push)
+                // ب) إشعار السائق برفض التعديل والسبب
                 try {
                     $this->notificationService->sendToUser($driver->user, 'driver_account_rejected', [
                         'title'       => '📋 مراجعة تحديث البيانات',
@@ -385,23 +643,31 @@ class AdminDriverService
                         'entity_id'   => (string) $changeId,
                     ]);
                 } catch (\Throwable $e) {
-                    Log::warning("Failed sending rejection notification: " . $e->getMessage());
+                    Log::warning("فشل إرسال إشعار رفض الأدمن للسائق: " . $e->getMessage());
                 }
             }
 
-            // 📝 تسجيل إجراء مراجعة تعديل بيانات السائق في سجل تدقيق المشرفين
-            $this->auditLogService->record(
-                action: $decision === 'Approved' ? 'approve_driver_change' : 'reject_driver_change',
-                entityType: 'driver_change',
-                entityId: $changeId,
-                entityName: $driver->user->full_name,
-                result: $decision === 'Approved' ? 'approved' : 'rejected',
-                reason: $rejectionReason,
-                changes: $decision === 'Approved' ? $this->auditLogService->diff([], $newValues ?? []) : [],
-                adminId: $adminId
-            );
+            // 📝 تسجيل الإجراء كبديل موثق لتدقيق المشرفين Audit Trail
+            try {
+                if (isset($this->auditLogService)) {
+                    $this->auditLogService->record(
+                        action: $decision === 'Approved' ? 'approve_driver_change' : 'reject_driver_change',
+                        entityType: 'driver_change',
+                        entityId: $changeId,
+                        entityName: $driver->user->full_name,
+                        result: strtolower($decision),
+                        reason: $rejectionReason,
+                        changes: $decision === 'Approved' ? ($this->auditLogService->diff($oldValues, $newValues) ?? []) : [],
+                        adminId: $adminId
+                    );
+                }
+            } catch (\Throwable $e) {
+                Log::warning("فشل تسجيل حركات التدقيق (Audit Log): " . $e->getMessage());
+            }
 
             return true;
         });
     }
+
+    
 }

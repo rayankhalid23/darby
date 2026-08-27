@@ -3,6 +3,9 @@
 namespace App\Http\Requests\Api\Parent;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Validation\Rule;
 
 class UpdateAddressRequest extends FormRequest
 {
@@ -17,45 +20,76 @@ class UpdateAddressRequest extends FormRequest
         $addressId = $this->route('address') ? ($this->route('address') instanceof \App\Models\Parent\Address ? $this->route('address')->id : $this->route('address')) : $this->route('id');
 
         return [
+            // مسمى العنوان (عربي فقط - حرفين على الأقل - يستثنى العنوان الحالي من التكرار)
             'label' => [
                 'sometimes',
                 'required',
                 'string',
+                'min:2',
                 'max:100',
-                // يمنع تكرار الاسم مع عناوين ولي الأمر الأخرى، ويتخطى العنوان الحالي نفسه أثناء التحديث
-                \Illuminate\Validation\Rule::unique('addresses', 'label')
+                'regex:/^[\p{Arabic}\s]+$/u',
+                Rule::unique('addresses', 'label')
                     ->where(function ($query) use ($parentId) {
                         return $query->where('parent_id', $parentId)->whereNull('deleted_at');
                     })->ignore($addressId)
             ],
+
+            // إحداثيات خط العرض
             'lat' => [
                 'sometimes',
                 'required',
                 'numeric',
                 'between:-90,90',
-                // يمنع تكرار نفس الإحداثيات الجغرافية مع العناوين الأخرى لنفس العميل
-                \Illuminate\Validation\Rule::unique('addresses', 'lat')
+                Rule::unique('addresses', 'lat')
                     ->where(function ($query) use ($parentId) {
                         return $query->where('parent_id', $parentId)->where('lng', $this->lng ?? ($this->route('address')->lng ?? null));
                     })->ignore($addressId)
             ],
-            'lng' => 'sometimes|required|numeric|between:-180,180',
+
+            // إحداثيات خط الطول
+            'lng' => [
+                'sometimes',
+                'required',
+                'numeric',
+                'between:-180,180'
+            ],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            // مسمى العنوان
+            'label.required' => 'مسمى العنوان مطلوب.',
+            'label.string'   => 'مسمى العنوان يجب أن يكون نصاً.',
+            'label.min'      => 'مسمى العنوان يجب ألا يقل عن حرفين.',
+            'label.max'      => 'مسمى العنوان يجب ألا يتجاوز 100 حرف.',
+            'label.regex'    => 'مسمى العنوان يجب أن يكون باللغة العربية فقط.',
+            'label.unique'   => 'اسم العنوان مسجل لديك مسبقاً في عنوان آخر.',
+
+            // خط العرض (Lat)
+            'lat.required' => 'إحداثيات خط العرض مطلوبة.',
+            'lat.numeric'  => 'إحداثيات خط العرض يجب أن تكون رقماً.',
+            'lat.between'  => 'إحداثيات خط العرض غير صالحة جغرافياً.',
+            'lat.unique'   => 'هذا الموقع الجغرافي مسجل لديك مسبقاً في عنوان آخر.',
+
+            // خط الطول (Lng)
+            'lng.required' => 'إحداثيات خط الطول مطلوبة.',
+            'lng.numeric'  => 'إحداثيات خط الطول يجب أن تكون رقماً.',
+            'lng.between'  => 'إحداثيات خط الطول غير صالحة جغرافياً.',
         ];
     }
 
     /**
-     * تخصيص رسائل الخطأ بالكامل لتظهر بشكل تجاري واحترافي
+     * توحيد تنسيق أخطاء الـ API
      */
-    public function messages(): array
+    protected function failedValidation(Validator $validator)
     {
-        return [
-            'label.required' => 'يرجى تحديد مسمى للعنوان (مثل: المنزل، بيت الجد).',
-            'label.unique'   => 'تعذر التعديل: لديك عنوان آخر مسجل مسبقاً بنفس هذا الاسم.',
-            'lat.required'   => 'إحداثيات خط العرض مطلوبة لتعيين الموقع.',
-            'lat.unique'     => 'تعذر التعديل: هذا الموقع الجغرافي مضاف لديك بالفعل في عنوان آخر.',
-            'lng.required'   => 'إحداثيات خط الطول مطلوبة لتعيين الموقع.',
-            'lat.between'    => 'إحداثيات خط العرض المرسلة غير صالحة جغرافياً.',
-            'lng.between'    => 'إحداثيات خط الطول المرسلة غير صالحة جغرافياً.',
-        ];
+        throw new HttpResponseException(response()->json([
+            'status'     => false,
+            'error_code' => 'VALIDATION_ERROR',
+            'message'    => '',
+            'errors'     => $validator->errors()
+        ], 422));
     }
 }

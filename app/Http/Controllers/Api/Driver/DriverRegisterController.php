@@ -66,17 +66,18 @@ class DriverRegisterController extends Controller
             }
 
             // 2. إذا كان الرمز صحيحاً، نقوم بإنشاء الحساب وتفعيله مباشرة
-            // ملاحظة تهمك كمطور: يجب على تطبيق الموبايل إرسال بيانات التسجيل كاملة مع الـ OTP لتتم العملية في خطوة واحدة
             $user = $this->registerService->registerAccountAfterOtp($request->all());
+            $driver = $user->driver;
             
             // 3. إنشاء توكن الدخول المباشر للحساب الجديد المفعّل
             $token = $user->createToken('driver_token')->plainTextToken;
 
             return response()->json([
-                'status'  => true,
-                'message' => 'تم تفعيل الحساب وإنشاؤه بنجاح.',
-                'user_id' => $user->id,
-                'token'   => $token
+                'status'    => true,
+                'message'   => 'تم تفعيل الحساب وإنشاؤه بنجاح.',
+                'user_id'   => $user->id,
+                'driver_id' => $driver?->id,
+                'token'     => $token
             ], 201);
 
         } catch (Exception $e) {
@@ -110,9 +111,12 @@ class DriverRegisterController extends Controller
 
             // رفع صور المستندات
             $docFiles = [
-                'doc_license_path'   => $request->file('doc_license') ?? $request->file('license_photo'),
-                'doc_logbook_path'   => $request->file('doc_logbook') ?? $request->file('logbook_photo'),
-                'doc_insurance_path' => $request->file('doc_insurance') ?? $request->file('insurance_photo'),
+                'doc_license_path'              => $request->file('doc_license') ?? $request->file('license_photo'),
+                'doc_logbook_path'               => $request->file('doc_logbook') ?? $request->file('logbook_photo'),
+                'doc_insurance_path'             => $request->file('doc_insurance') ?? $request->file('insurance_photo'),
+                'doc_booklet_page_path'          => $request->file('doc_booklet_page'),
+                'doc_stamp_path'                 => $request->file('doc_stamp'),
+                'doc_technical_inspection_path'  => $request->file('doc_technical_inspection'),
             ];
 
             foreach ($docFiles as $pathKey => $file) {

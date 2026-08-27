@@ -4,10 +4,12 @@ namespace App\Http\Controllers\API\Parent;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\DB;
-use App\Http\Resources\Api\Parent\SubscriptionRequestDetailsResource;
 use App\Http\Requests\Api\Shared\StoreSubscriptionRequest;
 use App\Services\Shared\SubscriptionRequestService;
+use App\Http\Resources\Api\Parent\SubscriptionRequestDetailsResource;
 use App\Http\Resources\Api\Shared\SubscriptionRequestResource;
+use App\Models\Shared\SubscriptionRequest;
+use App\Models\Shared\ActiveSubscription;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -49,110 +51,88 @@ class ParentSubscriptionController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'عذراً، حدث خطأ أثناء معالجة الطلب، يرجى المحاولة لاحقاً.',
+                'message' => $e->getMessage() ?: 'عذراً، حدث خطأ أثناء معالجة الطلب، يرجى المحاولة لاحقاً.',
             ], 500);
         }
     }
-
-    public function index(Request $request): JsonResponse
+    public function index(Request $request)
     {
-        try {
-            $request->validate([
-                'status' => 'nullable|string|in:pending,cancelled,rejected,accepted'
+        $user = $request->user();
+        
+        // جلب الـ parent_id الخاص بولي الأمر المرتبط بهذا المستخدم إن وجد
+        $parentId = DB::table('parents')->where('user_id', $user->id)->value('id') ?? $user->id;
+
+        $requests = SubscriptionRequest::query()
+            ->with([
+                'driver.user',
+                'children.school',
+                'children.address' // ✅ التصحيح هنا بناءً على علاقات الموديل الفعلية
+            ])
+            ->where('parent_id', $parentId) // ✅ استعلام مباشر وأسرع بدون تعقيد
+            ->when($request->filled('status'), function ($q) use ($request) {
+                $q->where('status', $request->status);
+            })
+            ->latest()
+            ->paginate($request->get('per_page', 15));
+
+        return SubscriptionRequestDetailsResource::collection($requests)
+            ->additional([
+                'status'  => true,
+                'message' => 'تم جلب طلبات الاشتراك بنجاح',
             ]);
-
-            $userId = $request->user()->id;
-            $status = $request->query('status'); 
-
-            $subscriptions = $this->subscriptionService->getParentSubscriptions($userId, $status);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'تم جلب طلبات الاشتراكات بنجاح.',
-                'data'    => SubscriptionRequestResource::collection($subscriptions)
-            ], 200);
-
-        } catch (Exception $e) {
-            Log::error('Error in ParentSubscriptionController@index', [
-                'message' => $e->getMessage(),
-                'file'    => $e->getFile(),
-                'line'    => $e->getLine(),
-                'user_id' => $request->user()->id ?? null,
-                'query'   => $request->query()
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'حدث خطأ أثناء جلب البيانات.'
-            ], 400);
-        }
     }
 
-    public function show(Request $request, $id): JsonResponse
+    public function show(Request $request, $id)
     {
-        try {
-            $userId = $request->user()->id;
-            $subscription = $this->subscriptionService->getSubscriptionDetails($id, $userId);
+        $user = $request->user();
+        $parentId = DB::table('parents')->where('user_id', $user->id)->value('id') ?? $user->id;
 
-            return response()->json([
-                'success' => true,
-                'message' => 'تم جلب تفاصيل الاشتراك بنجاح.',
-                'data'    => new SubscriptionRequestResource($subscription)
-            ], 200);
+        $subscriptionRequest = SubscriptionRequest::query()
+            ->with([
+                'driver.user',
+                'children.school',
+                'children.address' // ✅ التصحيح هنا أيضاً
+            ])
+            ->where('parent_id', $parentId)
+            ->findOrFail($id);
 
-        } catch (Exception $e) {
-            Log::error('Error in ParentSubscriptionController@show', [
-                'message' => $e->getMessage(),
-                'file'    => $e->getFile(),
-                'line'    => $e->getLine(),
-                'user_id' => $request->user()->id ?? null,
-                'sub_id'  => $id
+        return (new SubscriptionRequestDetailsResource($subscriptionRequest))
+            ->additional([
+                'status'  => true,
+                'message' => 'تم جلب تفاصيل طلب الاشتراك بنجاح',
             ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage() 
-            ], 404);
-        }
     }
 
-    public function cancel(int $id): JsonResponse
+    public function cancel($id, Request $request): JsonResponse
     {
-        try {
-            $subscription = $this->subscriptionService->cancelSubscriptionByParent($id, auth()->id());
+        $userId = $request->user()->id;
 
-            return response()->json([
-                'success' => true,
-                'message' => 'تم إلغاء طلب الاشتراك بنجاح.',
-                'data'    => new SubscriptionRequestResource($subscription)
-            ], 200);
+        $subRequest = SubscriptionRequest::where('id', $id)
+            ->where(function($q) use ($userId) {
+                $q->where('parent_id', $userId)
+                  ->orWhereHas('parent', function($query) use ($userId) {
+                      $query->where('user_id', $userId);
+                  });
+            })
+            ->first();
 
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            Log::warning('Parent tried to cancel non-existing subscription', [
-                'user_id' => auth()->id(),
-                'sub_id'  => $id
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'طلب الاشتراك غير موجود أو لا تملك صلاحية إلغائه.'
-            ], 404);
-
-        } catch (\Exception $e) {
-            Log::error('Error in ParentSubscriptionController@cancel', [
-                'message' => $e->getMessage(),
-                'file'    => $e->getFile(),
-                'line'    => $e->getLine(),
-                'user_id' => auth()->id(),
-                'sub_id'  => $id
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage() ?? 'حدث خطأ أثناء الإلغاء.'
-            ], 422);
+        if (!$subRequest) {
+            return response()->json(['message' => 'الطلب غير موجود.'], 404);
         }
-    }public function activeSubscriptions(Request $request): JsonResponse
+
+        if (strtoupper($subRequest->status) !== 'PENDING') {
+            return response()->json(['message' => 'لا يمكن إلغاء الطلب في حالته الحالية.'], 400);
+        }
+
+        $subRequest->update(['status' => 'cancelled']);
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'تم إلغاء طلب الاشتراك بنجاح.'
+        ]);
+    }
+
+    public function activeSubscriptions(Request $request): JsonResponse
     {
         try {
             $request->validate([
@@ -166,27 +146,18 @@ class ParentSubscriptionController extends Controller
 
             $formattedData = $activeSubscriptions->map(function ($item) {
                 $driverUser = optional($item->driver)->user;
-                
-                // جلب عنوان المنزل بشكل مباشر ودقيق من علاقة الطفل أو ولي الأمر
                 $childModel = optional($item->child);
-                $parentModel = optional($item)->parent;
 
-                $address = null;
-                if ($childModel->address) {
-                    $address = $childModel->address;
-                } elseif ($parentModel && method_exists($parentModel, 'addresses')) {
-                    $address = $parentModel->addresses()->first();
-                }
+                $pickupAddr = $item->pickupAddress;
+                $dropoffAddr = $item->dropoffAddress;
 
-                $homeLat = $address->lat ?? $item->pickup_lat ?? null;
-                $homeLng = $address->lng ?? $item->pickup_lng ?? null;
-                $homeLabel = $address->label ?? $item->pickup_label ?? 'المنزل';
+                $pickupLat   = $pickupAddr?->latitude ?? $pickupAddr?->lat ?? null;
+                $pickupLng   = $pickupAddr?->longitude ?? $pickupAddr?->lng ?? null;
+                $pickupLabel = $pickupAddr?->address_line ?? $pickupAddr?->label ?? 'موقع الأخذ';
 
-                // جلب المدرسة
-                $school = optional($item->school ?? $childModel->school);
-                $schoolLat = $school->lat ?? $item->school_lat ?? $item->dropoff_lat ?? null;
-                $schoolLng = $school->lng ?? $item->school_lng ?? $item->dropoff_lng ?? null;
-                $schoolAddress = $school->address ?? $item->school_address ?? 'غير محدد';
+                $dropoffLat   = $dropoffAddr?->latitude ?? $dropoffAddr?->lat ?? null;
+                $dropoffLng   = $dropoffAddr?->longitude ?? $dropoffAddr?->lng ?? null;
+                $dropoffLabel = $dropoffAddr?->address_line ?? $dropoffAddr?->label ?? 'موقع الوضع';
 
                 return [
                     'id' => $item->id,
@@ -197,11 +168,11 @@ class ParentSubscriptionController extends Controller
                         'name' => $childModel->full_name ?? $childModel->name,
                         'avatar' => $childModel->photo_url,
                         'avatarInitials' => mb_substr($childModel->full_name ?? '', 0, 2),
-                        'schoolName' => $school->name ?? $item->school_name ?? 'مدرسة الفلاح',
+                        'schoolName' => $dropoffLabel,
                         'schoolLocation' => [
-                            'name' => $schoolAddress,
-                            'lat' => $schoolLat !== null ? (float) $schoolLat : null,
-                            'lng' => $schoolLng !== null ? (float) $schoolLng : null,
+                            'name' => $dropoffLabel,
+                            'lat' => $dropoffLat !== null ? (float) $dropoffLat : null,
+                            'lng' => $dropoffLng !== null ? (float) $dropoffLng : null,
                         ]
                     ],
                     'driver' => [
@@ -218,19 +189,19 @@ class ParentSubscriptionController extends Controller
                     'schedule' => [
                         'shift' => optional($item->driver)->shift ? (string) optional($item->driver)->shift->value : '1',
                         'shiftLabel' => optional($item->driver)->shift ? optional($item->driver)->shift->name : 'صباحي',
-                        'pickupZoneName' => $homeLabel,
-                        'schoolName' => $school->name ?? $item->school_name ?? 'مدرسة الفلاح',
+                        'pickupZoneName' => $pickupLabel,
+                        'schoolName' => $dropoffLabel,
                         'homeLocation' => [
-                            'label' => $homeLabel,
-                            'address' => $homeLabel,
-                            'lat' => $homeLat !== null ? (float) $homeLat : null,
-                            'lng' => $homeLng !== null ? (float) $homeLng : null,
+                            'label' => $pickupLabel,
+                            'address' => $pickupLabel,
+                            'lat' => $pickupLat !== null ? (float) $pickupLat : null,
+                            'lng' => $pickupLng !== null ? (float) $pickupLng : null,
                         ],
                         'pickupTime' => $item->pickup_time ?? '07:00 AM',
                         'dropoffTime' => $item->dropoff_time ?? '02:00 PM',
                     ],
                     'billing' => $this->formatBilling($item),
-                    'requestId' => $item->id,
+                    'requestId' => $item->subscription_request_id ?? $item->id,
                     'cancelReason' => null,
                     'cancelledAt' => null,
                     'createdAt' => $item->created_at ? optional($item->created_at)->toIso8601String() : null,
@@ -258,16 +229,22 @@ class ParentSubscriptionController extends Controller
             ], 400);
         }
     }
+
     public function showActive(Request $request, $id): JsonResponse
     {
         try {
             $userId = $request->user()->id;
 
-            // جلب الاشتراك النشط مع التحقق الآمن
-            $item = \App\Models\Shared\ActiveSubscription::with(['child.address', 'child.school', 'driver.user', 'contract', 'school'])
-                ->where('parent_id', $userId)
-                ->where('id', $id)
-                ->first();
+            $item = ActiveSubscription::with([
+                'child', 
+                'driver.user', 
+                'subscriptionRequest', 
+                'pickupAddress', 
+                'dropoffAddress'
+            ])
+            ->where('parent_id', $userId)
+            ->where('id', $id)
+            ->first();
 
             if (!$item) {
                 return response()->json([
@@ -278,30 +255,21 @@ class ParentSubscriptionController extends Controller
 
             $driverUser = optional($item->driver)->user;
             $childModel = optional($item->child);
-            $parentModel = optional($item)->parent;
             
-            // جلب عنوان البيت بدقة
-            $address = null;
-            if ($childModel->address) {
-                $address = $childModel->address;
-            } elseif ($parentModel && method_exists($parentModel, 'addresses')) {
-                $address = $parentModel->addresses()->first();
-            }
+            $pickupAddr = $item->pickupAddress;
+            $dropoffAddr = $item->dropoffAddress;
 
-            $homeLat   = $address->lat ?? $item->pickup_lat ?? null;
-            $homeLng   = $address->lng ?? $item->pickup_lng ?? null;
-            $homeLabel = $address->label ?? $item->pickup_label ?? 'المنزل';
+            $pickupLat   = $pickupAddr?->latitude ?? $pickupAddr?->lat ?? null;
+            $pickupLng   = $pickupAddr?->longitude ?? $pickupAddr?->lng ?? null;
+            $pickupLabel = $pickupAddr?->address_line ?? $pickupAddr?->label ?? 'موقع الأخذ';
 
-            // جلب بيانات المدرسة وعنوانها بدقة
-            $school = optional($item->school ?? $childModel->school);
-            $schoolLat     = $school->lat ?? $item->school_lat ?? $item->dropoff_lat ?? null;
-            $schoolLng     = $school->lng ?? $item->school_lng ?? $item->dropoff_lng ?? null;
-            $schoolAddress = $school->address ?? $item->school_address ?? 'غير محدد';
+            $dropoffLat   = $dropoffAddr?->latitude ?? $dropoffAddr?->lat ?? null;
+            $dropoffLng   = $dropoffAddr?->longitude ?? $dropoffAddr?->lng ?? null;
+            $dropoffLabel = $dropoffAddr?->address_line ?? $dropoffAddr?->label ?? 'موقع الوضع';
 
-            // جلب بيانات المركبة مباشرة من جدول vehicles باستخدام driver_id لتجنب مشاكل علاقات المودل
             $vehicle = null;
             if ($item->driver_id) {
-                $vehicle = \DB::table('vehicles')->where('driver_id', $item->driver_id)->first();
+                $vehicle = DB::table('vehicles')->where('driver_id', $item->driver_id)->first();
             }
 
             $formattedData = [
@@ -313,11 +281,11 @@ class ParentSubscriptionController extends Controller
                     'name' => $childModel->full_name ?? $childModel->name,
                     'avatar' => $childModel->photo_url,
                     'avatarInitials' => mb_substr($childModel->full_name ?? '', 0, 2),
-                    'schoolName' => $school->name ?? $item->school_name ?? 'مدرسة الفلاح',
+                    'schoolName' => $dropoffLabel,
                     'schoolLocation' => [
-                        'name' => $schoolAddress,
-                        'lat' => $schoolLat !== null ? (float) $schoolLat : null,
-                        'lng' => $schoolLng !== null ? (float) $schoolLng : null,
+                        'name' => $dropoffLabel,
+                        'lat' => $dropoffLat !== null ? (float) $dropoffLat : null,
+                        'lng' => $dropoffLng !== null ? (float) $dropoffLng : null,
                     ]
                 ],
                 'driver' => [
@@ -334,19 +302,19 @@ class ParentSubscriptionController extends Controller
                 'schedule' => [
                     'shift' => optional($item->driver)->shift ? (string) optional($item->driver)->shift->value : '1',
                     'shiftLabel' => optional($item->driver)->shift ? optional($item->driver)->shift->name : 'صباحي',
-                    'pickupZoneName' => $homeLabel,
-                    'schoolName' => $school->name ?? $item->school_name ?? 'مدرسة الفلاح',
+                    'pickupZoneName' => $pickupLabel,
+                    'schoolName' => $dropoffLabel,
                     'homeLocation' => [
-                        'label'   => $homeLabel,
-                        'address' => $homeLabel,
-                        'lat'     => $homeLat !== null ? (float) $homeLat : null,
-                        'lng'     => $homeLng !== null ? (float) $homeLng : null,
+                        'label'   => $pickupLabel,
+                        'address' => $pickupLabel,
+                        'lat'     => $pickupLat !== null ? (float) $pickupLat : null,
+                        'lng'     => $pickupLng !== null ? (float) $pickupLng : null,
                     ],
                     'pickupTime' => $item->pickup_time ?? '07:00 AM',
                     'dropoffTime' => $item->dropoff_time ?? '02:00 PM',
                 ],
                 'billing' => $this->formatBilling($item),
-                'requestId' => $item->id,
+                'requestId' => $item->subscription_request_id ?? $item->id,
                 'cancelReason' => null,
                 'cancelledAt' => null,
                 'createdAt' => $item->created_at ? optional($item->created_at)->toIso8601String() : null,
@@ -374,10 +342,6 @@ class ParentSubscriptionController extends Controller
         }
     }
 
-    /**
-     * إلغاء اشتراك نشط (بعد قبول السائق) من قِبل ولي الأمر
-     * POST /api/parent/active-subscriptions/{id}/cancel
-     */
     public function cancelActiveSubscription(Request $request, $id): JsonResponse
     {
         try {
@@ -412,33 +376,33 @@ class ParentSubscriptionController extends Controller
         }
     }
 
-    /**
-     * تجهيز بلوك البيانات المالية (billing) لاشتراك نشط بقيم حقيقية محسوبة،
-     * بدل القيم الثابتة الوهمية (SAR، 89، 14 يوماً...) التي كانت مكتوبة يدوياً سابقاً.
-     */
-    private function formatBilling(\App\Models\Shared\ActiveSubscription $item): array
+    private function formatBilling(ActiveSubscription $item): array
     {
-        $contract = $item->contract;
-        $totalPrice = (float) ($contract->total_price ?? 0);
+        $subReq = $item->subscriptionRequest;
+        $totalPrice = (float) ($subReq?->total_price ?? 0);
 
-        $childPrice = null;
-        if ($contract && $contract->subscription_request_id) {
-            $childPrice = DB::table('request_children')
-                ->where('request_id', $contract->subscription_request_id)
+        $pivotData = null;
+        if ($subReq) {
+            $pivotData = DB::table('request_children')
+                ->where('request_id', $subReq->id)
                 ->where('child_id', $item->child_id)
-                ->value('price_per_child');
+                ->first();
         }
-        $childPrice = $childPrice !== null ? (float) $childPrice : $totalPrice;
 
-        $endsAt = $contract?->end_date;
+        $childPrice = $pivotData?->price_per_child !== null ? (float) $pivotData->price_per_child : $totalPrice;
+        $startDate  = $pivotData?->start_date ?? $item->start_date;
+        $endDate    = $pivotData?->end_date ?? $item->end_date;
+        $subType    = $pivotData?->subscription_type ?? 'multi_day';
+
+        $endsAt = $endDate ? \Carbon\Carbon::parse($endDate) : null;
         $remainingDays = $endsAt ? max(0, (int) now()->startOfDay()->diffInDays($endsAt->copy()->startOfDay(), false)) : null;
 
         return [
-            'subscriptionType' => $contract?->subscription_type ?? 'multi_day',
+            'subscriptionType' => $subType,
             'totalPrice'       => $totalPrice,
             'childPrice'       => round($childPrice, 2),
             'currency'         => 'د.ل',
-            'startsAt'         => $contract?->start_date?->toDateString(),
+            'startsAt'         => $startDate ? \Carbon\Carbon::parse($startDate)->toDateString() : null,
             'endsAt'           => $endsAt?->toDateString(),
             'remainingDays'    => $remainingDays,
             'autoRenew'        => false,
@@ -451,19 +415,16 @@ class ParentSubscriptionController extends Controller
         try {
             $user = $request->user();
 
-            // 1. جلب id ولي الأمر الفعلي من جدول parents بناءً على user_id
             $parentRecord = DB::table('parents')->where('user_id', $user->id)->first();
             $parentId = $parentRecord ? $parentRecord->id : $user->id;
 
-            // 2. بناء الاستعلام مع دعم الفلترة حسب السائق ووالد الطفل
             $query = DB::table('active_subscriptions')
                 ->where(function ($q) use ($parentId, $user) {
                     $q->where('parent_id', $parentId)
-                      ->orWhere('parent_id', $user->id); // حماية إضافية لمطابقة أي نوع ID
+                      ->orWhere('parent_id', $user->id);
                 })
                 ->whereIn('status', ['active', 'pending', 'completed']);
 
-            // 3. التكد من السائق المحدد فقط إن تم إرسال driver_id في الـ Request (من Query Params أو Body)
             if ($request->has('driver_id') && !empty($request->driver_id)) {
                 $query->where('driver_id', $request->driver_id);
             }
@@ -475,7 +436,7 @@ class ParentSubscriptionController extends Controller
                 'has_subscription' => $hasSubscription
             ], 200);
 
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             Log::error('Error in ParentSubscriptionController@checkSubscription: ' . $e->getMessage());
 
             return response()->json([
@@ -486,21 +447,16 @@ class ParentSubscriptionController extends Controller
         }
     }
 
-
-    
-    
-    
-        
     public function showRequest(Request $request, $id): JsonResponse
     {
         try {
             $userId = $request->user()->id;
 
-            // جلب الطلب مباشرة عبر الـ user_id أو الـ parent_id المتوفر للمستخدم الحالي
-            $subscriptionRequest = \App\Models\Shared\SubscriptionRequest::with([
+            $subscriptionRequest = SubscriptionRequest::with([
                 'driver.user',
                 'children.school',
-                'children.address'
+                'children.pickupAddress',
+                'children.dropoffAddress'
             ])
             ->where(function($query) use ($userId) {
                 $query->where('parent_id', $userId)
@@ -540,6 +496,7 @@ class ParentSubscriptionController extends Controller
             ], 500);
         }
     }
+
     public function getParentChatList(Request $request): JsonResponse
     {
         try {
@@ -557,5 +514,4 @@ class ParentSubscriptionController extends Controller
             ], 400);
         }
     }
-    
 }

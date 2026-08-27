@@ -5,7 +5,7 @@ namespace App\Services\Driver;
 use App\Models\Admin\Admin;
 use App\Models\Driver\Driver;
 use App\Models\Driver\DriverDocument;
-use App\Notifications\CustomDatabaseNotification;
+use App\Services\Notification\NotificationService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -20,17 +20,35 @@ class DriverExpiryNotificationService
     /** نقاط التذكير مرتبة تصاعدياً — أول نقطة تُساوي أو تتجاوزها الأيام المتبقية هي "الجرعة" الحالية */
     private const MILESTONES_ASC = [0, 3, 7, 15];
 
+    protected NotificationService $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
+
+    /** أنواع المستندات ذات تاريخ انتهاء يُتابَعها هذا الفحص (بخلاف الرخصة التي تُتابَع من جدول drivers مباشرة) */
+    private const DOCUMENT_EXPIRY_TYPES = [
+        'insurance'             => ['doc_type' => 'INSURANCE',            'column' => 'insurance_expiry_date',            'label' => 'وثيقة التأمين'],
+        'stamp'                 => ['doc_type' => 'STAMP',                'column' => 'stamp_expiry_date',                'label' => 'الدمغة'],
+        'technical_inspection'  => ['doc_type' => 'TECHNICAL_INSPECTION', 'column' => 'technical_inspection_expiry_date', 'label' => 'الفحص الفني'],
+    ];
+
     public function run(): array
     {
         $stats = [
             'license_reminders'   => 0,
             'license_expired'     => 0,
-            'insurance_reminders' => 0,
-            'insurance_expired'   => 0,
         ];
+        foreach (array_keys(self::DOCUMENT_EXPIRY_TYPES) as $docKey) {
+            $stats["{$docKey}_reminders"] = 0;
+            $stats["{$docKey}_expired"] = 0;
+        }
 
         $this->processLicenseExpiries($stats);
-        $this->processInsuranceExpiries($stats);
+        foreach (self::DOCUMENT_EXPIRY_TYPES as $docKey => $config) {
+            $this->processDocumentExpiries($stats, $docKey, $config['doc_type'], $config['column'], $config['label']);
+        }
 
         return $stats;
     }
@@ -58,7 +76,7 @@ class DriverExpiryNotificationService
 
                     $milestone = $this->currentMilestone($daysRemaining);
                     if ($milestone !== null && $this->shouldNotify($milestone, $driver->license_expiry_notified_milestone)) {
-                        $this->notifyDriverReminder($driver->user, 'رخصة القيادة', $daysRemaining, $driver->license_expiry, $driver->id);
+                        $this->notifyDriverReminder($driver->user, 'license', 'رخصة القيادة', $daysRemaining, $milestone, $driver->license_expiry, $driver->id);
                         $driver->update(['license_expiry_notified_milestone' => $milestone]);
                         $stats['license_reminders']++;
                     }
@@ -66,34 +84,35 @@ class DriverExpiryNotificationService
             });
     }
 
-    private function processInsuranceExpiries(array &$stats): void
+    /** فحص عام لأي نوع مستند له عمود تاريخ انتهاء خاص به (تأمين / دمغة / فحص فني) */
+    private function processDocumentExpiries(array &$stats, string $docKey, string $docType, string $expiryColumn, string $docLabel): void
     {
         $today = Carbon::today();
 
-        DriverDocument::where('doc_type', 'INSURANCE')
-            ->whereNotNull('insurance_expiry_date')
+        DriverDocument::where('doc_type', $docType)
+            ->whereNotNull($expiryColumn)
             ->with('driver.user')
-            ->chunkById(100, function ($documents) use ($today, &$stats) {
+            ->chunkById(100, function ($documents) use ($today, &$stats, $docKey, $expiryColumn, $docLabel) {
                 foreach ($documents as $document) {
                     $driver = $document->driver;
                     if (!$driver || !$driver->user) {
                         continue;
                     }
 
-                    $daysRemaining = $this->daysRemaining($today, $document->insurance_expiry_date);
+                    $daysRemaining = $this->daysRemaining($today, $document->{$expiryColumn});
 
                     if ($daysRemaining < 0) {
-                        if ($this->markInsuranceExpired($document, $driver)) {
-                            $stats['insurance_expired']++;
+                        if ($this->markDocumentExpired($document, $driver, $docKey, $docLabel, $expiryColumn)) {
+                            $stats["{$docKey}_expired"]++;
                         }
                         continue;
                     }
 
                     $milestone = $this->currentMilestone($daysRemaining);
                     if ($milestone !== null && $this->shouldNotify($milestone, $document->expiry_notified_milestone)) {
-                        $this->notifyDriverReminder($driver->user, 'وثيقة التأمين', $daysRemaining, $document->insurance_expiry_date, $driver->id);
+                        $this->notifyDriverReminder($driver->user, $docKey, $docLabel, $daysRemaining, $milestone, $document->{$expiryColumn}, $driver->id);
                         $document->update(['expiry_notified_milestone' => $milestone]);
-                        $stats['insurance_reminders']++;
+                        $stats["{$docKey}_reminders"]++;
                     }
                 }
             });
@@ -121,7 +140,7 @@ class DriverExpiryNotificationService
         return $alreadyNotified === null || $currentMilestone < $alreadyNotified;
     }
 
-    private function notifyDriverReminder($user, string $docLabel, int $daysRemaining, string $expiryDate, int $driverId): void
+    private function notifyDriverReminder($user, string $docKey, string $docLabel, int $daysRemaining, int $milestone, string $expiryDate, int $driverId): void
     {
         $expiryLabel = Carbon::parse($expiryDate)->format('Y-m-d');
         $whenLabel = $daysRemaining === 0
@@ -129,13 +148,13 @@ class DriverExpiryNotificationService
             : "خلال {$daysRemaining} يوم";
 
         try {
-            $user->notify(new CustomDatabaseNotification([
-                'type'      => 'driver_document_expiring_soon',
-                'title'     => '⏰ اقتراب انتهاء ' . $docLabel,
-                'message'   => "تنبيه: {$docLabel} الخاصة بك ستنتهي {$whenLabel} (بتاريخ {$expiryLabel}). يرجى تجديدها ورفع النسخة الجديدة من خلال التطبيق قبل الانتهاء.",
-                'screen'    => 'DRIVER_PROFILE',
-                'entity_id' => (string) $driverId,
-            ]));
+            $this->notificationService->sendToUser($user, 'driver_document_expiring_soon', [
+                'title'       => '⏰ اقتراب انتهاء ' . $docLabel,
+                'message'     => "تنبيه: {$docLabel} الخاصة بك ستنتهي {$whenLabel} (بتاريخ {$expiryLabel}). يرجى تجديدها ورفع النسخة الجديدة من خلال التطبيق قبل الانتهاء.",
+                'screen'      => 'DRIVER_PROFILE',
+                'entity_type' => 'driver_document',
+                'entity_id'   => "{$driverId}-{$docKey}-reminder-{$milestone}",
+            ]);
         } catch (\Throwable $e) {
             Log::warning("DriverExpiryNotificationService: failed sending reminder to driver #{$driverId}: " . $e->getMessage());
         }
@@ -152,64 +171,67 @@ class DriverExpiryNotificationService
 
         $document->update(['status' => 'Expired']);
 
-        $this->notifyDriverExpired($driver->user, 'رخصة القيادة', $driver->license_expiry, $driver->id);
-        $this->notifyAdminsExpired($driver, 'رخصة القيادة', $driver->license_expiry);
+        $this->notifyDriverExpired($driver->user, 'license', 'رخصة القيادة', $driver->license_expiry, $driver->id);
+        $this->notifyAdminsExpired($driver, 'license', 'رخصة القيادة', $driver->license_expiry);
 
         return true;
     }
 
-    private function markInsuranceExpired(DriverDocument $document, Driver $driver): bool
+    private function markDocumentExpired(DriverDocument $document, Driver $driver, string $docKey, string $docLabel, string $expiryColumn): bool
     {
         if ($document->status === 'Expired') {
             return false;
         }
 
+        $expiryDate = $document->{$expiryColumn};
         $document->update(['status' => 'Expired']);
 
-        $this->notifyDriverExpired($driver->user, 'وثيقة التأمين', $document->insurance_expiry_date, $driver->id);
-        $this->notifyAdminsExpired($driver, 'وثيقة التأمين', $document->insurance_expiry_date);
+        $this->notifyDriverExpired($driver->user, $docKey, $docLabel, $expiryDate, $driver->id);
+        $this->notifyAdminsExpired($driver, $docKey, $docLabel, $expiryDate);
 
         return true;
     }
 
-    private function notifyDriverExpired($user, string $docLabel, string $expiryDate, int $driverId): void
+    private function notifyDriverExpired($user, string $docKey, string $docLabel, string $expiryDate, int $driverId): void
     {
         $expiryLabel = Carbon::parse($expiryDate)->format('Y-m-d');
 
         try {
-            $user->notify(new CustomDatabaseNotification([
-                'type'      => 'driver_document_expired',
-                'title'     => '🚫 انتهت صلاحية ' . $docLabel,
-                'message'   => "انتهت صلاحية {$docLabel} الخاصة بك بتاريخ {$expiryLabel}. تم إيقاف قبول اشتراكات جديدة مؤقتاً حتى تُحدّث الوثيقة من خلال التطبيق — اشتراكاتك النشطة الحالية تستمر بشكل طبيعي.",
-                'screen'    => 'DRIVER_PROFILE',
-                'entity_id' => (string) $driverId,
-            ]));
+            $this->notificationService->sendToUser($user, 'driver_document_expired', [
+                'title'       => '🚫 انتهت صلاحية ' . $docLabel,
+                'message'     => "انتهت صلاحية {$docLabel} الخاصة بك بتاريخ {$expiryLabel}. تم إيقاف قبول اشتراكات جديدة مؤقتاً حتى تُحدّث الوثيقة من خلال التطبيق — اشتراكاتك النشطة الحالية تستمر بشكل طبيعي.",
+                'screen'      => 'DRIVER_PROFILE',
+                'entity_type' => 'driver_document',
+                'entity_id'   => "{$driverId}-{$docKey}-expired",
+            ]);
         } catch (\Throwable $e) {
             Log::warning("DriverExpiryNotificationService: failed sending expiry alert to driver #{$driverId}: " . $e->getMessage());
         }
     }
 
-    private function notifyAdminsExpired(Driver $driver, string $docLabel, string $expiryDate): void
+    private function notifyAdminsExpired(Driver $driver, string $docKey, string $docLabel, string $expiryDate): void
     {
         $expiryLabel = Carbon::parse($expiryDate)->format('Y-m-d');
         $driverName = $driver->user->full_name ?? "#{$driver->id}";
 
-        foreach (Admin::with('user')->get() as $admin) {
-            if (!$admin->user) {
-                continue;
-            }
+        $adminUsers = Admin::with('user')->get()
+            ->pluck('user')
+            ->filter();
 
-            try {
-                $admin->user->notify(new CustomDatabaseNotification([
-                    'type'      => 'driver_document_expired_admin_alert',
-                    'title'     => '⚠️ وثيقة سائق منتهية الصلاحية',
-                    'message'   => "انتهت صلاحية {$docLabel} للسائق {$driverName} (#{$driver->id}) بتاريخ {$expiryLabel}. تم منعه تلقائياً من قبول اشتراكات جديدة، واشتراكاته النشطة الحالية مستمرة — يرجى المراجعة والتصرف يدوياً إذا لزم.",
-                    'screen'    => 'ADMIN_DRIVER_DETAILS',
-                    'entity_id' => (string) $driver->id,
-                ]));
-            } catch (\Throwable $e) {
-                Log::warning("DriverExpiryNotificationService: failed sending admin alert for driver #{$driver->id}: " . $e->getMessage());
-            }
+        if ($adminUsers->isEmpty()) {
+            return;
+        }
+
+        try {
+            $this->notificationService->sendToUsers($adminUsers, 'driver_document_expired_admin_alert', [
+                'title'       => '⚠️ وثيقة سائق منتهية الصلاحية',
+                'message'     => "انتهت صلاحية {$docLabel} للسائق {$driverName} (#{$driver->id}) بتاريخ {$expiryLabel}. تم منعه تلقائياً من قبول اشتراكات جديدة، واشتراكاته النشطة الحالية مستمرة — يرجى المراجعة والتصرف يدوياً إذا لزم.",
+                'screen'      => 'ADMIN_DRIVER_DETAILS',
+                'entity_type' => 'driver_document',
+                'entity_id'   => "{$driver->id}-{$docKey}-expired",
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning("DriverExpiryNotificationService: failed sending admin alert for driver #{$driver->id}: " . $e->getMessage());
         }
     }
 }

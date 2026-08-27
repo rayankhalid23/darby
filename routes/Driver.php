@@ -109,8 +109,10 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('api.driver.profile.legal-data');
 
     // تحديث بيانات وتفاصيل المركبة
-    Route::post('profile/vehicle/{vehicle}', [ProfileController::class, 'updateVehicle'])
+    Route::match(['post', 'put'], 'profile/vehicle/{vehicle}', [ProfileController::class, 'updateVehicle'])
         ->name('api.driver.profile.vehicle.update');
+    Route::match(['post', 'put'], 'profile/vehicles/{vehicle}', [ProfileController::class, 'updateVehicle']);
+    Route::match(['post', 'put'], 'profile/vehicle', [ProfileController::class, 'updateVehicle']);
 
     // 🗺️ مسارات تفضيلات العمل ومناطق الجغرافيا للسائق
     Route::get('preferences', [DriverPreferenceController::class, 'show'])
@@ -185,6 +187,24 @@ Route::get('zones', [ZoneController::class, 'index'])
         Route::get('/{subscriptionId}/route-recommendations', [App\Http\Controllers\Api\Driver\DriverRouteController::class, 'recommendations']);
         Route::post('/{subscriptionId}/assign-route', [App\Http\Controllers\Api\Driver\DriverRouteController::class, 'assignSubscription']);
         Route::post('/{subscriptionId}/move-route', [App\Http\Controllers\Api\Driver\DriverRouteController::class, 'moveSubscription']);
+    });
+
+    // -------------------------------------------------------------
+    // 📍 طلبات تغيير موقع الاستلام/التسليم الواردة من أولياء الأمور
+    // -------------------------------------------------------------
+    Route::prefix('location-change-requests')->group(function () {
+        Route::get('/', [App\Http\Controllers\Api\Driver\LocationChangeController::class, 'index']);
+        Route::post('/{id}/respond', [App\Http\Controllers\Api\Driver\LocationChangeController::class, 'respond']);
+    });
+
+    // -------------------------------------------------------------
+    // 🕓 التأكيد اليدوي لرحلات سابقة لم يوثّقها التطبيق
+    // -------------------------------------------------------------
+    Route::prefix('trip-manual-confirmations')->group(function () {
+        Route::get('/parents-and-children', [App\Http\Controllers\Api\Driver\TripManualConfirmationController::class, 'subscribedParentsAndChildren']);
+        Route::get('/incomplete-trips', [App\Http\Controllers\Api\Driver\TripManualConfirmationController::class, 'incompleteTrips']);
+        Route::get('/trips/{tripId}/children', [App\Http\Controllers\Api\Driver\TripManualConfirmationController::class, 'tripChildren']);
+        Route::post('/', [App\Http\Controllers\Api\Driver\TripManualConfirmationController::class, 'store']);
     });
 
 });

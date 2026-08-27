@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Log;
 use App\Services\Shared\EmailService;
+use App\Services\Notification\NotificationService;
 use Exception;
 
 class DriverProfileService
@@ -41,15 +42,15 @@ class DriverProfileService
             $userUpdateData = [];
 
             // هندسة معالجة ورفع ملف الصورة الشخصية فوراً إن وُجدت
-            if (request()->hasFile('avatar_url')) {
-                // إزالة الملف القديم من السيرفر للحفاظ على المساحة إن وُجد
+            if (!empty($data['avatar_url'])) {
+                $userUpdateData['avatar_url'] = $data['avatar_url'];
+            } elseif (request()->hasFile('avatar_url') || request()->hasFile('avatar') || request()->hasFile('photo')) {
+                $file = request()->file('avatar_url') ?? request()->file('avatar') ?? request()->file('photo');
                 if (!empty($user->avatar_url)) {
                     $oldPath = str_replace('storage/', '', $user->avatar_url);
                     \Illuminate\Support\Facades\Storage::disk('public')->delete($oldPath);
                 }
-
-                // رفع وتخزين الصورة الجديدة داخل مجلد drivers/avatars على القرص العام public
-                $path = request()->file('avatar_url')->store('drivers/avatars', 'public');
+                $path = $file->store('drivers/avatars', 'public');
                 $userUpdateData['avatar_url'] = 'storage/' . $path;
             }
 
@@ -242,16 +243,52 @@ class DriverProfileService
     /**
      * تحديث البيانات القانونية والوثائق الرسمية للسائق
      */
+    /**
+     * تحديث البيانات القانونية والوثائق الرسمية للسائق وتسجيل الطلب للمراجعة الإدارية
+     *
+     * @param int $userId
+     * @param array $data
+     * @return array
+     * @throws \Exception
+     */
     public function updateLegalDocuments(int $userId, array $data): array
     {
         return DB::transaction(function () use ($userId, $data) {
-            $user = User::where('id', $userId)->where('role_id', 4)->firstOrFail();
+            // 1. التحقق من وجود المستخدم وصلاحية السائق
+            $user = User::where('id', $userId)->where('role_id', 4)->first();
+
+            if (!$user) {
+                throw new \Exception("المستخدم غير موجود أو لا يملك صلاحية سائق.", 404);
+            }
+
             $driver = $user->driver;
 
             if (!$driver) {
-                throw new Exception("لم يتم العثور على ملف السائق.");
+                throw new \Exception("لم يتم العثور على ملف السائق الخاص بهذا المستخدم.", 404);
             }
 
+            // 2. تجميد جلب البيانات القديمة للوثائق والمستندات قبل إجراء أي تحديث للربط الدقيق
+            $existingDocs = DriverDocument::where('driver_id', $driver->id)->get()->keyBy('doc_type');
+
+            $oldValues = [
+                'national_id'                   => $driver->national_id,
+                'license_number'                => $driver->license_number,
+                'license_expiry'                => $driver->license_expiry ? (is_string($driver->license_expiry) ? $driver->license_expiry : $driver->license_expiry->format('Y-m-d')) : null,
+                'insurance_expiry'              => $existingDocs->get('INSURANCE')?->insurance_expiry_date,
+                'stamp_expiry'                  => $existingDocs->get('STAMP')?->stamp_expiry_date,
+                'technical_inspection_expiry'   => $existingDocs->get('TECHNICAL_INSPECTION')?->technical_inspection_expiry_date,
+                'doc_license_path'              => $existingDocs->get('LICENSE')?->file_url,
+                'doc_logbook_path'              => $existingDocs->get('VEHICLE_LOGBOOK')?->file_url,
+                'doc_insurance_path'            => $existingDocs->get('INSURANCE')?->file_url,
+                'doc_booklet_page_path'         => $existingDocs->get('BOOKLET_PERSONAL_PAGE')?->file_url,
+                'doc_stamp_path'                => $existingDocs->get('STAMP')?->file_url,
+                'doc_technical_inspection_path' => $existingDocs->get('TECHNICAL_INSPECTION')?->file_url,
+            ];
+
+            // فلترة القيم القديمة لإبقاء فقط العناصر التي تم إرسال تعديل لها في $data
+            $filteredOldValues = array_intersect_key($oldValues, $data);
+
+            // 3. تحديث البيانات الأساسية لملف السائق (الرقم القومي والرخصة)
             $driverUpdate = [];
             foreach (['national_id', 'license_number', 'license_expiry'] as $field) {
                 if (array_key_exists($field, $data)) {
@@ -260,7 +297,6 @@ class DriverProfileService
             }
 
             if (array_key_exists('license_expiry', $data)) {
-                // تجديد تاريخ انتهاء الرخصة يُعيد ضبط عدّاد التذكيرات ويُلغي علامة "منتهية" إن وُجدت
                 $driverUpdate['license_expiry_notified_milestone'] = null;
 
                 DriverDocument::where('driver_id', $driver->id)
@@ -270,13 +306,26 @@ class DriverProfileService
             }
 
             if (!empty($driverUpdate)) {
-                $driver->update($driverUpdate);
+                $updated = $driver->update($driverUpdate);
+                if (!$updated) {
+                    throw new \Exception("حدث خطأ أثناء تحديث البيانات الأساسية للسائق.", 500);
+                }
             }
 
+            // 4. معالجة الوثائق والمستندات المرفوعة
             $docMap = [
-                'doc_license_path'   => 'LICENSE',
-                'doc_logbook_path'   => 'VEHICLE_LOGBOOK',
-                'doc_insurance_path' => 'INSURANCE',
+                'doc_license_path'              => 'LICENSE',
+                'doc_logbook_path'               => 'VEHICLE_LOGBOOK',
+                'doc_insurance_path'             => 'INSURANCE',
+                'doc_booklet_page_path'          => 'BOOKLET_PERSONAL_PAGE',
+                'doc_stamp_path'                 => 'STAMP',
+                'doc_technical_inspection_path'  => 'TECHNICAL_INSPECTION',
+            ];
+
+            $expiryFieldMap = [
+                'INSURANCE'            => ['input' => 'insurance_expiry',             'column' => 'insurance_expiry_date'],
+                'STAMP'                => ['input' => 'stamp_expiry',                 'column' => 'stamp_expiry_date'],
+                'TECHNICAL_INSPECTION' => ['input' => 'technical_inspection_expiry',  'column' => 'technical_inspection_expiry_date'],
             ];
 
             foreach ($docMap as $pathKey => $docType) {
@@ -287,11 +336,11 @@ class DriverProfileService
                         'uploaded_at' => now(),
                     ];
 
-                    if ($docType === 'INSURANCE') {
-                        // رفع صورة تأمين جديدة يُعيد ضبط عدّاد تذكيرات هذه الوثيقة تحديداً
+                    if (isset($expiryFieldMap[$docType])) {
                         $updateFields['expiry_notified_milestone'] = null;
-                        if (array_key_exists('insurance_expiry', $data)) {
-                            $updateFields['insurance_expiry_date'] = $data['insurance_expiry'];
+                        $expiryInput = $expiryFieldMap[$docType]['input'];
+                        if (array_key_exists($expiryInput, $data)) {
+                            $updateFields[$expiryFieldMap[$docType]['column']] = $data[$expiryInput];
                         }
                     }
 
@@ -302,22 +351,64 @@ class DriverProfileService
                 }
             }
 
-            // السماح بتحديث تاريخ انتهاء التأمين بشكل مستقل دون رفع صورة جديدة
-            if (array_key_exists('insurance_expiry', $data) && empty($data['doc_insurance_path'])) {
-                DriverDocument::where('driver_id', $driver->id)
-                    ->where('doc_type', 'INSURANCE')
-                    ->update([
-                        'insurance_expiry_date'     => $data['insurance_expiry'],
-                        'expiry_notified_milestone' => null,
-                        'status'                    => 'Pending',
-                    ]);
+            // 5. تحديث تواريخ الانتهاء المستقلة للوثائق
+            foreach ($expiryFieldMap as $docType => $map) {
+                $pathKey = array_search($docType, $docMap, true);
+                if (array_key_exists($map['input'], $data) && empty($data[$pathKey])) {
+                    DriverDocument::where('driver_id', $driver->id)
+                        ->where('doc_type', $docType)
+                        ->update([
+                            $map['column']              => $data[$map['input']],
+                            'expiry_notified_milestone' => null,
+                            'status'                    => 'Pending',
+                        ]);
+                }
+            }
+
+            // 6. تنظيف البيانات وتجهيز السجل للمراجعة الإدارية
+            $cleanNewValues = array_filter($data, fn ($val) => !($val instanceof \Illuminate\Http\UploadedFile));
+
+            if (empty($cleanNewValues)) {
+                return [
+                    'change_id' => null,
+                    'message'   => 'لم يتم إرسال أي بيانات أو وثائق للتحديث.'
+                ];
+            }
+
+            $changeId = DB::table('driver_profile_changes')->insertGetId([
+                'driver_id'  => $driver->id,
+                'old_values' => json_encode($filteredOldValues, JSON_UNESCAPED_UNICODE),
+                'new_values' => json_encode($cleanNewValues, JSON_UNESCAPED_UNICODE),
+                'status'     => 'Pending',
+                'created_at' => now()
+            ]);
+
+            if (!$changeId) {
+                throw new \Exception("فشل في تسجيل طلب التعديل في النظام.", 500);
+            }
+
+            // 7. إرسال الإشعار للإدارة
+            try {
+                $admins = User::whereIn('role_id', [1, 2])->get();
+                if ($admins->isNotEmpty()) {
+                    app(NotificationService::class)->sendToUsers($admins, 'driver_documents_updated', [
+                        'title'       => 'تحديث وثائق رسمية للسائق 📄',
+                        'message'     => "قام السائق ({$user->full_name}) بتحديث وثائقه الرسمية وبانتظار المراجعة.",
+                        'driver_name' => $user->full_name,
+                        'entity_id'   => (string) $changeId,
+                    ], withPush: false);
+                }
+            } catch (\Throwable $e) {
+                Log::warning("فشل إرسال إشعار تحديث الوثائق للأدمن: " . $e->getMessage());
             }
 
             return [
-                'message' => 'تم تحديث البيانات القانونية والوثائق بنجاح، وهي بانتظار مراجعة الإدارة.'
+                'change_id' => $changeId,
+                'message'   => 'تم تحديث البيانات القانونية والوثائق بنجاح، وهي بانتظار مراجعة الإدارة.'
             ];
         });
     }
+    
 
     /**
      * تحديث بيانات مركبة محددة مع التحقق من ملكيتها للسائق
@@ -325,7 +416,8 @@ class DriverProfileService
     public function updateVehicleDetails(int $userId, int $vehicleId, array $data): Vehicle
     {
         return DB::transaction(function () use ($userId, $vehicleId, $data) {
-            $driver = Driver::where('user_id', $userId)->first();
+            $user = User::where('id', $userId)->where('role_id', 4)->firstOrFail();
+            $driver = $user->driver;
 
             if (!$driver) {
                 throw new Exception("لم يتم العثور على ملف السائق.");
@@ -337,22 +429,44 @@ class DriverProfileService
                 throw new Exception("المركبة غير موجودة أو لا تخص هذا السائق.");
             }
 
-            $updateData = [];
-            foreach (['has_ac', 'plate_number', 'brand', 'model', 'year', 'color', 'type', 'capacity_manual'] as $field) {
-                if (array_key_exists($field, $data)) {
-                    $updateData[$field] = $data[$field];
-                }
+            $cleanNewValues = array_filter($data, fn ($val) => !($val instanceof \Illuminate\Http\UploadedFile));
+            $cleanNewValues['vehicle_id'] = $vehicle->id;
+
+            $oldValues = [
+                'plate_number'      => $vehicle->plate_number,
+                'brand'             => $vehicle->brand,
+                'model'             => $vehicle->model,
+                'year'              => $vehicle->year,
+                'color'             => $vehicle->color,
+                'type'              => $vehicle->type,
+                'capacity_manual'   => $vehicle->capacity_manual,
+                'has_ac'            => (bool) $vehicle->has_ac,
+                'vehicle_image_url' => $vehicle->vehicle_image_url,
+            ];
+
+            // تسجيل طلب التعديل في driver_profile_changes
+            $changeId = DB::table('driver_profile_changes')->insertGetId([
+                'driver_id'  => $driver->id,
+                'old_values' => json_encode($oldValues, JSON_UNESCAPED_UNICODE),
+                'new_values' => json_encode($cleanNewValues, JSON_UNESCAPED_UNICODE),
+                'status'     => 'Pending',
+                'created_at' => now(),
+            ]);
+
+            // إرسال إشعار للمشرفين
+            try {
+                $admins = User::whereIn('role_id', [1, 2])->get();
+                app(NotificationService::class)->sendToUsers($admins, 'driver_vehicle_updated', [
+                    'title'       => 'طلب تعديل بيانات مركبة 🚗',
+                    'message'     => "قام السائق ({$user->full_name}) بطلب تعديل بيانات مركبته وبانتظار مراجعة الإدارة.",
+                    'driver_name' => $user->full_name,
+                    'entity_id'   => (string) $changeId,
+                ], withPush: false);
+            } catch (\Throwable $e) {
+                Log::warning("Failed to notify admins of vehicle update: " . $e->getMessage());
             }
 
-            if (array_key_exists('vehicle_image_path', $data)) {
-                $updateData['vehicle_image_url'] = $data['vehicle_image_path'];
-            }
-
-            if (!empty($updateData)) {
-                $vehicle->update($updateData);
-            }
-
-            return $vehicle->fresh();
+            return $vehicle;
         });
     }
 

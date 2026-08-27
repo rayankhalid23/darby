@@ -32,9 +32,21 @@ class AdminProfileController extends Controller
      */
     private function currentAdmin(Request $request): ?Admin
     {
-        return Admin::with(['user', 'creator'])
-            ->where('user_id', $request->user()->id)
+        $user = $request->user();
+        if (!$user) {
+            return null;
+        }
+
+        $admin = Admin::with(['user', 'creator'])
+            ->where('user_id', $user->id)
             ->first();
+
+        if (!$admin && in_array((int)($user->role_id ?? 0), [1, 2], true)) {
+            $admin = Admin::firstOrCreate(['user_id' => $user->id]);
+            $admin->load(['user', 'creator']);
+        }
+
+        return $admin;
     }
 
     /**

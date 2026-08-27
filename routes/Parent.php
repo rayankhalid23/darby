@@ -84,7 +84,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [ChildrenController::class, 'index']);
         Route::post('/', [ChildrenController::class, 'store']);
         Route::get('/{id}', [ChildrenController::class, 'show']);
-        Route::post('/{id}', [ChildrenController::class, 'update']);
+        Route::match(['post', 'put', 'patch'], '/{id}', [ChildrenController::class, 'update']);
         Route::delete('/{id}', [ChildrenController::class, 'destroy']);
         Route::get('/{id}/subscription', [ChildrenController::class, 'getSubscription']);
     });
@@ -103,9 +103,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // جلب المناطق المتاحة بالنظام لولي الأمر
     Route::get('zones', [ZoneController::class, 'index']);
 
-    // مسار بحث وفلترة السائقين المتقدم لولي الأمر
-    Route::post('/drivers/search', [DriverSearchController::class, 'search']);
-
+    Route::match(['get', 'post'], '/drivers/search', [DriverSearchController::class, 'search']);
     // مسارات تقييم السائقين لولي الأمر
     Route::prefix('driver-reviews')->group(function () {
         Route::get('/driver/{driverId}', [DriverReviewController::class, 'index']);
@@ -163,5 +161,22 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/children/{childId}/absences', [ParentChildController::class, 'getAbsences']);
     Route::get('/children/{childId}/available-absence-dates', [ParentChildController::class, 'getAvailableAbsenceDates']);
     Route::post('/trips/{tripId}/children/{childId}/manual-pickup', [ParentChildController::class, 'confirmManualPickup']);
+
+    // -------------------------------------------------------------
+    // 📍 طلب تغيير موقع الاستلام/التسليم لطفل ضمن اشتراك نشط
+    // -------------------------------------------------------------
+    Route::prefix('location-change-requests')->group(function () {
+        Route::get('/options', [App\Http\Controllers\Api\Parent\LocationChangeController::class, 'options']);
+        Route::get('/', [App\Http\Controllers\Api\Parent\LocationChangeController::class, 'index']);
+        Route::post('/', [App\Http\Controllers\Api\Parent\LocationChangeController::class, 'store']);
+    });
+
+    // -------------------------------------------------------------
+    // 🕓 الرد على طلبات التأكيد اليدوي لرحلات سابقة لم يوثّقها التطبيق
+    // -------------------------------------------------------------
+    Route::prefix('trip-manual-confirmations')->group(function () {
+        Route::get('/', [App\Http\Controllers\Api\Parent\TripManualConfirmationController::class, 'index']);
+        Route::post('/{id}/respond', [App\Http\Controllers\Api\Parent\TripManualConfirmationController::class, 'respond']);
+    });
 
 });

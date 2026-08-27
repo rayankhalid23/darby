@@ -38,6 +38,16 @@ class NotificationFormatter
     public const TYPE_REQUEST_ACCEPTED          = 'request_accepted';
     public const TYPE_REQUEST_REJECTED          = 'request_rejected';
 
+    // --- تغيير موقع الاستلام/التسليم ---
+    public const TYPE_LOCATION_CHANGE_REQUESTED = 'location_change_requested';
+    public const TYPE_LOCATION_CHANGE_APPROVED  = 'location_change_approved';
+    public const TYPE_LOCATION_CHANGE_REJECTED  = 'location_change_rejected';
+
+    // --- التأكيد اليدوي لرحلة سابقة لم تُوثَّق ---
+    public const TYPE_TRIP_MANUAL_CONFIRMATION_REQUEST   = 'trip_manual_confirmation_request';
+    public const TYPE_TRIP_MANUAL_CONFIRMATION_CONFIRMED = 'trip_manual_confirmation_confirmed';
+    public const TYPE_TRIP_MANUAL_CONFIRMATION_DENIED    = 'trip_manual_confirmation_denied';
+
     public const TYPE_RECHARGE_APPROVED         = 'recharge_approved';
     public const TYPE_RECHARGE_REJECTED         = 'recharge_rejected';
     public const TYPE_WITHDRAWAL_APPROVED       = 'withdrawal_approved';
@@ -310,6 +320,60 @@ class NotificationFormatter
                 $entityType = 'subscription_request';
                 $entityId = $reqId;
                 $action = 'open_subscription_request';
+                break;
+
+            // --- تغيير موقع الاستلام/التسليم ---
+            case self::TYPE_LOCATION_CHANGE_REQUESTED:
+                $childName = $data['child_name'] ?? 'الطفل';
+                $title = $data['title'] ?? 'طلب تغيير موقع 📍';
+                $message = $data['message'] ?? "طلب ولي أمر الطفل ({$childName}) تغيير موقع الاستلام/التسليم، بانتظار موافقتك.";
+                $screen = 'LOCATION_CHANGE_REQUEST_DETAILS';
+                $entityType = 'location_change_request';
+                $action = 'open_location_change_request';
+                break;
+
+            case self::TYPE_LOCATION_CHANGE_APPROVED:
+                $title = $data['title'] ?? 'تمت الموافقة على تغيير الموقع 🟢';
+                $message = $data['message'] ?? 'وافق السائق على طلب تغيير الموقع، وتم تحديث المسار.';
+                $screen = 'LOCATION_CHANGE_REQUEST_DETAILS';
+                $entityType = 'location_change_request';
+                $action = 'open_location_change_request';
+                break;
+
+            case self::TYPE_LOCATION_CHANGE_REJECTED:
+                $title = $data['title'] ?? 'تم رفض تغيير الموقع 🔴';
+                $message = $data['message'] ?? 'عذراً، رفض السائق طلب تغيير الموقع.';
+                $screen = 'LOCATION_CHANGE_REQUEST_DETAILS';
+                $entityType = 'location_change_request';
+                $action = 'open_location_change_request';
+                break;
+
+            // --- التأكيد اليدوي لرحلة سابقة لم تُوثَّق ---
+            case self::TYPE_TRIP_MANUAL_CONFIRMATION_REQUEST:
+                $childName = $data['child_name'] ?? 'الطفل';
+                $title = $data['title'] ?? 'يرجى التأكيد 🙏';
+                $message = $data['message'] ?? "يطلب السائق تأكيدك بشأن رحلة سابقة للطفل ({$childName}).";
+                $screen = 'TRIP_MANUAL_CONFIRMATION_DETAILS';
+                $entityType = 'trip_manual_confirmation';
+                $action = 'open_trip_manual_confirmation';
+                break;
+
+            case self::TYPE_TRIP_MANUAL_CONFIRMATION_CONFIRMED:
+                $childName = $data['child_name'] ?? 'الطفل';
+                $title = $data['title'] ?? 'تم تأكيد ولي الأمر ✅';
+                $message = $data['message'] ?? "أكّد ولي أمر الطفل ({$childName}) إتمام الرحلة، وتم تحديث حالتها.";
+                $screen = 'TRIP_MANUAL_CONFIRMATION_DETAILS';
+                $entityType = 'trip_manual_confirmation';
+                $action = 'open_trip_manual_confirmation';
+                break;
+
+            case self::TYPE_TRIP_MANUAL_CONFIRMATION_DENIED:
+                $childName = $data['child_name'] ?? 'الطفل';
+                $title = $data['title'] ?? 'لم يتم التأكيد ⚠️';
+                $message = $data['message'] ?? "لم يؤكد ولي أمر الطفل ({$childName}) إتمام الرحلة.";
+                $screen = 'TRIP_MANUAL_CONFIRMATION_DETAILS';
+                $entityType = 'trip_manual_confirmation';
+                $action = 'open_trip_manual_confirmation';
                 break;
 
             case self::TYPE_SUBSCRIPTION_PAYMENT_REQ:

@@ -74,6 +74,11 @@ class User extends Authenticatable implements HasName
         return $this->hasOne(ParentModel::class, 'user_id');
     }
 
+    public function parent()
+    {
+        return $this->hasOne(ParentModel::class, 'user_id');
+    }
+
     public function driver()
     {
         return $this->hasOne(Driver::class, 'user_id');

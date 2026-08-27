@@ -44,6 +44,22 @@ class Child extends Model
             $child->qr_code_token = 'CHLD-' . Str::upper(Str::random(6)) . '-' . time();
         });
     }
+    /**
+ * العلاقة مع عنوان البيك أب (Pickup Address)
+ */
+public function pickupAddress()
+{
+    // استبدل Address::class باسم موديل العنوان لديك، وحقل الربط إن لم يكن pickup_address_id
+    return $this->belongsTo(Address::class, 'pickup_address_id');
+}
+/**
+ * العلاقة مع عنوان النزول (Dropoff Address)
+ */
+public function dropoffAddress()
+{
+    // استبدل Address::class بموديل العناوين لديك، وحقل الربط إن كان مختلفاً
+    return $this->belongsTo(Address::class, 'dropoff_address_id');
+}
 
     /**
      * =========================================

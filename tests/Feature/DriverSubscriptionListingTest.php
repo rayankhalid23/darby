@@ -82,13 +82,12 @@ class DriverSubscriptionListingTest extends TestCase
             'status'  => 'active',
         ]);
 
-        // 4. ط¹ظ†ظˆط§ظ† ظˆظ„ظٹ ط§ظ„ط£ظ…ط±
+        // 4. عنوان ولي الأمر
         $addressId = DB::table('addresses')->insertGetId([
             'parent_id'  => $this->parentUser->id,
-            'label'      => 'ط§ظ„ط¨ظٹطھ ط§ظ„ط±ط¦ظٹط³ظٹ',
+            'label'      => 'البيت الرئيسي',
             'lat'        => 32.8810,
             'lng'        => 13.1850,
-            'is_default' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ]);

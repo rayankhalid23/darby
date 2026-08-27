@@ -191,27 +191,64 @@ class ChildrenController extends Controller
         ], 200);
     }
 
-    public function update(UpdateChildRequest $request, $id): JsonResponse
-    {
-        $parentId = $this->getActualParentId();
+/**
+     * تحديث بيانات الطفل بشكل جزئي
+     * PUT/PATCH /api/parent/children/{id}
+     */
+public function update(UpdateChildRequest $request, $id): JsonResponse
+{
+    $userId = auth()->id();
+    $parentId = $this->getActualParentId();
 
-        $child = Child::where('id', $id)->where('parent_id', $parentId)->first();
+    if (!$parentId) {
+        return response()->json([
+            'success' => false,
+            'message' => 'عذراً، لم يتم العثور على ملف ولي أمر مرتبط بهذا الحساب.'
+        ], 404);
+    }
 
-        if (!$child) {
-            return response()->json([
-                'success' => false,
-                'message' => 'عذراً، هذا السجل غير موجود أو لا تملك صلاحية تعديله.'
-            ], 404);
-        }
+    $child = Child::where('id', $id)->where('parent_id', $parentId)->first();
 
+    if (!$child) {
+        return response()->json([
+            'success' => false,
+            'message' => 'عذراً، هذا السجل غير موجود أو لا تملك صلاحية تعديله.'
+        ], 404);
+    }
+
+    try {
         $updatedChild = $this->childService->updateChild($child, $request->validated());
+
+        Log::info('Parent Updated Child Successfully', [
+            'parent_id'      => $parentId,
+            'child_id'       => $child->id,
+            'updated_fields' => array_keys($request->validated()),
+        ]);
 
         return response()->json([
             'success' => true,
             'message' => 'تم تحديث بيانات الطفل بنجاح.',
-            'data'    => new ChildResource($updatedChild->load('logistics'))
+            'data'    => new ChildResource($updatedChild->load(['logistics', 'school', 'address']))
         ], 200);
+
+    } catch (\Throwable $e) {
+        Log::error('Failed to update child: Exception occurred', [
+            'user_id'       => $userId,
+            'parent_id'     => $parentId,
+            'child_id'      => $id,
+            'error_message' => $e->getMessage(),
+            'file'          => $e->getFile(),
+            'line'          => $e->getLine(),
+            'payload'       => $request->validated()
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'حدث خطأ أثناء تحديث بيانات الطفل، يرجى المحاولة لاحقاً.',
+            'error'   => config('app.debug') ? $e->getMessage() : null
+        ], 500);
     }
+}
 
     public function destroy($id): JsonResponse
     {

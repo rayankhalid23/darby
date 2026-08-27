@@ -52,12 +52,12 @@ class DriverRouteController extends Controller
             $pendingSubs = ActiveSubscription::where('driver_id', $driver->id)
                 ->whereNull('route_id')
                 ->where('status', '!=', 'cancelled')
-                ->with(['child', 'school', 'contract'])
+                ->with(['child', 'school', 'subscriptionRequest'])
                 ->get();
 
             $pendingCount = $pendingSubs->count();
             $hasPending = $pendingCount > 0;
-            $requestId = $pendingSubs->first()?->contract?->subscription_request_id ?? null;
+            $requestId = $pendingSubs->first()?->subscription_request_id ?? null;
 
             $pendingData = $pendingSubs->map(function ($sub) {
                 return [
@@ -342,7 +342,7 @@ class DriverRouteController extends Controller
 
             $sub = ActiveSubscription::where('id', $subscriptionId)
                 ->where('driver_id', $driver->id)
-                ->with('contract')          // ← مطلوب لقراءة timing في الخدمة
+                ->with('subscriptionRequest')          // ← مطلوب لقراءة timing في الخدمة
                 ->firstOrFail();
 
             // ✅ التحقق من أن الاشتراك لم يُسند لمسار مسبقاً
