@@ -3,6 +3,7 @@
 namespace App\Models\Shared;
 
 use App\Models\Driver\Driver;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -29,7 +30,7 @@ class DriverReview extends Model
 
     public function parent(): BelongsTo
     {
-        return $this->belongsTo(ParentModel::class, 'parent_id');
+        return $this->belongsTo(User::class, 'parent_id');
     }
 
     public function driver(): BelongsTo

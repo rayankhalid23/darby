@@ -4,7 +4,7 @@ namespace App\Services\Shared;
 
 use App\Models\Driver\Driver;
 use App\Models\Parent\ParentModel;
-use App\Models\Shared\Contract;
+use App\Models\Shared\SubscriptionRequest;
 use App\Models\Shared\FinancialLedger;
 use App\Models\Shared\MasterEscrowVault;
 use App\Models\Shared\RechargeRequest;
@@ -318,14 +318,17 @@ class FinancialLedgerService
     /**
      * 3️⃣ تسوية العقد الشهري الإغلاق والمقاصة النهائية (Monthly Subscription Settlement)
      */
-    public function settleMonthlyContract(Contract $contract): array
+    /**
+     * 3️⃣ تسوية الاشتراك الشهري الإغلاق والمقاصة النهائية (Monthly Subscription Settlement)
+     */
+    public function settleMonthlySubscription(SubscriptionRequest $subscription): array
     {
-        return DB::transaction(function () use ($contract) {
-            $totalContractPrice = (float) ($contract->total_price ?? 0);
-            $plannedTripsCount  = max((int) ($contract->days_count ?? 20), 1);
+        return DB::transaction(function () use ($subscription) {
+            $totalContractPrice = (float) ($subscription->total_amount_after_discount ?? $subscription->total_price ?? 0);
+            $plannedTripsCount  = max((int) ($subscription->days_count ?? 20), 1);
             $perTripCost        = $totalContractPrice / $plannedTripsCount;
 
-            $trips = Trip::whereHas('route', fn($q) => $q->where('contract_id', $contract->id))->get();
+            $trips = Trip::whereHas('route', fn($q) => $q->where('subscription_request_id', $subscription->id))->get();
 
             $completedCount    = $trips->where('status', 'completed')->count();
             $parentAbsentCount = TripStudentAttendance::whereIn('trip_id', $trips->pluck('id'))
@@ -340,7 +343,7 @@ class FinancialLedgerService
             $refundAmount  = max(0, round($totalContractPrice - $finalAmount, 2));
 
             return [
-                'contract_number'       => $contract->contract_number,
+                'contract_number'       => "REQ-{$subscription->id}",
                 'total_contract_price'  => $totalContractPrice,
                 'planned_trips'         => $plannedTripsCount,
                 'per_trip_cost'         => round($perTripCost, 2),
@@ -354,17 +357,22 @@ class FinancialLedgerService
         });
     }
 
-    /**
-     * الإلغاء المبكر للعقد في منتصف الشهر (Mid-Month Termination)
-     */
-    public function terminateContractMidMonth(Contract $contract, string $terminatedBy, bool $isArbitraryByParent = false): array
+    public function settleMonthlyContract($subscription): array
     {
-        return DB::transaction(function () use ($contract, $terminatedBy, $isArbitraryByParent) {
-            $totalPrice  = (float) ($contract->total_price ?? 0);
-            $totalTrips  = max((int) ($contract->days_count ?? 20), 1);
+        return $this->settleMonthlySubscription($subscription);
+    }
+
+    /**
+     * الإلغاء المبكر للاشتراك في منتصف الشهر (Mid-Month Termination)
+     */
+    public function terminateSubscriptionMidMonth(SubscriptionRequest $subscription, string $terminatedBy, bool $isArbitraryByParent = false): array
+    {
+        return DB::transaction(function () use ($subscription, $terminatedBy, $isArbitraryByParent) {
+            $totalPrice  = (float) ($subscription->total_amount_after_discount ?? $subscription->total_price ?? 0);
+            $totalTrips  = max((int) ($subscription->days_count ?? 20), 1);
             $perTripCost = $totalPrice / $totalTrips;
 
-            $tripsCompleted = Trip::whereHas('route', fn($q) => $q->where('contract_id', $contract->id))
+            $tripsCompleted = Trip::whereHas('route', fn($q) => $q->where('subscription_request_id', $subscription->id))
                 ->where('status', 'completed')
                 ->count();
 
@@ -378,20 +386,25 @@ class FinancialLedgerService
 
             $refundToParent = max(0, round($remaining - $cancellationFee, 2));
 
-            if ($refundToParent > 0 && $contract->parent) {
-                $contract->parent->deposit($refundToParent * 100);
+            if ($refundToParent > 0 && $subscription->parent) {
+                $subscription->parent->deposit($refundToParent * 100);
             }
 
-            $contract->update(['status' => 'terminated']);
+            $subscription->update(['status' => 'cancelled']);
 
             return [
-                'contract_id'       => $contract->id,
+                'contract_id'       => $subscription->id,
                 'executed_cost'     => $executedCost,
                 'remaining_balance' => $remaining,
                 'cancellation_fee'  => $cancellationFee,
                 'refunded_to_parent'=> $refundToParent,
             ];
         });
+    }
+
+    public function terminateContractMidMonth($subscription, string $terminatedBy, bool $isArbitraryByParent = false): array
+    {
+        return $this->terminateSubscriptionMidMonth($subscription, $terminatedBy, $isArbitraryByParent);
     }
 
     /**
@@ -466,15 +479,15 @@ class FinancialLedgerService
     }
 
     /**
-     * معاينة حسابات الإلغاء المبكر للعقد دون تعديل البيانات
+     * معاينة حسابات الإلغاء المبكر للاشتراك دون تعديل البيانات
      */
-    public function previewContractTermination(Contract $contract, string $terminatedBy, bool $isArbitraryByParent = false): array
+    public function previewSubscriptionTermination(SubscriptionRequest $subscription, string $terminatedBy, bool $isArbitraryByParent = false): array
     {
-        $totalPrice  = (float) ($contract->total_price ?? 0);
-        $totalTrips  = max((int) ($contract->days_count ?? 20), 1);
+        $totalPrice  = (float) ($subscription->total_amount_after_discount ?? $subscription->total_price ?? 0);
+        $totalTrips  = max((int) ($subscription->days_count ?? 20), 1);
         $perTripCost = $totalPrice / $totalTrips;
 
-        $tripsCompleted = Trip::whereHas('route', fn($q) => $q->where('contract_id', $contract->id))
+        $tripsCompleted = Trip::whereHas('route', fn($q) => $q->where('subscription_request_id', $subscription->id))
             ->where('status', 'completed')
             ->count();
 
@@ -489,8 +502,8 @@ class FinancialLedgerService
         $refundToParent = max(0, round($remaining - $cancellationFee, 2));
 
         return [
-            'contract_id'        => $contract->id,
-            'contract_number'    => $contract->contract_number ?? "CNT-{$contract->id}",
+            'contract_id'        => $subscription->id,
+            'contract_number'    => "REQ-{$subscription->id}",
             'total_price'        => $totalPrice,
             'executed_cost'      => $executedCost,
             'remaining_balance'  => $remaining,
@@ -499,14 +512,19 @@ class FinancialLedgerService
         ];
     }
 
+    public function previewContractTermination($subscription, string $terminatedBy, bool $isArbitraryByParent = false): array
+    {
+        return $this->previewSubscriptionTermination($subscription, $terminatedBy, $isArbitraryByParent);
+    }
+
     /**
      * معاينة مصفوفة الغرامات لإلغاء رحلة دون تعديل البيانات
      */
     public function previewTripCancellation(Trip $trip, string $cancelledBy): array
     {
         $route = $trip->route;
-        $contract = $route?->contract;
-        $tripPriceDinar = (float) ($contract?->total_price ? ($contract->total_price / max($contract->days_count, 1)) : 25.00);
+        $subscription = $route?->subscriptionRequest;
+        $tripPriceDinar = (float) ($subscription?->total_price ? ($subscription->total_price / max($subscription->days_count, 1)) : ($subscription?->trip_price ?? 25.00));
 
         $parentRefundDinar = 0;
         $driverPayDinar = 0;

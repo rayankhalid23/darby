@@ -29,10 +29,9 @@ class MediaController extends Controller
         'children/photos',
         'children_photos',
         'avatars',
-        'contracts',
     ];
 
-    private const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'pdf', 'svg'];
+    private const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'svg'];
 
     public function show(string $path): Response
     {
@@ -67,10 +66,6 @@ class MediaController extends Controller
             'Access-Control-Allow-Methods' => 'GET, HEAD, OPTIONS',
             'Access-Control-Allow-Headers' => '*',
         ];
-
-        if ($extension === 'pdf') {
-            $headers['Content-Disposition'] = 'inline; filename="' . $filename . '"';
-        }
 
         return response($disk->get($storedPath), 200, $headers);
     }

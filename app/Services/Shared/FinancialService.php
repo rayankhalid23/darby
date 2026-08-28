@@ -2,13 +2,14 @@
 
 namespace App\Services\Shared;
 
-use App\Models\Shared\Contract;
+use App\Models\Shared\SubscriptionRequest;
+use App\Models\Shared\ActiveSubscription;
 use App\Models\Shared\Invoice;
 use App\Models\Shared\Trip;
 use App\Models\Shared\TripStudentAttendance;
-use App\Models\Shared\ActiveSubscription;
 use App\Models\Parent\ParentModel;
 use App\Models\Driver\Driver;
+use App\Models\User;
 use App\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -23,84 +24,84 @@ class FinancialService
         $this->notificationService = $notificationService;
     }
 
-    public function generateProformaInvoice(Contract $contract): Invoice
-{
-    $contract->loadMissing(['subscriptionRequest.parent', 'parent.user', 'driver']);
-
-    $invoiceNumber = 'INV-' . $contract->contract_number;
-
-    // 1. جلب parent_id (المطابق لـ users.id)
-    $parentUserId = $contract->parent_id 
-        ?? $contract->parent?->user_id 
-        ?? $contract->parent?->id 
-        ?? $contract->subscriptionRequest?->parent?->user_id 
-        ?? $contract->subscriptionRequest?->parent_id;
-
-    if (!$parentUserId) {
-        Log::error("تعذر تحديد parent_id للعقد رقم: {$contract->id}");
-        throw new \Exception('تعذر تحديد معرّف ولي الأمر لتوليد الفاتورة.');
-    }
-
-    // 2. جلب driver_id الخاص بجدول drivers (وليس user_id) لحل خطأ FK
-    $driver = $contract->driver;
-    if (!$driver) {
-        // البحث عن السائق في جدول drivers سواء بالـ id أو الـ user_id
-        $driver = Driver::where('id', $contract->driver_id)
-            ->orWhere('user_id', $contract->driver_id)
-            ->first();
-    }
-
-    $driverId = $driver?->id ?? $contract->subscriptionRequest?->driver_id;
-
-    if (!$driverId) {
-        Log::error("تعذر تحديد driver_id الخاص بجدول drivers للعقد رقم: {$contract->id}");
-        throw new \Exception('تعذر تحديد معرّف السائق لتوليد الفاتورة.');
-    }
-
-    $totalTrips = $this->calculateTotalTrips($contract);
-
-    return Invoice::create([
-        'contract_id'       => $contract->id,
-        'parent_id'         => $parentUserId,
-        'driver_id'         => $driverId, // تم إرسال id الخاص بـ drivers (وليس user_id)
-        'invoice_number'    => $invoiceNumber,
-        'amount'            => $contract->total_price ?? 0,
-        'type'              => 'proforma',
-        'status'            => 'pending',
-        'due_date'          => $contract->end_date ?? now()->addDays(30),
-        'subscription_type' => $contract->subscription_type ?? 'multi_day',
-        'total_trips'       => $totalTrips,
-        'completed_trips'   => 0,
-        'driver_absences'   => 0,
-        'student_absences'  => 0,
-    ]);
-}
-
-    public function settleContract(Contract $contract): Invoice
+    /**
+     * توليد فاتورة مبدئية لطلب اشتراك
+     */
+    public function generateProformaInvoice(SubscriptionRequest|ActiveSubscription $sub): Invoice
     {
-        return DB::transaction(function () use ($contract) {
-            $contract->load(['parent', 'driver']);
+        $subscriptionRequest = $sub instanceof ActiveSubscription ? $sub->subscriptionRequest : $sub;
+        if (!$subscriptionRequest) {
+            throw new \Exception('تعذر العثور على طلب الاشتراك لتوليد الفاتورة.');
+        }
 
-            $parent = $contract->parent;
-            $driver = $contract->driver;
+        $subscriptionRequest->loadMissing(['parent.user', 'driver.user']);
+
+        $invoiceNumber = 'INV-REQ-' . $subscriptionRequest->id . '-' . strtoupper(substr(uniqid(), -4));
+
+        $parentUserId = $subscriptionRequest->parent?->user_id ?? $subscriptionRequest->parent_id;
+        $driverId     = $subscriptionRequest->driver_id;
+
+        if (!$parentUserId) {
+            throw new \Exception('تعذر تحديد معرّف ولي الأمر لتوليد الفاتورة.');
+        }
+
+        if (!$driverId) {
+            throw new \Exception('تعذر تحديد معرّف السائق لتوليد الفاتورة.');
+        }
+
+        $totalTrips = $this->calculateTotalTrips($subscriptionRequest);
+        $totalPrice = (float) ($subscriptionRequest->total_amount_after_discount ?? $subscriptionRequest->total_price ?? 0);
+
+        return Invoice::create([
+            'subscription_request_id' => $subscriptionRequest->id,
+            'parent_id'               => $parentUserId,
+            'driver_id'               => $driverId,
+            'invoice_number'          => $invoiceNumber,
+            'amount'                  => $totalPrice,
+            'type'                    => 'proforma',
+            'status'                  => 'pending',
+            'due_date'                => $subscriptionRequest->end_date ?? now()->addDays(30),
+            'subscription_type'       => $subscriptionRequest->subscription_type ?? 'multi_day',
+            'total_trips'             => $totalTrips,
+            'completed_trips'         => 0,
+            'driver_absences'         => 0,
+            'student_absences'        => 0,
+        ]);
+    }
+
+    /**
+     * تسوية الاشتراك المالي
+     */
+    public function settleSubscription(SubscriptionRequest|ActiveSubscription $sub): Invoice
+    {
+        $subscriptionRequest = $sub instanceof ActiveSubscription ? $sub->subscriptionRequest : $sub;
+        if (!$subscriptionRequest) {
+            throw new \Exception('بيانات الاشتراك غير مكتملة.');
+        }
+
+        return DB::transaction(function () use ($subscriptionRequest) {
+            $subscriptionRequest->loadMissing(['parent.user', 'driver.user']);
+
+            $parent = $subscriptionRequest->parent;
+            $driver = $subscriptionRequest->driver;
 
             if (!$parent || !$driver) {
-                throw new \Exception('بيانات العقد غير مكتملة.');
+                throw new \Exception('بيانات ولي الأمر أو السائق غير مكتملة.');
             }
 
-            $proforma = Invoice::where('contract_id', $contract->id)
+            $proforma = Invoice::where('subscription_request_id', $subscriptionRequest->id)
                 ->where('type', 'proforma')
                 ->where('status', 'pending')
                 ->latest()
                 ->first();
 
             if (!$proforma) {
-                $proforma = $this->generateProformaInvoice($contract);
+                $proforma = $this->generateProformaInvoice($subscriptionRequest);
             }
 
-            $trips = Trip::whereHas('route', function ($q) use ($contract) {
-                $q->where('contract_id', $contract->id);
-            })->where('driver_id', $contract->driver_id)->get();
+            $trips = Trip::whereHas('route', function ($q) use ($subscriptionRequest) {
+                $q->where('subscription_request_id', $subscriptionRequest->id);
+            })->where('driver_id', $subscriptionRequest->driver_id)->get();
 
             $totalTrips = max($trips->count(), 1);
             $completedTrips = $trips->where('status', 'completed');
@@ -116,7 +117,8 @@ class FinancialService
                     ->count();
             }
 
-            $perTripCost = ($contract->total_price ?? 0) / $totalTrips;
+            $totalPrice = (float) ($subscriptionRequest->total_amount_after_discount ?? $subscriptionRequest->total_price ?? 0);
+            $perTripCost = $totalPrice / $totalTrips;
             $totalCost = $completedCount * $perTripCost;
             $deductions = $driverAbsences * $perTripCost;
             $netAmount = max($totalCost - $deductions, 0);
@@ -144,7 +146,7 @@ class FinancialService
                 if (isset($parent->user)) {
                     $this->notificationService->sendToUser($parent->user, 'settlement_paid', [
                         'title'      => 'تم تسوية الاشتراك',
-                        'message'    => "تم خصم {$netAmount} د.ل من محفظتك لقاء العقد رقم {$contract->contract_number}.",
+                        'message'    => "تم خصم {$netAmount} د.ل من محفظتك لقاء الاشتراك رقم #{$subscriptionRequest->id}.",
                         'amount'     => $netAmount,
                         'invoice_id' => (string) $proforma->id,
                     ]);
@@ -153,20 +155,20 @@ class FinancialService
                 if (isset($driver->user)) {
                     $this->notificationService->sendToUser($driver->user, 'settlement_received', [
                         'title'      => 'تم إيداع مستحقات الاشتراك',
-                        'message'    => "تم إيداع {$netAmount} د.ل في محفظتك لقاء العقد رقم {$contract->contract_number}.",
+                        'message'    => "تم إيداع {$netAmount} د.ل في محفظتك لقاء الاشتراك رقم #{$subscriptionRequest->id}.",
                         'amount'     => $netAmount,
                         'invoice_id' => (string) $proforma->id,
                     ]);
                 }
             } else {
-                $overdueInvoices = Invoice::where('contract_id', $contract->id)
+                $overdueInvoices = Invoice::where('subscription_request_id', $subscriptionRequest->id)
                     ->where('status', 'overdue')
                     ->exists();
 
                 if ($overdueInvoices) {
-                    $contract->update(['status' => 'terminated']);
+                    $subscriptionRequest->update(['status' => 'cancelled']);
 
-                    ActiveSubscription::where('contract_id', $contract->id)
+                    ActiveSubscription::where('subscription_request_id', $subscriptionRequest->id)
                         ->update(['status' => 'suspended_unpaid']);
                 }
 
@@ -183,7 +185,7 @@ class FinancialService
                 if (isset($parent->user)) {
                     $this->notificationService->sendToUser($parent->user, 'settlement_overdue', [
                         'title'      => 'فاتورة غير مدفوعة',
-                        'message'    => "رصيد محفظتك غير كافٍ لتسوية {$netAmount} د.ل للعقد {$contract->contract_number}. يرجى شحن المحفظة.",
+                        'message'    => "رصيد محفظتك غير كافٍ لتسوية {$netAmount} د.ل للاشتراك #{$subscriptionRequest->id}. يرجى شحن المحفظة.",
                         'amount'     => $netAmount,
                         'invoice_id' => (string) $proforma->id,
                     ]);
@@ -194,23 +196,34 @@ class FinancialService
         });
     }
 
-    public function sendPreSettlementWarning(Contract $contract): void
+    /**
+     * Alias للتوافقية
+     */
+    public function settleContract($subscription): Invoice
     {
-        $parent = $contract->parent;
+        return $this->settleSubscription($subscription);
+    }
+
+    public function sendPreSettlementWarning(SubscriptionRequest|ActiveSubscription $sub): void
+    {
+        $subscriptionRequest = $sub instanceof ActiveSubscription ? $sub->subscriptionRequest : $sub;
+        if (!$subscriptionRequest) return;
+
+        $parent = $subscriptionRequest->parent;
         if (!$parent || !isset($parent->user)) return;
 
-        $invoice = Invoice::where('contract_id', $contract->id)
+        $invoice = Invoice::where('subscription_request_id', $subscriptionRequest->id)
             ->where('type', 'proforma')
             ->where('status', 'pending')
             ->first();
 
         if (!$invoice) {
-            $invoice = $this->generateProformaInvoice($contract);
+            $invoice = $this->generateProformaInvoice($subscriptionRequest);
         }
 
         $this->notificationService->sendToUser($parent->user, 'settlement_warning', [
             'title'      => 'تذكير بتسوية الاشتراك',
-            'message'    => "سيتم تسوية العقد رقم {$contract->contract_number} بقيمة {$invoice->amount} د.ل بعد 3 أيام. يرجى شحن محفظتك.",
+            'message'    => "سيتم تسوية الاشتراك رقم #{$subscriptionRequest->id} بقيمة {$invoice->amount} د.ل بعد 3 أيام. يرجى شحن محفظتك.",
             'action_url' => '/parent/wallet',
             'amount'     => $invoice->amount,
             'invoice_id' => (string) $invoice->id,
@@ -219,7 +232,7 @@ class FinancialService
 
     public function getParentInvoices(int $parentUserId, array $filters = [])
     {
-        $query = Invoice::with(['contract', 'driver.user'])
+        $query = Invoice::with(['subscriptionRequest', 'driver.user'])
             ->where('parent_id', $parentUserId);
 
         if (!empty($filters['status'])) {
@@ -231,7 +244,7 @@ class FinancialService
 
     public function getDriverInvoices(int $driverId, array $filters = [])
     {
-        $query = Invoice::with(['contract', 'parent'])
+        $query = Invoice::with(['subscriptionRequest', 'parent'])
             ->where('driver_id', $driverId);
 
         if (!empty($filters['status'])) {
@@ -243,7 +256,7 @@ class FinancialService
 
     public function getAllInvoices(array $filters = [])
     {
-        $query = Invoice::with(['contract', 'parent', 'driver.user']);
+        $query = Invoice::with(['subscriptionRequest', 'parent', 'driver.user']);
 
         if (!empty($filters['status'])) {
             $query->where('status', $filters['status']);
@@ -260,26 +273,26 @@ class FinancialService
 
     public function getInvoiceById(int $id): Invoice
     {
-        return Invoice::with(['contract', 'parent', 'driver.user'])->findOrFail($id);
+        return Invoice::with(['subscriptionRequest', 'parent', 'driver.user'])->findOrFail($id);
     }
 
     /**
      * حساب إجمالي الرحلات بشكل آمن
      */
-    private function calculateTotalTrips(Contract $contract): int
+    private function calculateTotalTrips(SubscriptionRequest $req): int
     {
-        $daysCount = $contract->days_count ?? 1;
+        $daysCount = $req->days_count ?? 1;
 
-        if ($contract->subscription_type === 'single_day') {
+        if ($req->subscription_type === 'single_day') {
             return max((int)$daysCount, 1);
         }
 
-        if ($contract->start_date && $contract->end_date) {
+        if ($req->start_date && $req->end_date) {
             try {
-                $start = Carbon::parse($contract->start_date);
-                $end   = Carbon::parse($contract->end_date);
+                $start = Carbon::parse($req->start_date);
+                $end   = Carbon::parse($req->end_date);
 
-                // استثناء الجمعة (5) والسبت (6) — نظام الأسبوع الإسلامي
+                // استثناء الجمعة (5) والسبت (6)
                 $workingDays = 0;
                 while ($start->lte($end)) {
                     if (!in_array($start->dayOfWeek, [Carbon::FRIDAY, Carbon::SATURDAY])) {

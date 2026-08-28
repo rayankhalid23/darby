@@ -48,6 +48,8 @@ class SubscriptionRequest extends Model
         'end_date',
         'days_count',
         'total_price',
+        'discount_amount',
+        'total_amount_after_discount',
         'max_waiting_time',
         'status',
         'distance_km',
@@ -60,12 +62,14 @@ class SubscriptionRequest extends Model
     ];
 
     protected $casts = [
-        'start_date'   => 'date',
-        'end_date'     => 'date',
-        'total_price'  => 'decimal:2',
-        'created_at'   => 'datetime',
-        'updated_at'   => 'datetime',
-        'responded_at' => 'datetime',
+        'start_date'                  => 'date',
+        'end_date'                    => 'date',
+        'total_price'                 => 'decimal:2',
+        'discount_amount'             => 'decimal:2',
+        'total_amount_after_discount' => 'decimal:2',
+        'created_at'                  => 'datetime',
+        'updated_at'                  => 'datetime',
+        'responded_at'                => 'datetime',
     ];
 
     // ============================================================
@@ -82,8 +86,12 @@ class SubscriptionRequest extends Model
                         'start_date',
                         'end_date',
                         'working_days_count',
-                     
+                        'distance_km',                    
                         'price_per_child',
+                        'trip_price',
+                        'discount_amount',            
+                        'total_amount_after_discount', // تم تصحيح الاسم هنا بدقة
+                        'driver_net_price'
                     ])
                     ->withTimestamps();
     }

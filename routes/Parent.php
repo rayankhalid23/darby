@@ -127,6 +127,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('wallet')->group(function () {
         Route::get('/balance', [WalletController::class, 'balance']);
         Route::get('/payment-methods', [WalletController::class, 'paymentMethods']);
+        Route::post('/recharge/initiate', [WalletController::class, 'initiateRecharge']);
+        Route::post('/recharge/mock-pay', [WalletController::class, 'mockPay']);
         Route::post('/recharge', [WalletController::class, 'recharge']);
         Route::post('/hold-trip', [WalletController::class, 'holdTripAmount']);
     });

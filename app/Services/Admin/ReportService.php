@@ -10,8 +10,9 @@ use App\Models\Driver\Driver;
 use App\Models\Driver\Vehicle;
 use App\Models\Driver\DriverDocument;
 use App\Models\Shared\Trip;
-use App\Models\Shared\Contract;
+use App\Models\Shared\SubscriptionRequest;
 use App\Models\Shared\ActiveSubscription;
+use App\Models\Shared\Invoice;
 use App\Models\Shared\TripStudentAttendance;
 use App\Models\Shared\AbsenceLog;
 use App\Models\Shared\FinancialLedger;
@@ -337,17 +338,17 @@ class ReportService
     {
         [$dateFrom, $dateTo] = $this->parseDateFilters($filters);
 
-        $contractsQuery = Contract::whereBetween('created_at', [$dateFrom, $dateTo]);
-        $totalContracts = (clone $contractsQuery)->count();
+        $invoicesQuery = Invoice::whereBetween('created_at', [$dateFrom, $dateTo]);
+        $totalInvoices = (clone $invoicesQuery)->count();
 
         // أ) توزيع أنواع الاشتراكات
-        $monthlyCount = (clone $contractsQuery)->whereIn('subscription_type', ['multi_day', 'monthly'])->count();
-        $dailyCount   = (clone $contractsQuery)->whereIn('subscription_type', ['single_day', 'daily'])->count();
-        $bothCount    = (clone $contractsQuery)->where('subscription_type', 'both')->count();
+        $monthlyCount = (clone $invoicesQuery)->whereIn('subscription_type', ['multi_day', 'monthly'])->count();
+        $dailyCount   = (clone $invoicesQuery)->whereIn('subscription_type', ['single_day', 'daily'])->count();
+        $bothCount    = (clone $invoicesQuery)->where('subscription_type', 'both')->count();
 
-        $monthlyPct = $totalContracts > 0 ? round(($monthlyCount / $totalContracts) * 100, 1) : 0;
-        $dailyPct   = $totalContracts > 0 ? round(($dailyCount / $totalContracts) * 100, 1) : 0;
-        $bothPct    = $totalContracts > 0 ? round(($bothCount / $totalContracts) * 100, 1) : 0;
+        $monthlyPct = $totalInvoices > 0 ? round(($monthlyCount / $totalInvoices) * 100, 1) : 0;
+        $dailyPct   = $totalInvoices > 0 ? round(($dailyCount / $totalInvoices) * 100, 1) : 0;
+        $bothPct    = $totalInvoices > 0 ? round(($bothCount / $totalInvoices) * 100, 1) : 0;
 
         // ب) حالة الاشتراكات (نشطة / متوقفة / ملغاة)
         $activeSubsCount    = ActiveSubscription::where('status', 'active')->count();
@@ -357,24 +358,25 @@ class ReportService
 
         // ج) الاشتراكات التي ستنتهي قريباً (خلال الأيام الـ 7 القادمة)
         $nextWeek = Carbon::today()->addDays(7);
-        $expiringSoonContracts = Contract::with(['parent.user', 'driver.user'])
-            ->where('status', 'active')
-            ->whereNotNull('end_date')
-            ->whereBetween('end_date', [Carbon::today()->toDateString(), $nextWeek->toDateString()])
-            ->orderBy('end_date', 'asc')
+        $expiringSoonSubscriptions = Invoice::with(['subscriptionRequest.parent.user', 'subscriptionRequest.driver.user'])
+            ->where('type', 'proforma')
+            ->where('status', 'pending')
+            ->whereBetween('due_date', [Carbon::today()->toDateString(), $nextWeek->toDateString()])
+            ->orderBy('due_date', 'asc')
             ->get()
-            ->map(function ($contract) {
-                $daysLeft = (int) Carbon::today()->diffInDays(Carbon::parse($contract->end_date), false);
+            ->map(function ($inv) {
+                $daysLeft = (int) Carbon::today()->diffInDays(Carbon::parse($inv->due_date), false);
+                $req = $inv->subscriptionRequest;
                 return [
-                    'contract_id'     => $contract->id,
-                    'contract_number' => $contract->contract_number ?? "CNT-{$contract->id}",
-                    'parent_name'     => $contract->parent?->user?->full_name ?? 'غير معروف',
-                    'parent_phone'    => $contract->parent?->user?->phone_number ?? '---',
-                    'driver_name'     => $contract->driver?->user?->full_name ?? 'غير محدد',
-                    'subscription_type' => $contract->subscription_type,
-                    'start_date'      => $contract->start_date,
-                    'end_date'        => $contract->end_date,
-                    'days_left'       => max(0, $daysLeft),
+                    'contract_id'       => $inv->id,
+                    'contract_number'   => $inv->invoice_number,
+                    'parent_name'       => $inv->parent?->full_name ?? 'غير معروف',
+                    'parent_phone'      => $inv->parent?->phone_number ?? '---',
+                    'driver_name'       => $inv->driver?->user?->full_name ?? 'غير محدد',
+                    'subscription_type' => $inv->subscription_type,
+                    'start_date'        => $inv->created_at?->toDateString(),
+                    'end_date'          => $inv->due_date?->toDateString(),
+                    'days_left'         => max(0, $daysLeft),
                 ];
             });
 
@@ -384,7 +386,7 @@ class ReportService
                 'date_to'   => $dateTo->toDateTimeString(),
             ],
             'subscription_types' => [
-                'total_contracts'       => $totalContracts,
+                'total_contracts'       => $totalInvoices,
                 'multi_day_count'       => $monthlyCount,
                 'single_day_count'      => $dailyCount,
                 'both_count'            => $bothCount,
@@ -399,8 +401,8 @@ class ReportService
                 'total_subs'      => $totalSubsCount,
             ],
             'expiring_soon' => [
-                'count' => $expiringSoonContracts->count(),
-                'list'  => $expiringSoonContracts,
+                'count' => $expiringSoonSubscriptions->count(),
+                'list'  => $expiringSoonSubscriptions,
             ],
         ];
     }

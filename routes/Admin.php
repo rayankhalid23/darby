@@ -134,6 +134,9 @@ Route::prefix('schools')->group(function () {
     // =========================================================================
     // 🗺️ مسارات إدارة الجغرافيا والمناطق والبلديات (Geographic Management)
     // =========================================================================
+    Route::match(['get', 'post'], '/geography/search', [\App\Http\Controllers\Api\Shared\GeographySearchController::class, 'search'])
+        ->name('api.admin.geography.search');
+
     Route::prefix('zones')->group(function () {
         Route::get('/', [ZoneController::class, 'index']);          // عرض المناطق
         Route::post('/', [ZoneController::class, 'store']);         // إضافة منطقة جديدة
@@ -198,6 +201,11 @@ Route::prefix('driver-reviews')->group(function () {
 
     // --- 💰 مسارات الإدارة المالية الشاملة للأدمن ---
     Route::prefix('financial')->group(function () {
+
+
+    Route::match(['get', 'post', 'put'], '/pricing-settings', [\App\Http\Controllers\Api\Admin\PricingSettingController::class, 'manage'])
+            ->name('api.admin.financial.pricing.manage');
+            
         // 1. الداشبورد والملخص والسلامة المالية والسجلات
         Route::get('/summary', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'summary']);
         Route::get('/solvency-check', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'solvencyCheck']);
@@ -236,6 +244,24 @@ Route::prefix('driver-reviews')->group(function () {
         // 8. إلغاء الرحلات بمصفوفة الغرامات والمعاينة
         Route::get('/trips/{tripId}/cancel-preview', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'cancellationPreview']);
         Route::post('/trips/{tripId}/cancel-with-matrix', [\App\Http\Controllers\Api\Admin\FinancialLedgerController::class, 'cancelTripWithMatrix']);
+    });
+
+    // --- 💳 مسارات إدارة طرق الدفع للأدمن ---
+    Route::prefix('payment-methods')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Admin\PaymentMethodController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\Admin\PaymentMethodController::class, 'store']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\Admin\PaymentMethodController::class, 'show']);
+        Route::put('/{id}', [\App\Http\Controllers\Api\Admin\PaymentMethodController::class, 'update']);
+        Route::patch('/{id}/toggle-status', [\App\Http\Controllers\Api\Admin\PaymentMethodController::class, 'toggleStatus']);
+        Route::delete('/{id}', [\App\Http\Controllers\Api\Admin\PaymentMethodController::class, 'destroy']);
+    });
+
+    // --- 🚖 مسارات إدارة طلبات شحن السائقين للأدمن ---
+    Route::prefix('driver-recharges')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Admin\DriverRechargeController::class, 'index']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\Admin\DriverRechargeController::class, 'show']);
+        Route::post('/{id}/approve', [\App\Http\Controllers\Api\Admin\DriverRechargeController::class, 'approve']);
+        Route::post('/{id}/reject', [\App\Http\Controllers\Api\Admin\DriverRechargeController::class, 'reject']);
     });
 
     // مسارات الفواتير للأدمن (قراءة فقط)

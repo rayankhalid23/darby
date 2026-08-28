@@ -132,22 +132,26 @@ return new class extends Migration
      */
     private function dropForeignKeyIfExists(string $table, string $column): void
     {
-        if (DB::getDriverName() !== 'mysql') {
+        if (DB::getDriverName() !== 'mysql' || !Schema::hasTable($table)) {
             return;
         }
 
-        $constraints = DB::select(
-            'SELECT CONSTRAINT_NAME AS name
-               FROM information_schema.KEY_COLUMN_USAGE
-              WHERE TABLE_SCHEMA = DATABASE()
-                AND TABLE_NAME = ?
-                AND COLUMN_NAME = ?
-                AND REFERENCED_TABLE_NAME IS NOT NULL',
-            [$table, $column]
-        );
+        try {
+            $constraints = DB::select(
+                'SELECT CONSTRAINT_NAME AS name
+                   FROM information_schema.KEY_COLUMN_USAGE
+                  WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME = ?
+                    AND COLUMN_NAME = ?
+                    AND REFERENCED_TABLE_NAME IS NOT NULL',
+                [$table, $column]
+            );
 
-        foreach ($constraints as $constraint) {
-            DB::statement("ALTER TABLE `{$table}` DROP FOREIGN KEY `{$constraint->name}`");
+            foreach ($constraints as $constraint) {
+                DB::statement("ALTER TABLE `{$table}` DROP FOREIGN KEY `{$constraint->name}`");
+            }
+        } catch (\Throwable $e) {
+            // ignore if table or fk does not exist
         }
     }
 

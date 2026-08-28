@@ -15,18 +15,39 @@ class SubscriptionRequestDetailsResource extends JsonResource
 
         // دمج مرن لجلب بيانات ولي الأمر (سواء كان User مباشرة أو عبر علاقة parent)
         $parentUser = optional($this->parent)->user ?? $this->parent;
-        $discountFactor = 0.92; 
 
-        // السعر الإجمالي
-        $rawTotal = (float) ($this->total_price ?? $this->price ?? optional($this->subscriptionRequest)->total_price ?? 0);
-        $netTotalAmount = round($rawTotal * $discountFactor, 2);
+        $subReq = $this->subscriptionRequest ?? $this;
 
         // جلب الأطفال: سواء كانت علاقة مجموعة (children) أو طفل منفرد (child)
         $childrenList = collect();
         if ($this->relationLoaded('children') && $this->children) {
             $childrenList = $this->children;
-        } elseif ($this->child) {
+        } elseif (isset($this->child) && $this->child) {
             $childrenList = collect([$this->child]);
+        }
+
+        // حساب السعر الإجمالي وصافي السائق
+        $rawTotal = (float) ($this->total_price ?? $this->price ?? optional($this->subscriptionRequest)->total_price ?? 0);
+        $totalDiscount = (float) ($this->discount_amount ?? optional($this->subscriptionRequest)->discount_amount ?? 0);
+        $totalAfterDiscount = (float) ($this->total_amount_after_discount ?? optional($this->subscriptionRequest)->total_amount_after_discount ?? max(0, $rawTotal - $totalDiscount));
+
+        $netTotalAmount = 0.0;
+        if ($childrenList->isNotEmpty()) {
+            $netTotalAmount = (float) $childrenList->sum(function ($child) {
+                $pivot = $child->pivot ?? null;
+                if (!$pivot) return 0;
+                $net = (float) ($pivot->driver_net_price ?? 0);
+                if ($net <= 0) {
+                    $raw = (float) ($pivot->price_per_child ?? $pivot->trip_price ?? 0);
+                    $disc = (float) ($pivot->discount_amount ?? 0);
+                    $afterDisc = (float) ($pivot->total_amount_after_discount ?? max(0, $raw - $disc));
+                    $net = round($afterDisc * 0.92, 2);
+                }
+                return $net;
+            });
+        }
+        if ($netTotalAmount <= 0) {
+            $netTotalAmount = round($totalAfterDiscount * 0.92, 2);
         }
 
         return [
@@ -34,10 +55,14 @@ class SubscriptionRequestDetailsResource extends JsonResource
             'status' => [
                 'value' => is_array($this->status) ? ($this->status['value'] ?? $this->status) : $this->status,
             ],
-            'notes'          => $this->notes ?? $this->general_notes ?? optional($this->subscriptionRequest)->notes ?? null, 
-            'total_amount'   => $netTotalAmount,
-            'currency'       => 'د.ل', 
-            'children_count' => (int) ($this->children_count ?? ($childrenList->count() ?: 1)),
+            'notes'                => $this->notes ?? $this->general_notes ?? optional($this->subscriptionRequest)->notes ?? null, 
+            'total_amount'         => round($netTotalAmount, 2), // صافي مستحقات السائق للطلب بالكامل
+            'driver_net_total'     => round($netTotalAmount, 2),
+            'original_total'       => round($rawTotal, 2),
+            'discount_total'       => round($totalDiscount, 2),
+            'total_after_discount' => round($totalAfterDiscount, 2),
+            'currency'             => 'د.ل', 
+            'children_count'       => (int) ($this->children_count ?? ($childrenList->count() ?: 1)),
 
             'parent' => [
                 'id'     => optional($parentUser)->id,
@@ -47,18 +72,24 @@ class SubscriptionRequestDetailsResource extends JsonResource
                 'avatar' => optional($parentUser)->avatar_url ?? optional($parentUser)->photo_url ?? null,
             ],
 
-            'children' => $childrenList->map(function ($child) use ($discountFactor) {
+            'children' => $childrenList->map(function ($child) use ($subReq) {
                 $pivot   = $child->pivot ?? null;
                 $school  = optional($child->school ?? $this->school);
                 $address = optional($child->address);
 
-                $rawChildTotal = (float) ($pivot->price_per_child ?? $pivot->total_price ?? $this->price ?? $child->price ?? 0);
-                $rawTripPrice  = (float) ($pivot->trip_price ?? ($rawChildTotal > 0 ? $rawChildTotal / 40 : 0)); // 20 يوم * رحلتين
+                $rawChildPrice = (float) ($pivot->price_per_child ?? $pivot->trip_price ?? 0);
+                $tripPrice     = (float) ($pivot->trip_price ?? $rawChildPrice);
+                $discountAmt   = (float) ($pivot->discount_amount ?? 0);
+                $afterDiscount = (float) ($pivot->total_amount_after_discount ?? max(0, $rawChildPrice - $discountAmt));
+                if ($afterDiscount <= 0 && $rawChildPrice > 0) {
+                    $afterDiscount = max(0, $rawChildPrice - $discountAmt);
+                }
 
-                $netChildTotal = round($rawChildTotal * $discountFactor, 2);
-                $netTripPrice  = round($rawTripPrice * $discountFactor, 2);
-
-                $subReq = $this->subscriptionRequest ?? $this;
+                $driverNetPrice = (float) ($pivot->driver_net_price ?? 0);
+                if ($driverNetPrice <= 0 && $afterDiscount > 0) {
+                    $driverNetPrice = round($afterDiscount * 0.92, 2);
+                }
+                $platformFee = max(0, round($afterDiscount - $driverNetPrice, 2));
 
                 return [
                     'id'        => $child->id,
@@ -73,8 +104,14 @@ class SubscriptionRequestDetailsResource extends JsonResource
                     ],
 
                     'pricing' => [
-                        'trip_price'  => $netTripPrice,
-                        'total_price' => $netChildTotal,
+                        'trip_price'                  => $tripPrice,
+                        'original_price'              => $rawChildPrice,
+                        'price_per_child'             => $rawChildPrice,
+                        'discount_amount'             => $discountAmt,
+                        'total_amount_after_discount' => $afterDiscount,
+                        'platform_commission'         => $platformFee,
+                        'driver_net_price'            => $driverNetPrice,
+                        'total_price'                 => $driverNetPrice, // صافي السائق
                     ],
 
                     'subscription_period' => [

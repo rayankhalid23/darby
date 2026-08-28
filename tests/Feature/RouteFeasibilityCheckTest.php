@@ -86,53 +86,51 @@ class RouteFeasibilityCheckTest extends TestCase
 
     private function makePendingRequest(float $homeLat, float $homeLng): SubscriptionRequest
     {
+        $addressId = DB::table('addresses')->insertGetId([
+            'parent_id'  => $this->parentUser->id,
+            'label'      => 'منزل',
+            'lat'        => $homeLat,
+            'lng'        => $homeLng,
+        ]);
+
         $child = Child::create([
-            'parent_id'            => $this->parent->id,
-            'school_id'            => $this->school->id,
-            'full_name'            => 'ط·ظپظ„ ظپط­طµ ط§ظ„ط¥ظ…ظƒط§ظ†ظٹط©',
-            'birth_date'           => '2018-05-10',
-            'gender'               => 'male',
-            'grade'                => 1,
+            'parent_id'           => $this->parent->id,
+            'school_id'           => $this->school->id,
+            'address_id'          => $addressId,
+            'full_name'           => 'طفل فحص الإمكانية',
+            'birth_date'          => '2018-05-10',
+            'gender'              => 'male',
+            'grade'               => 1,
             'notification_radius' => 500,
         ]);
 
-        $addressId = DB::table('addresses')->insertGetId([
-            'parent_id'  => $this->parentUser->id,
-            'label'      => 'ظ…ظ†ط²ظ„',
-            'lat'        => $homeLat,
-            'lng'        => $homeLng,
-            'is_default' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
         $req = SubscriptionRequest::create([
-            'parent_id'         => $this->parent->id,
-            'driver_id'         => $this->driver->id,
-            'school_id'         => $this->school->id,
-            'subscription_type' => 'multi_day',
-            'direction'         => 'go',
-            'timing'            => 'MORNING',
-            'start_date'        => now()->addDay()->format('Y-m-d'),
-            'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-            'days_count'        => 22,
-            'total_price'       => 100.00,
-            'status'            => SubscriptionRequest::STATUS_PENDING,
-            'children_count'    => 1,
+            'parent_id'                   => $this->parent->id,
+            'driver_id'                   => $this->driver->id,
+            'status'                      => SubscriptionRequest::STATUS_PENDING,
+            'total_price'                 => 100.00,
+            'discount_amount'             => 0.00,
+            'total_amount_after_discount' => 100.00,
+            'children_count'              => 1,
         ]);
 
         DB::table('request_children')->insert([
-            'request_id'         => $req->id,
-            'child_id'           => $child->id,
-            'pickup_address_id'  => $addressId,
-            'dropoff_address_id' => $this->school->id,
-            'home_lat'           => $homeLat,
-            'home_lng'           => $homeLng,
-            'home_label'         => 'ط§ظ„ظ…ظ†ط²ظ„',
-            'school_lat'         => 32.90,
-            'school_lng'         => 13.20,
-            'school_label'       => 'ط§ظ„ظ…ط¯ط±ط³ط©',
-            'price_per_child'    => 100.00,
+            'request_id'                  => $req->id,
+            'child_id'                    => $child->id,
+            'subscription_type'           => 'multi_day',
+            'trip_direction'              => 'go',
+            'timing'                      => 'MORNING',
+            'start_date'                  => now()->addDay()->format('Y-m-d'),
+            'end_date'                    => now()->addMonths(1)->format('Y-m-d'),
+            'working_days_count'          => 22,
+            'distance_km'                 => 4.0,
+            'trip_price'                  => 100.00,
+            'price_per_child'             => 100.00,
+            'discount_amount'             => 0.00,
+            'total_amount_after_discount' => 100.00,
+            'driver_net_price'            => 92.00,
+            'created_at'                  => now(),
+            'updated_at'                  => now(),
         ]);
 
         return $req;

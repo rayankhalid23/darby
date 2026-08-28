@@ -6,12 +6,17 @@ use App\Http\Controllers\Api\Auth\LoginController;
 use App\Http\Controllers\Api\Auth\PasswordController;
 use App\Http\Controllers\Api\Shared\NotificationController as SharedNotificationController;
 use App\Http\Controllers\Api\Shared\MediaController;
+use App\Http\Controllers\Api\Shared\GeographySearchController;
 
 /*
 |--------------------------------------------------------------------------
 | API Routes
 |--------------------------------------------------------------------------
 */
+
+// 🗺️ البحث في التقسيمات الجغرافية (بلدية، بلدية فرعية، منطقة)
+Route::match(['get', 'post'], '/geography/search', [GeographySearchController::class, 'search'])
+    ->name('api.geography.search');
 
 // 🖼️ تقديم ملفات وثائق/مركبات السائقين عبر لارافيل لضمان ترويسات CORS (عام، بلا توكن —
 // وسوم <img> والمكتبات المستخدمة في تحميل الصور لا ترسل Authorization)

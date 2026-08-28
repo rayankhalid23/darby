@@ -3,36 +3,12 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\API\Parent\ParentSubscriptionController;
 use App\Http\Controllers\API\Driver\DriverSubscriptionController;
-use App\Http\Controllers\API\Shared\ContractController;
 use App\Http\Controllers\Api\Shared\ChatController;
 use App\Http\Controllers\API\Driver\DriverRouteController;
 use App\Http\Controllers\Api\Trip\DriverTripController;
 
 
 Route::middleware('auth:sanctum')->group(function () {
-
-    // ============================================================
-    // مسارات العقود (Shared)
-    // ============================================================
-    Route::prefix('contracts')->group(function () {
-        // الآن المسار سيكون: /api/contracts/{id}/pdf
-        Route::get('/{id}/pdf', [ContractController::class, 'generatePdf']);
-        
-        // المسار سيكون: /api/contracts/clauses
-        Route::get('/clauses', [ContractController::class, 'clauses']);
-        
-        // المسار سيكون: /api/contracts
-        Route::post('/', [ContractController::class, 'store']);
-        
-        // المسار سيكون: /api/contracts/{id}
-        Route::get('/{id}', [ContractController::class, 'show']);
-        
-        // المسار سيكون: /api/contracts/{id}/accept
-        Route::put('/{id}/accept', [ContractController::class, 'accept']);
-        
-        // المسار سيكون: /api/contracts/{id}/reject
-        Route::put('/{id}/reject', [ContractController::class, 'reject']);
-    });
 
     // ============================================================
     // مسارات أولياء الأمور لإرسال واستعراض طلبات الاشتراك
@@ -76,7 +52,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/chats', [ChatController::class, 'getDriverChatList']);
   
         Route::get('/routes', [DriverRouteController::class, 'index']); 
-        Route::post('/trips/start', [DriverTripController::class, 'startTrip']);
+        Route::post('/trips/start', [DriverTripController::class, 'start']);
         
         // 2. مسارات تحتوي على متغيرات (Dynamic Parameters) - توضع أخيراً
         Route::put('/routes/{route}', [DriverRouteController::class, 'update']);

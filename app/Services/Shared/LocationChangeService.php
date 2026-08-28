@@ -43,16 +43,16 @@ class LocationChangeService
             throw new Exception('هذا الحساب غير مسجل كولي أمر في النظام.');
         }
 
-        $addresses = Address::where('parent_id', $parent->id)->orderByDesc('id')->get();
+        $parentIds = array_values(array_unique(array_filter([$userId, $parent->id])));
+        $addresses = Address::whereIn('parent_id', $parentIds)->orderByDesc('id')->get();
 
         $activeSubscriptions = ActiveSubscription::where(function ($q) use ($userId, $parent) {
                 $q->where('parent_id', $parent->id)->orWhere('parent_id', $userId);
             })
             ->where('status', 'active')
-            ->with(['child:id,full_name,photo_url', 'driver.user:id,full_name', 'subscriptionRequest:id,timing,direction'])
+            ->with(['child:id,full_name,photo_url', 'driver.user:id,full_name', 'route:id,route_name,route_type,shift_slot,start_time'])
             ->get()
             ->map(function (ActiveSubscription $sub) {
-                $subReq = $sub->subscriptionRequest;
                 return [
                     'active_subscription_id' => $sub->id,
                     'child'                  => [
@@ -65,10 +65,10 @@ class LocationChangeService
                         'name' => $sub->driver?->user?->full_name,
                     ],
                     'trip' => [
-                        'timing'    => $subReq?->timing,
-                        'direction' => $subReq?->direction,
-                        'timing_text'    => $subReq?->timing_text ?? null,
-                        'direction_text' => $subReq?->direction_text ?? null,
+                        'timing'         => $sub->route?->route_type ?? $sub->route?->shift_slot,
+                        'direction'      => $sub->route?->shift_slot ?? $sub->route?->route_type,
+                        'timing_text'    => $sub->route?->route_type ?? null,
+                        'direction_text' => $sub->route?->shift_slot ?? null,
                     ],
                     'current_pickup' => [
                         'lat'   => $sub->pickup_lat,
@@ -120,8 +120,9 @@ class LocationChangeService
             throw new Exception('لا يمكن طلب تغيير الموقع لاشتراك غير نشط.');
         }
 
+        $parentIds = array_values(array_unique(array_filter([$userId, $parent->id])));
         if ($addressId) {
-            $address = Address::where('id', $addressId)->where('parent_id', $parent->id)->first();
+            $address = Address::where('id', $addressId)->whereIn('parent_id', $parentIds)->first();
             if (!$address) {
                 throw new Exception('العنوان المحدد غير موجود ضمن مواقعك المحفوظة.');
             }

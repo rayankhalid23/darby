@@ -18,10 +18,14 @@ class RouteFeasibilityService
 
     public function checkForRequest(SubscriptionRequest $req, int $maxDurationMinutes = self::DEFAULT_MAX_TRIP_DURATION_MINUTES): array
     {
-        $req->loadMissing(['children', 'driver.seatSlots']);
+        $req->loadMissing(['children.pickupAddress', 'children.school', 'driver.seatSlots']);
         $driver = $req->driver;
 
-        $slots = DriverSeatSlot::resolveSlots($req->timing ?? 'MORNING', $req->direction ?? 'both');
+        $firstPivot = $req->children->first()?->pivot;
+        $timing = $firstPivot?->timing ?? $req->timing ?? 'MORNING';
+        $direction = $firstPivot?->trip_direction ?? $firstPivot?->direction ?? $req->direction ?? 'both';
+
+        $slots = DriverSeatSlot::resolveSlots($timing, $direction);
         $childrenCount = $req->children->count() ?: max(1, (int) ($req->children_count ?? 1));
 
         $slotResults = [];
@@ -108,10 +112,10 @@ class RouteFeasibilityService
         $schoolPoints = [];
 
         foreach ($req->children as $child) {
-            $homeLat = (float) ($child->pivot->home_lat ?? 0);
-            $homeLng = (float) ($child->pivot->home_lng ?? 0);
-            $schoolLat = (float) ($child->pivot->school_lat ?? 0);
-            $schoolLng = (float) ($child->pivot->school_lng ?? 0);
+            $homeLat = (float) ($child->pivot->home_lat ?? $child->address?->lat ?? $child->homeAddress?->lat ?? $child->pickupAddress?->lat ?? 0);
+            $homeLng = (float) ($child->pivot->home_lng ?? $child->address?->lng ?? $child->homeAddress?->lng ?? $child->pickupAddress?->lng ?? 0);
+            $schoolLat = (float) ($child->pivot->school_lat ?? $child->school?->lat ?? $child->school?->latitude ?? 0);
+            $schoolLng = (float) ($child->pivot->school_lng ?? $child->school?->lng ?? $child->school?->longitude ?? 0);
 
             if ($homeLat && $homeLng) {
                 $homePoints[] = ['lat' => $homeLat, 'lng' => $homeLng];

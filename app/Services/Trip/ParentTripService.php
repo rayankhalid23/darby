@@ -230,7 +230,8 @@ class ParentTripService
                 foreach ($subs as $s) {
                     $c = $s->child;
                     if (!$c) continue;
-                    $costPerChildNum = (float)($s->contract->price_per_day ?? 15.00);
+                    $req = $s->subscriptionRequest;
+                    $costPerChildNum = (float)($req?->trip_price ?? 15.00);
                     $totalCost += $costPerChildNum;
 
                     $childrenArr[] = [
@@ -276,7 +277,8 @@ class ParentTripService
                 foreach ($subs as $s) {
                     $c = $s->child;
                     if (!$c) continue;
-                    $costPerChildNum = (float)($s->contract->price_per_day ?? 15.00);
+                    $req = $s->subscriptionRequest;
+                    $costPerChildNum = (float)($req?->trip_price ?? 15.00);
                     $totalCost += $costPerChildNum;
 
                     $childrenArr[] = [

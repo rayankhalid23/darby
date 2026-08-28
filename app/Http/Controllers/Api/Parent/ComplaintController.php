@@ -204,10 +204,10 @@ public function update(UpdateComplaintRequest $request, int $id): JsonResponse
                     $realDriverId = $driverByUserId->id;
                 }
 
-                // ج. التحقق من وجود عقد يربط الطرفين
-                $contract = null;
+                // ج. التحقق من وجود اشتراك يربط الطرفين
+                $subscription = null;
                 if ($parent && $realDriverId) {
-                    $contract = DB::table('contracts')
+                    $subscription = DB::table('active_subscriptions')
                         ->where('parent_id', $parent->id)
                         ->where('driver_id', $realDriverId)
                         ->first();
@@ -225,7 +225,7 @@ public function update(UpdateComplaintRequest $request, int $id): JsonResponse
                     'input_driver_id' => $driverId,
                     'resolved_driver_id_in_db' => $realDriverId ?? "لا يوجد سائق بهذا الـ ID في جدول drivers",
                     'is_driver_passed_as_user_id' => $driverByUserId ? "نعم (السائق ممرر بـ user_id الخاص به)" : "لا",
-                    'contract' => $contract ? "موجود (الحالة: " . ($contract->status ?? 'غير محددة') . ")" : "لا يوجد أي عقد مسجل بين ولي الأمر هذا والسائق في جدول contracts",
+                    'subscription' => $subscription ? "موجود (الحالة: " . ($subscription->status ?? 'غير محددة') . ")" : "لا يوجد أي اشتراك مسجل بين ولي الأمر هذا والسائق في جدول active_subscriptions",
                     'total_trips_for_driver_in_db' => $rawTripsCount,
                     'total_events_in_system' => $rawEventsCount
                 ];

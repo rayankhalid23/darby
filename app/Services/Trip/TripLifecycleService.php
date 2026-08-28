@@ -423,10 +423,76 @@ class TripLifecycleService
                 'trip_id' => (string) $trip->id,
             ]);
 
+            // 4. تسوية الأمانات المالية وتحويل مستحقات السائق واقتطاع عمولة المنصة
+            $this->settlePlatformFinancesForCompletedTrip($trip);
+
             return [
                 'status' => 'success',
                 'message' => 'تم إنهاء الرحلة وتصفير سجلات الكاش المؤقتة بنجاح.'
             ];
         });
+    }
+
+    /**
+     * تسوية المستحقات المالية المحجوزة للرحلة المكتملة
+     */
+    public function settlePlatformFinancesForCompletedTrip(Trip $trip): int
+    {
+        $finances = \App\Models\Shared\PlatformFinance::where('driver_id', $trip->driver_id)
+            ->where('status', \App\Models\Shared\PlatformFinance::STATUS_HELD)
+            ->get();
+
+        $settledCount = 0;
+        $vault = \App\Models\Shared\MasterEscrowVault::getVault();
+        $driver = Driver::find($trip->driver_id);
+        $ledger = app(\App\Services\Shared\FinancialLedgerService::class);
+
+        foreach ($finances as $finance) {
+            $totalCents       = (int) round($finance->total_amount * 100);
+            $commissionCents  = (int) round($finance->platform_commission_amount * 100);
+            $driverNetCents   = (int) round($finance->driver_net_amount * 100);
+
+            $vault->decrement('parents_escrow_pool', $totalCents);
+            $vault->increment('platform_revenue_pool', $commissionCents);
+
+            if ($driver) {
+                $driver->deposit($driverNetCents);
+            }
+
+            $finance->update([
+                'trip_id'    => $trip->id,
+                'status'     => \App\Models\Shared\PlatformFinance::STATUS_COMPLETED,
+                'settled_at' => now(),
+            ]);
+
+            try {
+                $ledger->recordLedgerEntry(
+                    'parents_escrow_pool',
+                    "driver_wallet_{$trip->driver_id}",
+                    $driverNetCents,
+                    'driver_payout',
+                    0,
+                    (int) ($driver?->balance ?? 0),
+                    "PAYOUT-TRIP-{$trip->id}-{$finance->id}",
+                    ['platform_finance_id' => $finance->id, 'trip_id' => $trip->id]
+                );
+
+                $ledger->recordLedgerEntry(
+                    'parents_escrow_pool',
+                    'platform_revenue_pool',
+                    $commissionCents,
+                    'platform_commission',
+                    0,
+                    $commissionCents,
+                    "COMMISSION-TRIP-{$trip->id}-{$finance->id}"
+                );
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning("فشل تسجيل حركات السجل المالي لاكتمال الرحلة ID {$trip->id}: " . $e->getMessage());
+            }
+
+            $settledCount++;
+        }
+
+        return $settledCount;
     }
 }

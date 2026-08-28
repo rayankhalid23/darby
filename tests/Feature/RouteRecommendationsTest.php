@@ -121,58 +121,50 @@ class RouteRecommendationsTest extends TestCase
             'notification_radius'=> 500,
         ]);
 
-        // --- 8. ط¹ظ‚ط¯ ---
+        // --- 8. طلب اشتراك واشتراك نشط ---
         $request = SubscriptionRequest::create([
-            'parent_id'         => $this->parent->id,
-            'driver_id'         => $this->driver->id,
-            'school_id'         => $this->school->id,
-            'subscription_type' => 'multi_day',
-            'direction'         => 'both',
-            'timing'            => 'MORNING',
-            'start_date'        => now()->subDay()->format('Y-m-d'),  // ط¨ط¯ط£ ط¨ط§ظ„ط£ظ…ط³ â†گ طµط§ظ„ط­ ظپظˆط±ط§ظ‹
-            'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-            'days_count'        => 22,
-            'total_price'       => 200.00,
-            'pickup_time'       => '07:00:00',
-            'dropoff_time'      => '14:00:00',
-            'max_waiting_time'  => 15,
-            'status'            => 'accepted',
-            'children_count'    => 1,
+            'parent_id'                   => $this->parent->id,
+            'driver_id'                   => $this->driver->id,
+            'status'                      => 'accepted',
+            'total_price'                 => 200.00,
+            'discount_amount'             => 0.00,
+            'total_amount_after_discount' => 200.00,
+            'children_count'              => 1,
         ]);
 
-        $contract = Contract::create([
+        DB::table('request_children')->insert([
+            'request_id'                  => $request->id,
+            'child_id'                    => $this->child->id,
+            'subscription_type'           => 'multi_day',
+            'trip_direction'              => 'both',
+            'timing'                      => 'MORNING',
+            'start_date'                  => now()->subDay()->format('Y-m-d'),
+            'end_date'                    => now()->addMonths(1)->format('Y-m-d'),
+            'working_days_count'          => 22,
+            'distance_km'                 => 5.0,
+            'trip_price'                  => 200.00,
+            'price_per_child'             => 200.00,
+            'discount_amount'             => 0.00,
+            'total_amount_after_discount' => 200.00,
+            'driver_net_price'            => 184.00,
+            'created_at'                  => now(),
+            'updated_at'                  => now(),
+        ]);
+
+        // --- 9. اشتراك نشط بدون مسار (route_id = null) ---
+        $this->subscription = ActiveSubscription::create([
             'subscription_request_id' => $request->id,
+            'child_id'                => $this->child->id,
+            'driver_id'               => $this->driver->id,
             'parent_id'               => $this->parentUser->id,
-            'driver_id'               => $this->driverUser->id,
-            'contract_number'         => 'DRBY-REC-' . rand(100000, 999999),
-            'subscription_type' => 'multi_day',
-            'direction'               => 'both',
-            'timing'                  => 'MORNING',
+            'route_id'                => null,     // لم يُسند بعد ← مرشح للتوصيات
+            'pickup_lat'              => 32.8812,
+            'pickup_lng'              => 13.1812,
+            'pickup_label'            => 'منزل الطفل',
             'pickup_time'             => '07:00:00',
             'dropoff_time'            => '14:00:00',
-            'max_waiting_time'        => 15,
-            'start_date'              => now()->subDay()->format('Y-m-d'),
-            'end_date'                => now()->addMonths(1)->format('Y-m-d'),
-            'days_count'              => 22,
-            'total_price'             => 200.00,
-            'clauses'                 => [],
+            'sort_order'              => 0,
             'status'                  => 'active',
-        ]);
-
-        // --- 9. ط§ط´طھط±ط§ظƒ ظ†ط´ط· ط¨ط¯ظˆظ† ظ…ط³ط§ط± (route_id = null) ---
-        $this->subscription = ActiveSubscription::create([
-            'contract_id'  => $contract->id,
-            'child_id'     => $this->child->id,
-            'driver_id'    => $this->driver->id,
-            'parent_id'    => $this->parentUser->id,
-            'route_id'     => null,     // ظ„ظ… ظٹظڈط³ظ†ط¯ ط¨ط¹ط¯ â†گ ظ…ط±ط´ط­ ظ„ظ„طھظˆطµظٹط§طھ
-            'pickup_lat'   => 32.8812,
-            'pickup_lng'   => 13.1812,
-            'pickup_label' => 'ظ…ظ†ط²ظ„ ط§ظ„ط·ظپظ„',
-            'pickup_time'  => '07:00:00',
-            'dropoff_time' => '14:00:00',
-            'sort_order'   => 0,
-            'status'       => 'active',
         ]);
     }
 
@@ -386,6 +378,6 @@ class RouteRecommendationsTest extends TestCase
         $response->assertStatus(400);
         $response->assertJsonPath('status', 'error');
         $response->assertJsonPath('code', 'ALREADY_ASSIGNED');
-        $response->assertJsonPath('message', 'ظ‡ط°ط§ ط§ظ„ط§ط´طھط±ط§ظƒ طھظ… ط¥ط³ظ†ط§ط¯ظ‡ ظ„ظ…ط³ط§ط± ط¨ط§ظ„ظپط¹ظ„.');
+        $response->assertJsonPath('message', 'هذا الاشتراك تم إسناده لمسار بالفعل.');
     }
 }

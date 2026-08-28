@@ -4,19 +4,17 @@ namespace App\Services\Parent;
 
 use App\Models\Parent\Child;
 use App\Models\Driver\Driver;
+use App\Models\Driver\DriverSeatSlot;
+use App\Models\Shared\PricingSetting;
 use App\Models\Shared\Zone;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
 class DriverMatchingService
 {
-    private const PRICE_PER_KM_AC    = 2.00;
-    private const PRICE_PER_KM_NO_AC = 1.50;
-
-   
-
     private function resolveChildren(array $childIds, int $parentId): Collection
     {
         $query = Child::with(['school.zone.subMunicipality', 'address', 'logistics'])
@@ -30,84 +28,87 @@ class DriverMatchingService
     }
 
     public function matchDrivers(array $filters, int $parentId): LengthAwarePaginator
-{
-    // 1. استرجاع بيانات الأطفال المحددين بناءً على child_ids الإلزامية
-    $children = $this->resolveChildren($filters['child_ids'] ?? [], $parentId);
+    {
+        // 1. استرجاع بيانات الأطفال المحددين بناءً على child_ids
+        $children = $this->resolveChildren($filters['child_ids'] ?? [], $parentId);
 
-    // 2. الاستعلام الأساسي واستثناء السائقين ذوي الوثائق المنتهية
-    $query = Driver::query()
-        ->select('drivers.*')
-        ->whereIn('drivers.status', ['Approved', 'Active'])
-        ->whereDoesntHave('documents', function ($q) {
-            $q->whereIn('doc_type', ['LICENSE', 'INSURANCE', 'STAMP', 'TECHNICAL_INSPECTION'])
-              ->where('status', 'Expired');
-        })
-        ->with(['user', 'vehicles', 'zones', 'seatSlots']);
+        // 2. الاستعلام الأساسي واستثناء السائقين ذوي الوثائق المنتهية
+        $query = Driver::query()
+            ->select('drivers.*')
+            ->whereIn('drivers.status', ['Approved', 'Active'])
+            ->whereDoesntHave('documents', function ($q) {
+                $q->whereIn('doc_type', ['LICENSE', 'INSURANCE', 'STAMP', 'TECHNICAL_INSPECTION'])
+                  ->where('status', 'Expired');
+            })
+            ->with(['user', 'vehicles', 'zones', 'seatSlots']);
 
-    // 3. التحقق من وجود بحث بالاسم أو رقم الهاتف
-    $hasSearchQuery = !empty($filters['search_query']);
+        // 3. التحقق من وجود بحث بالاسم أو رقم الهاتف
+        $hasSearchQuery = !empty($filters['search_query']);
 
-    if ($hasSearchQuery) {
-        $this->applyTextSearch($query, $filters['search_query']);
-    }
-
-    if (!empty($filters['driver_gender'])) {
-        $query->where('drivers.gender', $filters['driver_gender']);
-    }
-
-    if (isset($filters['has_ac']) && $filters['has_ac'] !== null && $filters['has_ac'] !== '') {
-        $hasAc = filter_var($filters['has_ac'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-        if ($hasAc !== null) {
-            $query->whereHas('vehicles', fn($q) => $q->where('has_ac', $hasAc));
+        if ($hasSearchQuery) {
+            $this->applyTextSearch($query, $filters['search_query']);
         }
-    }
 
-    // 4. تطبيق الفلترة الذكية (السعة، المناطق، الجنس) فقط عند عدم وجود بحث نصي
-    if ($children->isNotEmpty() && !$hasSearchQuery) {
-        $this->applyChildrenSmartFilters($query, $children);
-    }
+        if (!empty($filters['driver_gender'])) {
+            $query->where('drivers.gender', $filters['driver_gender']);
+        }
 
-    // 5. الترتيب والتصفح
-    $drivers = $query
-        ->orderByDesc('rating_avg')
-        ->orderByDesc('completed_trips_count')
-        ->paginate(15);
-
-    // 6. حساب مسافات الأطفال والتسعير الفعلي لكل سائق (سواء بحث عادي أو بالنص)
-    if ($children->isNotEmpty()) {
-        // حل مشكلة N+1: حساب مسافة كل طفل مرة واحدة فقط قبل التكرار
-        $childrenDistances = [];
-        foreach ($children as $child) {
-            if ($child->address?->lat && $child->school?->lat) {
-                $childrenDistances[$child->id] = $this->getRouteDistanceInKm(
-                    $child->address->lat,
-                    $child->address->lng,
-                    $child->school->lat,
-                    $child->school->lng
-                );
-            } else {
-                $childrenDistances[$child->id] = 0.0;
+        if (isset($filters['has_ac']) && $filters['has_ac'] !== null && $filters['has_ac'] !== '') {
+            $hasAc = filter_var($filters['has_ac'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($hasAc !== null) {
+                $query->whereHas('vehicles', fn($q) => $q->where('has_ac', $hasAc));
             }
         }
 
-        $drivers->getCollection()->transform(function (Driver $driver) use ($children, $childrenDistances) {
-            $priceDetails = $this->calculatePricingForDriver($driver, $children, $childrenDistances);
-            $driver->estimated_total_price = $priceDetails['total'];
-            $driver->pricing_breakdown     = $priceDetails['breakdown'];
-            $driver->children_context      = $children;
-            return $driver;
-        });
-    } else {
-        $drivers->getCollection()->transform(function (Driver $driver) {
-            $driver->estimated_total_price = 0.0;
-            $driver->pricing_breakdown     = [];
-            $driver->children_context      = collect();
-            return $driver;
-        });
-    }
+        // 4. تطبيق الفلترة الذكية عند عدم وجود بحث نصي
+        if ($children->isNotEmpty() && !$hasSearchQuery) {
+            $this->applyChildrenSmartFilters($query, $children);
+        }
 
-    return $drivers;
-}
+        // 5. الترتيب والتصفح
+        $drivers = $query
+            ->orderByDesc('rating_avg')
+            ->orderByDesc('completed_trips_count')
+            ->paginate(15);
+
+        // 6. حساب مسافات الأطفال والتسعير الفعلي لكل سائق
+        if ($children->isNotEmpty()) {
+            $childrenDistances = [];
+            foreach ($children as $child) {
+                if ($child->address?->lat && $child->school?->lat) {
+                    $childrenDistances[$child->id] = $this->getRouteDistance(
+                        $child->address->lat,
+                        $child->address->lng,
+                        $child->school->lat,
+                        $child->school->lng
+                    );
+                } else {
+                    $childrenDistances[$child->id] = 0.0;
+                }
+            }
+
+            $drivers->getCollection()->transform(function (Driver $driver) use ($children, $childrenDistances) {
+                $priceDetails = $this->calculatePricingForDriver($driver, $children, $childrenDistances);
+                $driver->estimated_total_price = $priceDetails['total'];
+                $driver->pricing_breakdown      = $priceDetails['breakdown'];
+                $driver->platform_fee           = $priceDetails['platform_fee'];
+                $driver->driver_net_amount      = $priceDetails['driver_net_amount'];
+                $driver->children_context       = $children;
+                return $driver;
+            });
+        } else {
+            $drivers->getCollection()->transform(function (Driver $driver) {
+                $driver->estimated_total_price = 0.0;
+                $driver->pricing_breakdown      = [];
+                $driver->platform_fee           = 0.0;
+                $driver->driver_net_amount      = 0.0;
+                $driver->children_context       = collect();
+                return $driver;
+            });
+        }
+
+        return $drivers;
+    }
 
     private function applyTextSearch($query, string $keyword): void
     {
@@ -130,7 +131,7 @@ class DriverMatchingService
         if (count($genders) > 1) {
             $query->where('drivers.accepted_gender', 'both');
         } else {
-            $query->whereIn('drivers.accepted_gender', [$genders[0], 'both']);
+            $query->whereIn('drivers.accepted_gender', [$genders[0] ?? 'both', 'both']);
         }
 
         $subscriptionTypes = $children->map(fn($c) => optional($c->logistics)->subscription_type)->filter()->unique()->values()->toArray();
@@ -153,7 +154,7 @@ class DriverMatchingService
         foreach ($children as $child) {
             $timing = strtoupper($child->logistics?->preferred_time_slot ?? 'MORNING');
             $direction = $child->logistics?->trip_direction ?? 'go';
-            $slots = \App\Models\Driver\DriverSeatSlot::resolveSlots($timing, $direction);
+            $slots = DriverSeatSlot::resolveSlots($timing, $direction);
 
             foreach ($slots as $slot) {
                 $slotDemand[$slot] = ($slotDemand[$slot] ?? 0) + 1;
@@ -179,115 +180,161 @@ class DriverMatchingService
             $q->whereIn('zones.id', $zoneIds);
         });
     }
-   
 
+    /**
+     * حساب التسعير الشامل بعمولة منفصلة لكل طفل ودعم خلط (يومي + شهري)
+     */
     private function calculatePricingForDriver(Driver $driver, Collection $children, array $childrenDistances = []): array
     {
-        // 1. تحديد تكييف المركبة النشطة للسائق
+        // 1. جلب إعدادات الأسعار من قاعدة البيانات
+        $settings = PricingSetting::first();
+        $priceKmAc         = $settings->price_per_km_ac ?? 2.50;
+        $priceKmNonAc      = $settings->price_per_km_non_ac ?? 2.00;
+        $discountOne       = $settings->discount_one_child ?? 0.00;
+        $discountTwo       = $settings->discount_two_children ?? 10.00;
+        $discountThreePlus = $settings->discount_three_plus_children ?? 15.00;
+        $commissionRate    = $settings->platform_commission_rate ?? 8.00; // 8%
+
+        // 2. تحديد نوع تكييف السيارة وسعر الكيلومتر
         $activeVehicle = $driver->vehicles->where('status', 'Active')->first() ?? $driver->vehicles->first();
         $hasAc = $activeVehicle ? (bool) $activeVehicle->has_ac : false;
-        $pricePerKm = $hasAc ? self::PRICE_PER_KM_AC : self::PRICE_PER_KM_NO_AC;
-    
-        $totalPrice = 0.0;
-        $breakdown = [];
-    
+        $pricePerKm = $hasAc ? $priceKmAc : $priceKmNonAc;
+
+        // 3. تحديد نسبة الخصم الجماعي بناءً على إجمالي عدد الأطفال بالطلب
+        $childrenCount = $children->count();
+        $discountPercent = match (true) {
+            $childrenCount === 1 => $discountOne,
+            $childrenCount === 2 => $discountTwo,
+            $childrenCount >= 3  => $discountThreePlus,
+            default              => 0.0,
+        };
+
+        $grandSubtotal     = 0.0;
+        $grandDiscount     = 0.0;
+        $grandTotal        = 0.0;
+        $grandPlatformFee  = 0.0;
+        $grandDriverNet    = 0.0;
+        $breakdown         = [];
+
         foreach ($children as $child) {
             $logistics = $child->logistics;
             $subscriptionType = (strtolower(trim($logistics?->subscription_type ?? 'multi_day')) === 'single_day') ? 'single_day' : 'multi_day';
             $startDate = $logistics?->start_date ?? null;
-            $endDate = $logistics?->end_date ?? null;
-            
-            // تنظيف ومطابقة اتجاه الرحلة بحزم (go, back, both)
-            $tripDir = strtolower(trim($logistics?->trip_direction ?? 'go'));
-    
+            $endDate   = $logistics?->end_date ?? null;
+            $tripDir   = strtolower(trim($logistics?->trip_direction ?? 'go'));
+
             $childEntry = [
-                'child_id'          => $child->id,
-                'child_name'        => $child->full_name ?? '',
-                'gender'            => $child->gender,
-                'subscription_type' => $subscriptionType,
-                'trip_direction'    => $tripDir,
+                'child_id'            => $child->id,
+                'child_name'          => $child->full_name ?? '',
+                'gender'              => $child->gender,
+                'school_stage'        => $child->school_stage ?? null,
+                'school_stage_label'  => $child->school_stage_label ?? ($child->school_stage ? (string) $child->school_stage : 'ابتدائي'),
+                'school_name'         => $child->school?->name ?? '',
+                'school_address'      => $child->school?->address ?? '',
+                'school_location'     => [
+                    'lat' => (float) ($child->school?->lat ?? 0),
+                    'lng' => (float) ($child->school?->lng ?? 0),
+                ],
+                'home_label'          => $child->address?->label ?? '',
+                'home_location'       => [
+                    'lat' => (float) ($child->address?->lat ?? 0),
+                    'lng' => (float) ($child->address?->lng ?? 0),
+                ],
+                'subscription_type'   => $subscriptionType,
+                'preferred_time_slot' => $logistics?->preferred_time_slot ?? 'morning',
+                'trip_direction'      => $tripDir,
+                'start_date'          => $startDate,
+                'end_date'            => $endDate,
             ];
-    
-            // 2. التحقق من اكتمال إحداثيات منزل ومدرسة الطفل
+
             if (!$child->address || !$child->school || !$child->address->lat || !$child->school->lat) {
                 $childEntry['error'] = 'بيانات الموقع أو إحداثيات الإقامة/المدرسة ناقصة';
-                $childEntry['child_total_price'] = 0.0;
+                $childEntry['child_final_total'] = 0.0;
                 $breakdown[] = $childEntry;
                 continue;
             }
-    
-            // 3. قراءة المسافة الخاصة بهذا الطفل بالذات
-            $distanceKm = $childrenDistances[$child->id] ?? $this->getRouteDistanceInKm(
-                $child->address->lat,
-                $child->address->lng,
-                $child->school->lat,
-                $child->school->lng
+
+            $distanceKm = $childrenDistances[$child->id] ?? $this->getRouteDistance(
+                $child->address->lat, $child->address->lng, $child->school->lat, $child->school->lng
             );
-    
-            // 4. تطبيق الحد الأدنى للمسافة (4 كم) لضمان جدوى المشوار
+
             $effectiveDistance = max($distanceKm, 4.0);
-    
-            // 5. معامل الاتجاه (ذهاب وعودة = 2، اتجاه واحد = 1)
-            $tripMultiplier = ($tripDir === 'both') ? 2 : 1;
-    
-            // --- الحسابات المالية الدقيقة ---
-            // أ) سعر المشوار الفردي (التوصيلة الواحدة فقط)
-            $singleLegPrice = round($effectiveDistance * $pricePerKm, 2);
-            
-            // ب) السعر اليومي للطفل (سعر المشوار الفردي × عدد الاتجاهات)
-            $dailyPrice = round($singleLegPrice * $tripMultiplier, 2);
-    
-            // ج) عدد أيام العمل الفعلية التي حددها ولي الأمر
-            $workingDays = ($subscriptionType === 'single_day') ? 1 : $this->calculateWorkingDays($startDate, $endDate);
-    
-            // د) الإجمالي النهائي للطفل خلال الفترة المحددة
-            $childTotalPrice = round($dailyPrice * $workingDays, 2);
-            $totalPrice += $childTotalPrice;
-    
-            // 6. تجهيز تفاصيل الفاتورة للفرونت إند
+            $tripMultiplier    = ($tripDir === 'both') ? 2 : 1;
+            $singleLegPrice    = round($effectiveDistance * $pricePerKm, 2);
+            $dailyPrice        = round($singleLegPrice * $tripMultiplier, 2);
+
+            // الأيام: اليومي ينسحب على يوم واحد (1)، والشهري يحسب أيامه الرسمية
+            $workingDays       = ($subscriptionType === 'single_day') ? 1 : $this->calculateWorkingDays($startDate, $endDate);
+
+            // --- الحسابات الخاصة بهذا الطفل بفرده ---
+            $childRawSubtotal  = round($dailyPrice * $workingDays, 2);                      // الإجمالي قبل الخصم
+            $childDiscountAmt  = round(($childRawSubtotal * $discountPercent) / 100, 2);    // قيمة خصم الطفل
+            $childFinalTotal   = round($childRawSubtotal - $childDiscountAmt, 2);          // صافي المطلوب للطفل
+
+            // --- عمولة المنصة لكل طفل بروحه (8%) ---
+            $childPlatformFee  = round(($childFinalTotal * $commissionRate) / 100, 2);     // عمولة المنصة من هذا الطفل
+            $childDriverNet    = round($childFinalTotal - $childPlatformFee, 2);           // صافي السائق من هذا الطفل
+
+            // تجميع الإجماليات العامة للطلب
+            $grandSubtotal    += $childRawSubtotal;
+            $grandDiscount    += $childDiscountAmt;
+            $grandTotal       += $childFinalTotal;
+            $grandPlatformFee += $childPlatformFee;
+            $grandDriverNet   += $childDriverNet;
+
+            // تفاصيل الطفل في الفاتورة
             $childEntry['distance_km']           = round($distanceKm, 2);
             $childEntry['effective_distance_km'] = round($effectiveDistance, 2);
             $childEntry['price_per_km']          = $pricePerKm;
-            $childEntry['single_leg_price']      = $singleLegPrice;   // سعر الرحلة الواحدة
-            $childEntry['daily_price']           = $dailyPrice;        // سعر اليوم الكامل للطفل
-            $childEntry['working_days']          = $workingDays;       // عدد الأيام المطلوبة
-            $childEntry['child_total_price']     = $childTotalPrice;   // إجمالي هذا الطفل
-    
+            $childEntry['working_days']          = $workingDays;
+            $childEntry['subtotal']              = $childRawSubtotal;
+            $childEntry['discount_percent']      = $discountPercent;
+            $childEntry['discount_amount']       = $childDiscountAmt;
+            $childEntry['final_total']           = $childFinalTotal;      // السعر النهائي للطفل
+            $childEntry['platform_fee']          = $childPlatformFee;     // عمولة المنصة للطفل (8%)
+            $childEntry['driver_net']            = $childDriverNet;       // صافي السائق للطفل
+
             $breakdown[] = $childEntry;
         }
-    
+
         return [
-            'total'     => round($totalPrice, 2), // الإجمالي الكلي لجميع الأطفال
-            'breakdown' => $breakdown
+            'subtotal'          => round($grandSubtotal, 2),
+            'discount_percent'  => $discountPercent,
+            'discount_amount'   => round($grandDiscount, 2),
+            'total'             => round($grandTotal, 2),             // إجمالي المطلوب دفعه من ولي الأمر
+            'platform_fee'      => round($grandPlatformFee, 2),      // مجموع عمولات المنصة لكل الأطفال (8%)
+            'driver_net_amount' => round($grandDriverNet, 2),        // مجموع صافي السائق
+            'breakdown'         => $breakdown,
         ];
     }
 
-    /**
-     * جلب إحداثيات ومسار الطريق (GeoJSON Geometry) لرسم المنحنيات على الخريطة
-     */
     public function getRouteGeometry(?float $lat1, ?float $lon1, ?float $lat2, ?float $lon2): array
     {
-        if ($lat1 === null || $lon1 === null || $lat2 === null || $lon2 === null) {
+        if (is_null($lat1) || is_null($lon1) || is_null($lat2) || is_null($lon2)) {
             return [];
         }
 
         try {
-            // overview=full & geometries=geojson لإرجاع جميع نقاط المنحنيات والشوارع
-            $osrmUrl = "http://localhost:5000/route/v1/driving/{$lon1},{$lat1};{$lon2},{$lat2}?overview=full&geometries=geojson";
+            $baseUrl = config('services.osrm.url', 'http://localhost:5001');
+            $osrmUrl = "{$baseUrl}/route/v1/driving/{$lon1},{$lat1};{$lon2},{$lat2}";
 
-            $response = \Illuminate\Support\Facades\Http::timeout(3)->get($osrmUrl);
+            $response = Http::timeout(3)->get($osrmUrl, [
+                'overview'   => 'full',
+                'geometries' => 'geojson',
+            ]);
 
             if ($response->successful()) {
                 $geometry = $response->json('routes.0.geometry');
-                if ($geometry) {
-                    return $geometry; // يحتوي على type: LineString و coordinates
+                if ($geometry && isset($geometry['coordinates'])) {
+                    return $geometry;
                 }
             }
+
+            Log::warning("OSRM geometry empty response: Status {$response->status()}");
         } catch (\Throwable $e) {
-            Log::warning("OSRM geometry call failed: {$e->getMessage()}");
+            Log::error("OSRM Connection Exception: {$e->getMessage()}");
         }
 
-        // نظام احتياطي: إرجاع خط مستقيم بين النقطتين لتفادي توقف الخريطة في الفرونت إند
         return [
             'type' => 'LineString',
             'coordinates' => [
@@ -297,27 +344,27 @@ class DriverMatchingService
         ];
     }
 
+    private function calculateWorkingDays($startDate, $endDate): int
+    {
+        if (empty($startDate) || empty($endDate)) return 1;
+        try {
+            $start = Carbon::parse($startDate)->startOfDay();
+            $end = Carbon::parse($endDate)->startOfDay();
+            if ($end->lessThan($start)) return 1;
 
-private function calculateWorkingDays($startDate, $endDate): int
-{
-    if (empty($startDate) || empty($endDate)) return 1;
-    try {
-        $start = \Carbon\Carbon::parse($startDate)->startOfDay();
-        $end = \Carbon\Carbon::parse($endDate)->startOfDay();
-        if ($end->lessThan($start)) return 1;
-
-        $days = 0;
-        $current = $start->copy();
-        while ($current->lessThanOrEqualTo($end)) {
-            if (!$current->isFriday() && !$current->isSaturday()) $days++;
-            $current->addDay();
+            $days = 0;
+            $current = $start->copy();
+            while ($current->lessThanOrEqualTo($end)) {
+                if (!$current->isFriday() && !$current->isSaturday()) {
+                    $days++;
+                }
+                $current->addDay();
+            }
+            return max(1, $days);
+        } catch (\Exception $e) {
+            return 1;
         }
-        return max(1, $days);
-    } catch (\Exception $e) {
-        return 1;
     }
-}
-
 
     private function calculateHaversineDistance($lat1, $lon1, $lat2, $lon2): float
     {
@@ -326,36 +373,33 @@ private function calculateWorkingDays($startDate, $endDate): int
         $dLat = deg2rad($lat2 - $lat1);
         $dLon = deg2rad($lon2 - $lon1);
         $a = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLon / 2) ** 2;
-        return $earthRadius * (2 * atan2(sqrt($a), sqrt(1 - $a)));
+        return round($earthRadius * (2 * atan2(sqrt($a), sqrt(1 - $a))), 2);
     }
 
     /**
-     * حساب المسافة الفعلية بالسيارة (بالكيلومتر) عبر OSRM
-     * مع وجود نظام حماية احتياطي (Fallback) بمعادلة Haversine في حال تعثر السيرفر.
+     * جلب المسافة الفردية بين نقطتين بالـ (Kilometers) عبر OSRM مع Fallback لـ Haversine
      */
-    private function getRouteDistanceInKm(?float $lat1, ?float $lon1, ?float $lat2, ?float $lon2): float
+    public function getRouteDistance(?float $lat1, ?float $lon1, ?float $lat2, ?float $lon2): float
     {
-        if ($lat1 === null || $lon1 === null || $lat2 === null || $lon2 === null) {
+        if (is_null($lat1) || is_null($lon1) || is_null($lat2) || is_null($lon2)) {
             return 0.0;
         }
 
         try {
-            // ملاحظة مهمة: OSRM يقبل الإحداثيات بصيغة (Longitude, Latitude)
-            $osrmUrl = "http://localhost:5000/route/v1/driving/{$lon1},{$lat1};{$lon2},{$lat2}?overview=false";
+            $baseUrl = config('services.osrm.url', 'http://localhost:5001');
+            $osrmUrl = "{$baseUrl}/route/v1/driving/{$lon1},{$lat1};{$lon2},{$lat2}?overview=false";
 
-            $response = \Illuminate\Support\Facades\Http::timeout(2)->get($osrmUrl);
+            $response = Http::timeout(3)->get($osrmUrl);
 
             if ($response->successful()) {
-                $distanceInMeters = $response->json('routes.0.distance');
-                if ($distanceInMeters !== null) {
-                    return round($distanceInMeters / 1000, 2);
-                }
+                $distanceInMeters = $response->json('routes.0.distance', 0);
+                return round($distanceInMeters / 1000, 2);
             }
         } catch (\Throwable $e) {
-            Log::warning("OSRM distance call failed: {$e->getMessage()}. Using Haversine fallback.");
+            Log::error("OSRM Distance Calculation Failed: {$e->getMessage()}");
         }
 
-        // النظام الاحتياطي: حساب الهيفرسين مضروب في معامل انحناء الشوارع 1.3
-        return round($this->calculateHaversineDistance($lat1, $lon1, $lat2, $lon2) * 1.3, 2);
+        // استخدام Haversine كـ Fallback عند انقطاع الاتصال بـ OSRM
+        return $this->calculateHaversineDistance($lat1, $lon1, $lat2, $lon2);
     }
 }

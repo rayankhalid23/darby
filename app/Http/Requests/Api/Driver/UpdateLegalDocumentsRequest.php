@@ -123,13 +123,13 @@ class UpdateLegalDocumentsRequest extends FormRequest
             'stamp_expiry'                => ['sometimes', 'date', 'after:today'],
             'technical_inspection_expiry' => ['sometimes', 'date', 'after:today'],
 
-            // ملفات المستندات (تدعم الصور وملفات PDF بحجم يصل لـ 10MB)
-            'doc_license'              => ['sometimes', 'file', 'mimes:jpeg,png,jpg,webp,heic,heif,pdf', 'max:10240'],
-            'doc_logbook'              => ['sometimes', 'file', 'mimes:jpeg,png,jpg,webp,heic,heif,pdf', 'max:10240'],
-            'doc_insurance'            => ['sometimes', 'file', 'mimes:jpeg,png,jpg,webp,heic,heif,pdf', 'max:10240'],
-            'doc_booklet_page'         => ['sometimes', 'file', 'mimes:jpeg,png,jpg,webp,heic,heif,pdf', 'max:10240'],
-            'doc_stamp'                => ['sometimes', 'file', 'mimes:jpeg,png,jpg,webp,heic,heif,pdf', 'max:10240'],
-            'doc_technical_inspection' => ['sometimes', 'file', 'mimes:jpeg,png,jpg,webp,heic,heif,pdf', 'max:10240'],
+            // ملفات المستندات (تدعم الصور بحجم يصل لـ 10MB)
+            'doc_license'              => ['sometimes', 'file', 'mimes:jpeg,png,jpg,webp,heic,heif', 'max:10240'],
+            'doc_logbook'              => ['sometimes', 'file', 'mimes:jpeg,png,jpg,webp,heic,heif', 'max:10240'],
+            'doc_insurance'            => ['sometimes', 'file', 'mimes:jpeg,png,jpg,webp,heic,heif', 'max:10240'],
+            'doc_booklet_page'         => ['sometimes', 'file', 'mimes:jpeg,png,jpg,webp,heic,heif', 'max:10240'],
+            'doc_stamp'                => ['sometimes', 'file', 'mimes:jpeg,png,jpg,webp,heic,heif', 'max:10240'],
+            'doc_technical_inspection' => ['sometimes', 'file', 'mimes:jpeg,png,jpg,webp,heic,heif', 'max:10240'],
         ];
     }
 
@@ -144,11 +144,11 @@ class UpdateLegalDocumentsRequest extends FormRequest
             'insurance_expiry.after'    => 'تاريخ انتهاء التأمين يجب أن يكون تاريخاً مستقبلياً.',
 
             'doc_license.file'          => 'يجب أن يكون ملف رخصة القيادة ملفاً صالحاً.',
-            'doc_license.mimes'         => 'يُسمح فقط بالصور أو ملفات PDF لرخصة القيادة.',
+            'doc_license.mimes'         => 'يُسمح فقط بالصور لرخصة القيادة.',
             'doc_logbook.file'          => 'يجب أن يكون ملف كتيب السيارة ملفاً صالحاً.',
-            'doc_logbook.mimes'         => 'يُسمح فقط بالصور أو ملفات PDF لكتيب السيارة.',
+            'doc_logbook.mimes'         => 'يُسمح فقط بالصور لكتيب السيارة.',
             'doc_insurance.file'        => 'يجب أن يكون ملف وثيقة التأمين ملفاً صالحاً.',
-            'doc_insurance.mimes'       => 'يُسمح فقط بالصور أو ملفات PDF لوثيقة التأمين.',
+            'doc_insurance.mimes'       => 'يُسمح فقط بالصور لوثيقة التأمين.',
             'doc_license.max'           => 'حجم صورة المستند يجب ألا يتجاوز 10 ميجابايت كحد أقصى.',
 
             'stamp_expiry.date'                    => 'تاريخ انتهاء الدمغة غير صالح.',

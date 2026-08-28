@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Parent\RechargeWalletRequest;
 use App\Services\Parent\WalletRechargeService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class WalletController extends Controller
 {
@@ -16,6 +17,9 @@ class WalletController extends Controller
         $this->rechargeService = $rechargeService;
     }
 
+    /**
+     * 1️⃣ جلب طرق الدفع المفعلة المتاحة لولي الأمر
+     */
     public function paymentMethods(): JsonResponse
     {
         return response()->json([
@@ -24,56 +28,108 @@ class WalletController extends Controller
         ]);
     }
 
+    /**
+     * 2️⃣ بدء عملية الشحن لولي الأمر والحصول على توكن جلسة الدفع ورابط المحاكاة
+     */
+    public function initiateRecharge(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'amount'            => 'required|numeric|min:0.5',
+            'payment_method'    => 'nullable|string|max:50',
+            'payment_method_id' => 'nullable|integer|exists:payment_methods,id',
+            'reference_number'  => 'nullable|string|max:100',
+        ], [
+            'amount.required' => 'يرجى إدخال مبلغ الشحن.',
+            'amount.min'      => 'الحد الأدنى للشحن هو نصف دينار ليبي.',
+        ]);
+
+        $userId = auth()->id();
+        $methodIdentifier = $validated['payment_method_id'] ?? $validated['payment_method'] ?? 'sadad';
+
+        $sessionData = $this->rechargeService->initiateRecharge(
+            $userId,
+            (float) $validated['amount'],
+            $methodIdentifier,
+            $validated['reference_number'] ?? null
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'تم إنشاء جلسة الشحن وجاهزة لتنفيذ عملية الدفع.',
+            'data'    => $sessionData,
+        ], 201);
+    }
+
+    /**
+     * 3️⃣ تنفيذ محاكاة بوابة الدفع وتأكيد السداد وتحديث رصيد ولي الأمر فوراً
+     */
+    public function mockPay(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'session_token' => 'required|string',
+            'card_number'   => 'nullable|string|max:30',
+            'card_holder'   => 'nullable|string|max:100',
+            'expiry_date'   => 'nullable|string|max:10',
+            'cvv'           => 'nullable|string|max:5',
+            'otp'           => 'nullable|string|max:10',
+        ], [
+            'session_token.required' => 'توكن جلسة الدفع مطلوب.',
+        ]);
+
+        $result = $this->rechargeService->processMockPayment(
+            $validated['session_token'],
+            $request->only(['card_number', 'card_holder', 'expiry_date', 'cvv', 'otp'])
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => $result['message'],
+            'data'    => $result,
+        ]);
+    }
+
+    /**
+     * الشحن المباشر (Legacy)
+     */
     public function recharge(RechargeWalletRequest $request): JsonResponse
     {
         $userId = auth()->id();
 
-        $rechargeRequest = $this->rechargeService->initiateRecharge(
+        $sessionData = $this->rechargeService->initiateRecharge(
             $userId,
             $request->validated('amount'),
             $request->validated('payment_method'),
             $request->validated('reference_number')
         );
 
-        $methodLabels = [
-            'ncb'     => 'المصرف التجاري الوطني',
-            'libyana' => 'ليبيانا',
-            'almadar' => 'المدار',
-        ];
-
         return response()->json([
             'success' => true,
-            'message' => 'تم تقديم طلب الشحن عبر ' . ($methodLabels[$rechargeRequest->payment_method] ?? '') . ' بنجاح. بانتظار تأكيد الإدارة.',
-            'data'    => $rechargeRequest,
+            'message' => 'تم بدء عملية الشحن بنجاح.',
+            'data'    => $sessionData,
         ], 201);
     }
 
+    /**
+     * 4️⃣ عرض رصيد محفظة ولي الأمر الحالي
+     */
     public function balance(): JsonResponse
     {
         $user = auth()->user();
-        $parentProfile = $user->parentProfile ?? $user->parent;
+        $parentProfile = $user->parentProfile ?? $user->parent ?? \App\Models\Parent\ParentModel::where('user_id', $user->id)->first();
 
-        if (!$parentProfile) {
-            return response()->json([
-                'success' => false,
-                'message' => 'ليس لديك حساب محفظة.',
-            ], 404);
-        }
-
-        $balance = $parentProfile->balance / 100;
+        $balance = $parentProfile ? ($parentProfile->balance / 100) : 0.0;
 
         return response()->json([
             'success' => true,
             'data'    => [
-                'balance' => $balance,
+                'balance'  => round($balance, 2),
                 'currency' => 'د.ل',
             ],
         ]);
     }
 
     /**
-     * حجز مبلغ الرحلة اليومية في أمانات المحفظة
-     * POST /api/parent/wallet/hold-trip
+     * 5️⃣ حجز مبلغ الرحلة اليومية في أمانات المحفظة
      */
     public function holdTripAmount(\Illuminate\Http\Request $request): JsonResponse
     {
@@ -95,7 +151,7 @@ class WalletController extends Controller
                 'trip_id'      => $hold->trip_id,
                 'parent_id'    => $hold->parent_id,
                 'driver_id'    => $hold->driver_id,
-                'amount'       => round($hold->amount / 100, 2), // بالدينار، مطابقة لوحدة باقي واجهات المحفظة
+                'amount'       => round($hold->amount / 100, 2),
                 'hold_status'  => $hold->hold_status,
                 'held_at'      => $hold->held_at,
                 'captured_at'  => $hold->captured_at,
@@ -106,8 +162,7 @@ class WalletController extends Controller
     }
 
     /**
-     * تقديم اعتراض مالي على رحلة خلال مهلة 24 ساعة
-     * POST /api/parent/trips/{tripId}/dispute
+     * 6️⃣ تقديم اعتراض مالي على رحلة
      */
     public function openDispute(\Illuminate\Http\Request $request, int $tripId): JsonResponse
     {

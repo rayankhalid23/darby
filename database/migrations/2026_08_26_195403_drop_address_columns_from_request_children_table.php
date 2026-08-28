@@ -12,11 +12,21 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // تعطيل فحص المفاتيح الأجنبية مؤقتاً في سياق قاعدة البيانات لتنفيذ الحذف بسلاسة مطلقة
-        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+        Schema::disableForeignKeyConstraints();
+        try {
+            DB::statement("ALTER TABLE `request_children` DROP FOREIGN KEY `request_children_dropoff_location_id_foreign`");
+        } catch (\Throwable $e) {}
+        try {
+            DB::statement("ALTER TABLE `request_children` DROP FOREIGN KEY `request_children_pickup_location_id_foreign`");
+        } catch (\Throwable $e) {}
+        try {
+            DB::statement("ALTER TABLE `request_children` DROP FOREIGN KEY `request_children_dropoff_address_id_foreign`");
+        } catch (\Throwable $e) {}
+        try {
+            DB::statement("ALTER TABLE `request_children` DROP FOREIGN KEY `request_children_pickup_address_id_foreign`");
+        } catch (\Throwable $e) {}
 
         Schema::table('request_children', function (Blueprint $table) {
-            // حذف الأعمدة مباشرة دون الحاجة للبحث عن أسماء القيود المعقدة
             $columnsToDrop = [];
             
             if (Schema::hasColumn('request_children', 'pickup_address_id')) {
@@ -30,14 +40,12 @@ return new class extends Migration
                 $table->dropColumn($columnsToDrop);
             }
 
-            // إضافة حقل سعر الرحلة الواحدة إذا لم يكن موجوداً
             if (!Schema::hasColumn('request_children', 'trip_price')) {
                 $table->decimal('trip_price', 10, 2)->default(0.00);
             }
         });
 
-        // إعادة تفعيل فحص المفاتيح الأجنبية
-        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+        Schema::enableForeignKeyConstraints();
     }
 
     /**

@@ -15,7 +15,7 @@ class DriverReviewController extends Controller
      */
     public function index(int $driverId): JsonResponse
     {
-        $reviews = DriverReview::with(['parent.user', 'driver.user'])
+        $reviews = DriverReview::with(['parent', 'driver.user'])
             ->where('driver_id', $driverId)
             ->latest()
             ->paginate(10);
@@ -64,8 +64,7 @@ class DriverReviewController extends Controller
     public function allReviews(): JsonResponse
     {
         try {
-            // نفس علاقات "parent.user" و"driver.user" التي تعتمد عليها DriverReviewResource
-            $reviews = DriverReview::with(['parent.user', 'driver.user'])
+            $reviews = DriverReview::with(['parent', 'driver.user'])
                 ->latest()
                 ->paginate(15);
 

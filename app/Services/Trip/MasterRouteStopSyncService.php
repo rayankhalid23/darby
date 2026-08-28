@@ -5,7 +5,6 @@ namespace App\Services\Trip;
 use App\Models\Driver\DriverSeatSlot;
 use App\Models\Parent\Child;
 use App\Models\Shared\ActiveSubscription;
-use App\Models\Shared\Contract;
 use App\Models\Shared\Route;
 use App\Models\Shared\RouteStop;
 use App\Models\Shared\SubscriptionRequest;

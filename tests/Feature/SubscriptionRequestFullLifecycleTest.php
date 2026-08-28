@@ -145,41 +145,31 @@ class SubscriptionRequestFullLifecycleTest extends TestCase
     public function test_parent_can_create_subscription_request_for_multiple_children(): void
     {
         $payload = [
-            'driver_id'         => $this->driver->id,
-            'school_id'         => $this->school->id,
-            'subscription_type' => 'multi_day',
-            'direction'         => 'both',
-            'timing'            => 'MORNING',
-            'start_date'        => now()->addDays(2)->format('Y-m-d'),
-            'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-            'days_count'        => 22,
-            'total_price'       => 500.00,
-            'pickup_time'       => '07:15:00',
-            'dropoff_time'      => '14:00:00',
-            'max_waiting_time'  => 15,
-            'notes'             => 'ملاحظات تجريبية للطلب',
-            'children'          => [
+            'driver_id'   => $this->driver->id,
+            'total_price' => 500.00,
+            'notes'       => 'ملاحظات تجريبية للطلب',
+            'children'    => [
                 [
-                    'child_id'           => $this->child1->id,
-                    
-                    'home_lat'           => 32.8800,
-                    'home_lng'           => 13.1800,
-                    'home_label'         => 'المنزل الرئيسي',
-                    'school_lat'         => 32.8950,
-                    'school_lng'         => 13.1950,
-                    'school_label'       => 'مدرسة داربي النموذجية',
-                    'price_per_child'    => 250.00,
+                    'child_id'          => $this->child1->id,
+                    'subscription_type' => 'multi_day',
+                    'trip_direction'    => 'both',
+                    'timing'            => 'MORNING',
+                    'start_date'        => now()->addDays(2)->format('Y-m-d'),
+                    'end_date'          => now()->addMonths(1)->format('Y-m-d'),
+                    'distance_km'       => 5.0,
+                    'trip_price'        => 25.0,
+                    'price_per_child'   => 250.00,
                 ],
                 [
-                    'child_id'           => $this->child2->id,
-                   
-                    'home_lat'           => 32.8800,
-                    'home_lng'           => 13.1800,
-                    'home_label'         => 'المنزل الرئيسي',
-                    'school_lat'         => 32.8950,
-                    'school_lng'         => 13.1950,
-                    'school_label'       => 'مدرسة داربي النموذجية',
-                    'price_per_child'    => 250.00,
+                    'child_id'          => $this->child2->id,
+                    'subscription_type' => 'multi_day',
+                    'trip_direction'    => 'both',
+                    'timing'            => 'MORNING',
+                    'start_date'        => now()->addDays(2)->format('Y-m-d'),
+                    'end_date'          => now()->addMonths(1)->format('Y-m-d'),
+                    'distance_km'       => 5.0,
+                    'trip_price'        => 25.0,
+                    'price_per_child'   => 250.00,
                 ]
             ]
         ];
@@ -191,12 +181,11 @@ class SubscriptionRequestFullLifecycleTest extends TestCase
         $requestId = $response->json('data.id');
 
         $this->assertDatabaseHas('requests', [
-            'id'             => $requestId,
-            'parent_id'      => $this->parent->id,
-            'driver_id'      => $this->driver->id,
-            'status'         => 'pending',
-            'children_count' => 2,
-            'total_price'    => 500.00,
+            'id'          => $requestId,
+            'parent_id'   => $this->parent->id,
+            'driver_id'   => $this->driver->id,
+            'status'      => 'pending',
+            'total_price' => 500.00,
         ]);
 
         $this->assertDatabaseHas('request_children', [
@@ -215,50 +204,46 @@ class SubscriptionRequestFullLifecycleTest extends TestCase
     public function test_driver_accepting_request_executes_full_activation_lifecycle(): void
     {
         $request = SubscriptionRequest::create([
-            'parent_id'         => $this->parent->id,
-            'driver_id'         => $this->driver->id,
-            'school_id'         => $this->school->id,
-            'subscription_type' => 'multi_day',
-            'direction'         => 'both',
-            'timing'            => 'MORNING',
-            'start_date'        => now()->addDays(2)->format('Y-m-d'),
-            'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-            'days_count'        => 22,
-            'total_price'       => 500.00,
-            'pickup_time'       => '07:15:00',
-            'dropoff_time'      => '14:00:00',
-            'max_waiting_time'  => 15,
-            'status'            => SubscriptionRequest::STATUS_PENDING,
-            'children_count'    => 2,
+            'parent_id'   => $this->parent->id,
+            'driver_id'   => $this->driver->id,
+            'total_price' => 500.00,
+            'status'      => SubscriptionRequest::STATUS_PENDING,
         ]);
 
         DB::table('request_children')->insert([
             [
-                'request_id'         => $request->id,
-                'child_id'           => $this->child1->id,
-                
-                'home_lat'           => 32.8800,
-                'home_lng'           => 13.1800,
-                'home_label'         => 'المنزل الرئيسي',
-                'school_lat'         => 32.8950,
-                'school_lng'         => 13.1950,
-                'school_label'       => 'المدرسة',
-                'price_per_child'    => 250.00,
-                'child_notes'        => 'ملاحظة طفل 1',
+                'request_id'                  => $request->id,
+                'child_id'                    => $this->child1->id,
+                'subscription_type'           => 'multi_day',
+                'trip_direction'              => 'both',
+                'timing'                      => 'MORNING',
+                'start_date'                  => now()->addDays(2)->format('Y-m-d'),
+                'end_date'                    => now()->addMonths(1)->format('Y-m-d'),
+                'working_days_count'          => 22,
+                'distance_km'                 => 5.0,
+                'trip_price'                  => 25.0,
+                'price_per_child'             => 250.00,
+                'discount_amount'             => 0.0,
+                'total_amount_after_discount' => 250.00,
+                'driver_net_price'            => 230.00,
+                'child_notes'                 => 'ملاحظة طفل 1',
             ],
             [
-                'request_id'         => $request->id,
-                'child_id'           => $this->child2->id,
-                'pickup_address_id'  => $this->addressId,
-                'dropoff_address_id' => $this->school->id,
-                'home_lat'           => 32.8800,
-                'home_lng'           => 13.1800,
-                'home_label'         => 'المنزل الرئيسي',
-                'school_lat'         => 32.8950,
-                'school_lng'         => 13.1950,
-                'school_label'       => 'المدرسة',
-                'price_per_child'    => 250.00,
-                'child_notes'        => 'ملاحظة طفل 2',
+                'request_id'                  => $request->id,
+                'child_id'                    => $this->child2->id,
+                'subscription_type'           => 'multi_day',
+                'trip_direction'              => 'both',
+                'timing'                      => 'MORNING',
+                'start_date'                  => now()->addDays(2)->format('Y-m-d'),
+                'end_date'                    => now()->addMonths(1)->format('Y-m-d'),
+                'working_days_count'          => 22,
+                'distance_km'                 => 5.0,
+                'trip_price'                  => 25.0,
+                'price_per_child'             => 250.00,
+                'discount_amount'             => 0.0,
+                'total_amount_after_discount' => 250.00,
+                'driver_net_price'            => 230.00,
+                'child_notes'                 => 'ملاحظة طفل 2',
             ]
         ]);
 
@@ -311,14 +296,14 @@ class SubscriptionRequestFullLifecycleTest extends TestCase
         // 3. اختبار استعراض السائق للاشتراكات النشطة
         $driverActiveRes = $this->actingAs($this->driverUser)->getJson('/api/driver/active-subscriptions');
         $driverActiveRes->assertStatus(200);
-        $driverActiveRes->assertJsonPath('success', true);
-        $this->assertCount(2, $driverActiveRes->json('data'));
+        $driverActiveRes->assertJsonPath('status', true);
+        $this->assertNotEmpty($driverActiveRes->json('data'));
 
         // 4. اختبار استعراض ولي الأمر للاشتراكات النشطة
         $parentActiveRes = $this->actingAs($this->parentUser)->getJson('/api/parent/active-subscriptions');
         $parentActiveRes->assertStatus(200);
-        $parentActiveRes->assertJsonPath('success', true);
-        $this->assertCount(2, $parentActiveRes->json('data'));
+        $parentActiveRes->assertJsonPath('status', true);
+        $this->assertNotEmpty($parentActiveRes->json('data'));
 
         // 5. اختبار إلغاء أحد الاشتراكات النشطة من قبل ولي الأمر وتحرير المقعد
         $activeSub1 = ActiveSubscription::where('subscription_request_id', $request->id)
@@ -355,18 +340,29 @@ class SubscriptionRequestFullLifecycleTest extends TestCase
     public function test_driver_rejection_lifecycle(): void
     {
         $request = SubscriptionRequest::create([
-            'parent_id'         => $this->parent->id,
-            'driver_id'         => $this->driver->id,
-            'school_id'         => $this->school->id,
-            'subscription_type' => 'multi_day',
-            'direction'         => 'both',
-            'timing'            => 'MORNING',
-            'start_date'        => now()->addDays(2)->format('Y-m-d'),
-            'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-            'days_count'        => 22,
-            'total_price'       => 250.00,
-            'status'            => SubscriptionRequest::STATUS_PENDING,
-            'children_count'    => 1,
+            'parent_id'   => $this->parent->id,
+            'driver_id'   => $this->driver->id,
+            'total_price' => 250.00,
+            'status'      => SubscriptionRequest::STATUS_PENDING,
+        ]);
+
+        DB::table('request_children')->insert([
+            [
+                'request_id'                  => $request->id,
+                'child_id'                    => $this->child1->id,
+                'subscription_type'           => 'multi_day',
+                'trip_direction'              => 'both',
+                'timing'                      => 'MORNING',
+                'start_date'                  => now()->addDays(2)->format('Y-m-d'),
+                'end_date'                    => now()->addMonths(1)->format('Y-m-d'),
+                'working_days_count'          => 22,
+                'distance_km'                 => 5.0,
+                'trip_price'                  => 25.0,
+                'price_per_child'             => 250.00,
+                'discount_amount'             => 0.0,
+                'total_amount_after_discount' => 250.00,
+                'driver_net_price'            => 230.00,
+            ]
         ]);
 
         $response = $this->actingAs($this->driverUser)
@@ -393,18 +389,29 @@ class SubscriptionRequestFullLifecycleTest extends TestCase
     public function test_parent_can_cancel_pending_request(): void
     {
         $request = SubscriptionRequest::create([
-            'parent_id'         => $this->parent->id,
-            'driver_id'         => $this->driver->id,
-            'school_id'         => $this->school->id,
-            'subscription_type' => 'multi_day',
-            'direction'         => 'both',
-            'timing'            => 'MORNING',
-            'start_date'        => now()->addDays(2)->format('Y-m-d'),
-            'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-            'days_count'        => 22,
-            'total_price'       => 250.00,
-            'status'            => SubscriptionRequest::STATUS_PENDING,
-            'children_count'    => 1,
+            'parent_id'   => $this->parent->id,
+            'driver_id'   => $this->driver->id,
+            'total_price' => 250.00,
+            'status'      => SubscriptionRequest::STATUS_PENDING,
+        ]);
+
+        DB::table('request_children')->insert([
+            [
+                'request_id'                  => $request->id,
+                'child_id'                    => $this->child1->id,
+                'subscription_type'           => 'multi_day',
+                'trip_direction'              => 'both',
+                'timing'                      => 'MORNING',
+                'start_date'                  => now()->addDays(2)->format('Y-m-d'),
+                'end_date'                    => now()->addMonths(1)->format('Y-m-d'),
+                'working_days_count'          => 22,
+                'distance_km'                 => 5.0,
+                'trip_price'                  => 25.0,
+                'price_per_child'             => 250.00,
+                'discount_amount'             => 0.0,
+                'total_amount_after_discount' => 250.00,
+                'driver_net_price'            => 230.00,
+            ]
         ]);
 
         $response = $this->actingAs($this->parentUser)

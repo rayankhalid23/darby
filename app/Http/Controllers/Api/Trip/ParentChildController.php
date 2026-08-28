@@ -187,7 +187,7 @@ class ParentChildController extends Controller
 
             $subscription = ActiveSubscription::where('child_id', $childId)
                 ->where('status', 'active')
-                ->with('subscriptionRequest')
+                ->with(['subscriptionRequest.children'])
                 ->first();
 
             if (!$subscription || !$subscription->subscriptionRequest) {
@@ -198,12 +198,14 @@ class ParentChildController extends Controller
                 ]);
             }
 
-            $subReq    = $subscription->subscriptionRequest;
-            $startDate = Carbon::parse($subReq->start_date);
-            $endDate   = Carbon::parse($subReq->end_date ?? now()->addMonths(3));
-            $today     = Carbon::today();
-            $fromDate  = $startDate->lt($today) ? $today->copy() : $startDate->copy();
-            $limit     = $endDate->lt(Carbon::today()->addDays(60)) ? $endDate : Carbon::today()->addDays(60);
+            $subReq     = $subscription->subscriptionRequest;
+            $childPivot = $subReq->children->firstWhere('id', (int) $childId)?->pivot;
+
+            $startDate  = Carbon::parse($childPivot?->start_date ?? $subReq->start_date ?? now()->startOfMonth());
+            $endDate    = Carbon::parse($childPivot?->end_date ?? $subReq->end_date ?? now()->endOfMonth()->addMonths(2));
+            $today      = Carbon::today();
+            $fromDate   = $startDate->lt($today) ? $today->copy() : $startDate->copy();
+            $limit      = $endDate->lt(Carbon::today()->addDays(60)) ? $endDate : Carbon::today()->addDays(60);
 
             // أيام العمل الأساسية: الأحد(0) إلى الخميس(4)
             $workDays = [0, 1, 2, 3, 4];
@@ -227,8 +229,8 @@ class ParentChildController extends Controller
                 'status' => 'success',
                 'data'   => [
                     'child_id'             => (int) $childId,
-                    'subscription_start'   => $contract->start_date,
-                    'subscription_end'     => $contract->end_date,
+                    'subscription_start'   => $startDate->toDateString(),
+                    'subscription_end'     => $endDate->toDateString(),
                     'available_dates'      => $availableDates,
                     'total_available'      => count($availableDates),
                     'already_absent_dates' => $alreadyAbsent,

@@ -41,20 +41,10 @@ class DriverReviewController extends Controller
     {
         try {
             $user = auth()->user();
-            
-            // جلب الـ parent_id الصحيح المرتبط بجدول parents
-            $parentRecord = $user->parentRecord ?? $user->parent ?? \App\Models\Parent\ParentModel::where('user_id', $user->id)->first();
-            
-            if (!$parentRecord) {
-                return response()->json([
-                    'status'  => false,
-                    'message' => 'حساب ولي الأمر غير مرتبط بسجل صحيح.',
-                ], 422);
-            }
 
-            // إنشاء تقييم جديد مع دعم التعدد لنفس السائق بكل سلاسة
+            // إنشاء تقييم جديد
             $review = DriverReview::create([
-                'parent_id' => $parentRecord->id,
+                'parent_id' => $user->id,
                 'driver_id' => $request->driver_id,
                 'rating'    => $request->rating,
                 'comment'   => $request->comment,
@@ -62,7 +52,7 @@ class DriverReviewController extends Controller
             ]);
 
             // تحميل العلاقات لعرضها بشكل كامل في الاستجابة
-            $review->load(['parent.user', 'driver.user']);
+            $review->load(['parent', 'driver.user']);
 
             Log::info("DriverReview [Store] - تمت إضافة تقييم جديد بنجاح.", ['review_id' => $review->id]);
 
@@ -88,18 +78,10 @@ class DriverReviewController extends Controller
     {
         try {
             $user = auth()->user();
-            $parentRecord = $user->parentRecord ?? $user->parent ?? \App\Models\Parent\ParentModel::where('user_id', $user->id)->first();
-
-            if (!$parentRecord) {
-                return response()->json([
-                    'status'  => false,
-                    'message' => 'حساب ولي الأمر غير مرتبط بسجل صحيح.',
-                ], 422);
-            }
 
             // البحث عن التقييم والتأكد أنه يتبع لولي الأمر نفسه لضمان الأمان
             $review = DriverReview::where('id', $id)
-                ->where('parent_id', $parentRecord->id)
+                ->where('parent_id', $user->id)
                 ->first();
 
             if (!$review) {
@@ -119,7 +101,7 @@ class DriverReviewController extends Controller
             $review->update($validatedData);
 
             // إعادة تحميل العلاقات
-            $review->load(['parent.user', 'driver.user']);
+            $review->load(['parent', 'driver.user']);
 
             Log::info("DriverReview [Update] - تم تعديل التقييم بنجاح.", ['review_id' => $review->id]);
 
@@ -147,17 +129,9 @@ class DriverReviewController extends Controller
     {
         try {
             $user = auth()->user();
-            $parentRecord = $user->parentRecord ?? $user->parent ?? \App\Models\Parent\ParentModel::where('user_id', $user->id)->first();
-
-            if (!$parentRecord) {
-                return response()->json([
-                    'status'  => false,
-                    'message' => 'حساب ولي الأمر غير مرتبط بسجل صحيح.',
-                ], 422);
-            }
 
             $review = DriverReview::where('id', $id)
-                ->where('parent_id', $parentRecord->id)
+                ->where('parent_id', $user->id)
                 ->first();
 
             if (!$review) {
@@ -169,7 +143,7 @@ class DriverReviewController extends Controller
 
             $review->forceDelete();
 
-            Log::info("DriverReview [Destroy] - ولي الأمر حذف تقييمه بنجاح.", ['review_id' => $id, 'parent_id' => $parentRecord->id]);
+            Log::info("DriverReview [Destroy] - ولي الأمر حذف تقييمه بنجاح.", ['review_id' => $id, 'parent_id' => $user->id]);
 
             return response()->json([
                 'status'  => true,

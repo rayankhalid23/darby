@@ -13,9 +13,13 @@ class RechargeRequest extends Model
 
     protected $fillable = [
         'parent_id',
+        'payment_method_id',
         'amount',
         'payment_method',
         'reference_number',
+        'transaction_ref',
+        'session_token',
+        'gateway_payload',
         'status',
         'notes',
         'admin_id',
@@ -23,13 +27,19 @@ class RechargeRequest extends Model
     ];
 
     protected $casts = [
-        'amount'       => 'decimal:2',
-        'completed_at' => 'datetime',
+        'amount'          => 'decimal:2',
+        'gateway_payload' => 'array',
+        'completed_at'    => 'datetime',
     ];
 
     public function parent(): BelongsTo
     {
         return $this->belongsTo(User::class, 'parent_id');
+    }
+
+    public function paymentMethod(): BelongsTo
+    {
+        return $this->belongsTo(PaymentMethod::class, 'payment_method_id');
     }
 
     public function admin(): BelongsTo

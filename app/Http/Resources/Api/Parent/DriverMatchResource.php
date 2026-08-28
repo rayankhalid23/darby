@@ -8,73 +8,60 @@ use Illuminate\Support\Facades\Storage;
 
 class DriverMatchResource extends JsonResource
 {
-    private function calculatePricingForDriver(Driver $driver, Collection $children, array $childrenDistances = []): array
+    public function toArray(Request $request): array
     {
-        $activeVehicle = $driver->vehicles->where('status', 'Active')->first() ?? $driver->vehicles->first();
-        $hasAc = $activeVehicle ? (bool) $activeVehicle->has_ac : false;
-        $pricePerKm = $hasAc ? self::PRICE_PER_KM_AC : self::PRICE_PER_KM_NO_AC;
-    
-        $totalPrice = 0.0;
-        $breakdown = [];
-    
-        foreach ($children as $child) {
-            $logistics = $child->logistics;
-            $subscriptionType = (strtolower(trim($logistics?->subscription_type ?? 'multi_day')) === 'single_day') ? 'single_day' : 'multi_day';
-            $startDate = $logistics?->start_date ?? null;
-            $endDate = $logistics?->end_date ?? null;
-            $tripDir = strtolower(trim($logistics?->trip_direction ?? 'go'));
-    
-            // تجهيز المفاتيح لتوافق DriverMatchResource 100%
-            $childEntry = [
-                'child_id'            => $child->id,
-                'child_name'          => $child->full_name ?? '',
-                'gender'              => $child->gender,
-                'school_stage'        => $child->school_stage ?? null,
-                'school_name'         => $child->school?->name ?? null,
-                'subscription_type'   => $subscriptionType,
-                'preferred_time_slot' => $logistics?->preferred_time_slot ?? null,
-                'trip_direction'      => $tripDir,
-                'start_date'          => $startDate,
-                'end_date'            => $endDate,
-            ];
-    
-            if (!$child->address || !$child->school || !$child->address->lat || !$child->school->lat) {
-                $childEntry['error'] = 'بيانات الموقع أو إحداثيات الإقامة/المدرسة ناقصة';
-                $childEntry['trip_price'] = 0.0;
-                $childEntry['child_total_price'] = 0.0;
-                $breakdown[] = $childEntry;
-                continue;
-            }
-    
-            $distanceKm = $childrenDistances[$child->id] ?? $this->getRouteDistanceInKm(
-                $child->address->lat,
-                $child->address->lng,
-                $child->school->lat,
-                $child->school->lng
-            );
-    
-            $effectiveDistance = max($distanceKm, 4.0);
-            $tripMultiplier = ($tripDir === 'both') ? 2 : 1;
-    
-            $singleLegPrice = round($effectiveDistance * $pricePerKm, 2);
-            $dailyPrice = round($singleLegPrice * $tripMultiplier, 2);
-            $workingDays = ($subscriptionType === 'single_day') ? 1 : $this->calculateWorkingDays($startDate, $endDate);
-            $childTotalPrice = round($dailyPrice * $workingDays, 2);
-            $totalPrice += $childTotalPrice;
-    
-            // مطابقة الحقول مع الـ Resource
-            $childEntry['distance_km']       = round($distanceKm, 2);
-            $childEntry['working_days']      = $workingDays;
-            $childEntry['trip_multiplier']   = $tripMultiplier;
-            $childEntry['trip_price']        = $singleLegPrice; // 🔥 نفس المسمى المطلوب في Resource
-            $childEntry['child_total_price'] = $childTotalPrice;
-    
-            $breakdown[] = $childEntry;
-        }
-    
+        $user = $this->user;
+        $activeVehicle = $this->vehicles?->where('status', 'Active')->first() ?? $this->vehicles?->first();
+
+        $pricingBreakdown = $this->pricing_breakdown ?? [];
+        $totalPrice       = $this->estimated_total_price ?? 0;
+
         return [
-            'total'     => round($totalPrice, 2),
-            'breakdown' => $breakdown
+            'id'                => $this->id,
+            'full_name'         => $user?->full_name ?? 'غير متوفر',
+            'phone_number'      => $user?->phone_number ?? 'غير متوفر',
+            'alternative_phone' => $user?->alternative_phone,
+            'avatar_url'        => ($user?->avatar_url) ? asset(Storage::url($user->avatar_url)) : null,
+            'gender'            => $this->gender,
+            'accepted_gender'   => $this->accepted_gender,
+            'subscription_type' => $this->subscription_type,
+            'rating'            => round((float)($this->rating_avg ?? 5.0), 1),
+            'completed_trips'   => $this->completed_trips_count ?? 0,
+            'status'            => $this->status,
+
+            'vehicle' => $activeVehicle ? [
+                'brand'           => $activeVehicle->brand,
+                'model'           => $activeVehicle->model,
+                'year'            => $activeVehicle->year,
+                'color'           => $activeVehicle->color,
+                'type'            => $activeVehicle->type,
+                'has_ac'          => (bool) $activeVehicle->has_ac,
+                'capacity_manual' => $activeVehicle->capacity_manual,
+                'plate_number'    => $activeVehicle->plate_number,
+            ] : null,
+
+            'working_zones' => $this->zones ? $this->zones->map(fn($z) => [
+                'id'   => $z->id,
+                'name' => $z->name,
+            ])->values() : [],
+
+            'pricing' => [
+                'total_price'       => number_format($totalPrice, 2) . ' د.ل',
+                'total_price_raw'   => $totalPrice,
+                'platform_fee'      => $this->platform_fee ?? 0,
+                'driver_net_amount' => $this->driver_net_amount ?? 0,
+                'price_per_km'      => $pricingBreakdown[0]['price_per_km'] ?? null,
+                'children_count'    => count($pricingBreakdown),
+                'breakdown'         => collect($pricingBreakdown)->map(function ($item) {
+                    $subType = $item['subscription_type'] ?? 'multi_day';
+                    $subLabel = ($subType === 'single_day') ? 'يوم واحد' : 'عدة أيام';
+                    return array_merge($item, [
+                        'subscription_type_label' => $subLabel,
+                        'child_price'             => isset($item['final_total']) ? number_format($item['final_total'], 2) . ' د.ل' : null,
+                        'child_price_raw'         => $item['final_total'] ?? ($item['subtotal'] ?? 0),
+                    ]);
+                })->values(),
+            ],
         ];
     }
 }

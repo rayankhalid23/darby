@@ -21,12 +21,15 @@ class DriverReviewResource extends JsonResource
             'created_at'  => $this->created_at?->format('Y-m-d H:i:s'),
             'updated_at'  => $this->updated_at?->format('Y-m-d H:i:s'),
             'parent'      => $this->whenLoaded('parent', function () {
+                $user = $this->parent instanceof \App\Models\User
+                    ? $this->parent
+                    : ($this->parent->user ?? $this->parent);
+
                 return [
-                    'id'          => (int) $this->parent->id,
-                    // الوصول لاسم المستخدم الحقيقي من جدول users عبر علاقة user() داخل ParentModel
-                    'full_name'   => optional($this->parent->user)->full_name,
-                    'avatar_url'  => optional($this->parent->user)->avatar_url
-                        ? asset($this->parent->user->avatar_url)
+                    'id'          => (int) $user->id,
+                    'full_name'   => $user->full_name ?? $user->name,
+                    'avatar_url'  => !empty($user->avatar_url)
+                        ? asset($user->avatar_url)
                         : null,
                 ];
             }),

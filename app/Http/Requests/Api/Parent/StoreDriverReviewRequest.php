@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests\Api\Parent;
 
-use App\Models\Shared\Contract;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -15,11 +14,7 @@ class StoreDriverReviewRequest extends FormRequest
 
     public function rules(): array
     {
-        // driver_reviews.parent_id مفتاح أجنبي على parents.id (وليس users.id) — لذا يجب
-        // تحويل المستخدم المصادَق عليه لمعرّف سجله في جدول parents قبل فحص التكرار.
-        $parentId = optional(
-            \App\Models\Parent\ParentModel::where('user_id', auth()->id())->first()
-        )->id;
+        $userId = auth()->id();
 
         return [
             'driver_id' => [
@@ -27,7 +22,9 @@ class StoreDriverReviewRequest extends FormRequest
                 'integer',
                 'exists:drivers,id',
                 Rule::unique('driver_reviews', 'driver_id')
-                    ->where('parent_id', $parentId)
+                    ->where(function ($q) use ($userId) {
+                        $q->where('parent_id', $userId);
+                    })
                     ->whereNull('deleted_at'),
             ],
             'rating' => 'required|integer|min:1|max:5',

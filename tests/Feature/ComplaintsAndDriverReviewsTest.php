@@ -108,14 +108,14 @@ class ComplaintsAndDriverReviewsTest extends TestCase
 
         $this->assertDatabaseHas('driver_reviews', [
             'driver_id' => $this->driver->id,
-            'parent_id' => $this->parent->id,
+            'parent_id' => $this->parentUser->id,
         ]);
     }
 
     public function test_parent_cannot_submit_duplicate_review_for_same_driver(): void
     {
         DriverReview::create([
-            'parent_id' => $this->parent->id,
+            'parent_id' => $this->parentUser->id,
             'driver_id' => $this->driver->id,
             'rating'    => 4,
             'status'    => 'active',
@@ -133,7 +133,7 @@ class ComplaintsAndDriverReviewsTest extends TestCase
     public function test_parent_can_update_own_review(): void
     {
         $review = DriverReview::create([
-            'parent_id' => $this->parent->id,
+            'parent_id' => $this->parentUser->id,
             'driver_id' => $this->driver->id,
             'rating'    => 3,
             'comment'   => 'مقبول',
@@ -150,7 +150,7 @@ class ComplaintsAndDriverReviewsTest extends TestCase
     public function test_parent_can_delete_own_review(): void
     {
         $review = DriverReview::create([
-            'parent_id' => $this->parent->id,
+            'parent_id' => $this->parentUser->id,
             'driver_id' => $this->driver->id,
             'rating'    => 2,
             'status'    => 'active',
@@ -175,7 +175,7 @@ class ComplaintsAndDriverReviewsTest extends TestCase
         $otherParent = ParentModel::create(['user_id' => $otherParentUser->id, 'is_trusted' => 1]);
 
         $review = DriverReview::create([
-            'parent_id' => $otherParent->id,
+            'parent_id' => $otherParentUser->id,
             'driver_id' => $this->driver->id,
             'rating'    => 5,
             'status'    => 'active',
@@ -194,7 +194,7 @@ class ComplaintsAndDriverReviewsTest extends TestCase
     public function test_admin_all_reviews_returns_unified_shape_with_driver_and_parent_names(): void
     {
         DriverReview::create([
-            'parent_id' => $this->parent->id,
+            'parent_id' => $this->parentUser->id,
             'driver_id' => $this->driver->id,
             'rating'    => 5,
             'comment'   => 'ممتاز',
@@ -218,7 +218,7 @@ class ComplaintsAndDriverReviewsTest extends TestCase
     public function test_admin_driver_reviews_by_driver_matches_same_shape(): void
     {
         DriverReview::create([
-            'parent_id' => $this->parent->id,
+            'parent_id' => $this->parentUser->id,
             'driver_id' => $this->driver->id,
             'rating'    => 4,
             'status'    => 'active',
@@ -235,7 +235,7 @@ class ComplaintsAndDriverReviewsTest extends TestCase
     public function test_admin_can_force_delete_a_review(): void
     {
         $review = DriverReview::create([
-            'parent_id' => $this->parent->id,
+            'parent_id' => $this->parentUser->id,
             'driver_id' => $this->driver->id,
             'rating'    => 1,
             'status'    => 'active',

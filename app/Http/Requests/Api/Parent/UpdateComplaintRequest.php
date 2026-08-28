@@ -29,7 +29,7 @@ class UpdateComplaintRequest extends FormRequest
             'driver_id'     => 'sometimes|nullable|integer|exists:drivers,id',
             'trip_id'       => 'sometimes|nullable|integer|exists:trips,id',
             'attachments'   => 'nullable|array|max:5',
-            'attachments.*' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:5120', // الحد الأقصى 5MB للملف
+            'attachments.*' => 'nullable|file|mimes:jpeg,png,jpg|max:5120', // الحد الأقصى 5MB للملف
         ];
     }
 
@@ -60,7 +60,7 @@ class UpdateComplaintRequest extends FormRequest
             'attachments.array'     => 'المرفقات يجب أن تكون في صيغة قائمة.',
             'attachments.max'       => 'لا يمكنك رفع أكثر من 5 ملفات مرفقة.',
             'attachments.*.file'    => 'يجب أن يكون المرفق ملفاً صالحاً.',
-            'attachments.*.mimes'   => 'نوع الملف غير مدعوم (الصيغ المسموحة: jpeg, png, jpg, pdf).',
+            'attachments.*.mimes'   => 'نوع الملف غير مدعوم (الصيغ المسموحة: jpeg, png, jpg).',
             'attachments.*.max'     => 'حجم الملف المرفق لا يجب أن يتجاوز 5 ميجابايت.',
         ];
     }

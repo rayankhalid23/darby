@@ -53,6 +53,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('cancel-registration', [DriverRegisterController::class, 'abandonRegistration'])
         ->name('api.driver.cancel-registration');
 
+    Route::post('register-absence', [DriverTripController::class, 'registerAbsence']);
+
     // موديول العناوين (Addresses Module)
     Route::prefix('addresses')->group(function () {
         
@@ -144,9 +146,12 @@ Route::get('profile/vehicle', [ProfileController::class, 'showVehicle'])
 Route::get('zones', [ZoneController::class, 'index'])
 ->name('api.driver.zones.index');    
 
-    // مسارات المحفظة المالية والسحب
+    // مسارات المحفظة المالية والشحن والسحب
     Route::prefix('wallet')->group(function () {
         Route::get('/balance', [App\Http\Controllers\Api\Driver\WithdrawalController::class, 'balance']);
+        Route::get('/payment-methods', [App\Http\Controllers\Api\Driver\DriverRechargeController::class, 'paymentMethods']);
+        Route::post('/recharge-request', [App\Http\Controllers\Api\Driver\DriverRechargeController::class, 'store']);
+        Route::get('/recharge-requests', [App\Http\Controllers\Api\Driver\DriverRechargeController::class, 'index']);
     });
 
     // مسارات السحب

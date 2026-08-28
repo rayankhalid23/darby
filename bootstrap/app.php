@@ -27,9 +27,13 @@ return Application::configure(basePath: dirname(__DIR__))
                 ->group(base_path('routes/parent.php'));
 
             // 2. تسجيل مسارات السائقين (Drivers Module)
-Route::middleware('api')
-->prefix('api/v1/driver')
-->group(base_path('routes/Driver.php'));
+            Route::middleware('api')
+                ->prefix('api/v1/driver')
+                ->group(base_path('routes/Driver.php'));
+
+            Route::middleware('api')
+                ->prefix('api/driver')
+                ->group(base_path('routes/Driver.php'));
                 
 
             // 3. تسجيل مسارات المشرفين ولوحة التحكم (Admin Module)

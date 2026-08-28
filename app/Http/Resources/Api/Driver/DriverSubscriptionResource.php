@@ -14,21 +14,43 @@ class DriverSubscriptionResource extends JsonResource
         }
 
         $parentUser = optional(optional($this->parent)->user);
-        $discountFactor = 0.92; 
 
-        $rawTotal = (float) ($this->total_price ?? 0);
-        $netTotalAmount = round($rawTotal * $discountFactor, 2);
+        // حساب أسعار الأطفال وصافي السائق بدقة مع Fallback للسجلات القديمة
+        $totalRawPrice = (float) ($this->total_price ?? 0);
+        $totalDiscount = (float) ($this->discount_amount ?? 0);
+        $totalAfterDiscount = (float) ($this->total_amount_after_discount ?? max(0, $totalRawPrice - $totalDiscount));
+        
+        $netTotalAmount = 0;
+        if ($this->relationLoaded('children') && $this->children) {
+            $netTotalAmount = (float) $this->children->sum(function ($child) {
+                $pivot = $child->pivot ?? null;
+                if (!$pivot) return 0;
+                $net = (float) ($pivot->driver_net_price ?? 0);
+                if ($net <= 0) {
+                    $raw = (float) ($pivot->price_per_child ?? $pivot->trip_price ?? 0);
+                    $disc = (float) ($pivot->discount_amount ?? 0);
+                    $afterDisc = (float) ($pivot->total_amount_after_discount ?? max(0, $raw - $disc));
+                    $net = round($afterDisc * 0.92, 2);
+                }
+                return $net;
+            });
+        } else {
+            $netTotalAmount = round($totalAfterDiscount * 0.92, 2);
+        }
 
         return [
-            'id'                   => $this->id,
-            'status'               => [
+            'id'                     => $this->id,
+            'status'                 => [
                 'value' => $this->status,
             ],
-            // الملاحظة العامة لطلب الاشتراك (تأكد من اسم الحقل في جدول subscription_requests إذا كان notes أو general_notes)
-            'notes'                => $this->notes ?? $this->general_notes ?? null, 
-            'total_amount'         => $netTotalAmount,
-            'currency'             => 'د.ل', 
-            'children_count'       => (int) ($this->children_count ?? ($this->relationLoaded('children') ? $this->children->count() : 1)),
+            'notes'                  => $this->notes ?? $this->general_notes ?? null, 
+            'total_amount'           => round($netTotalAmount, 2), // صافي مستحقات السائق للطلب
+            'driver_net_total'       => round($netTotalAmount, 2),
+            'original_total'         => round($totalRawPrice, 2),
+            'discount_total'         => round($totalDiscount, 2),
+            'total_after_discount'   => round($totalAfterDiscount, 2),
+            'currency'               => 'د.ل', 
+            'children_count'         => (int) ($this->children_count ?? ($this->relationLoaded('children') ? $this->children->count() : 1)),
 
             'parent' => [
                 'id'       => optional($this->parent)->id,
@@ -38,17 +60,25 @@ class DriverSubscriptionResource extends JsonResource
                 'avatar'   => $parentUser->avatar_url ?? null,
             ],
 
-            'children' => $this->whenLoaded('children', function () use ($discountFactor) {
-                return $this->children->map(function ($child) use ($discountFactor) {
+            'children' => $this->whenLoaded('children', function () {
+                return $this->children->map(function ($child) {
                     $pivot   = $child->pivot ?? null;
                     $school  = optional($child->school);
                     $address = optional($child->address);
 
-                    $rawChildTotal = (float) ($pivot->price_per_child ?? $pivot->total_price ?? $child->price ?? 0);
-                    $rawTripPrice  = (float) ($pivot->trip_price ?? ($rawChildTotal / 2));
+                    $rawChildPrice = (float) ($pivot->price_per_child ?? $pivot->trip_price ?? 0);
+                    $tripPrice      = (float) ($pivot->trip_price ?? $rawChildPrice);
+                    $discountAmt    = (float) ($pivot->discount_amount ?? 0);
+                    $afterDiscount  = (float) ($pivot->total_amount_after_discount ?? max(0, $rawChildPrice - $discountAmt));
+                    if ($afterDiscount <= 0 && $rawChildPrice > 0) {
+                        $afterDiscount = max(0, $rawChildPrice - $discountAmt);
+                    }
 
-                    $netChildTotal = round($rawChildTotal * $discountFactor, 2);
-                    $netTripPrice  = round($rawTripPrice * $discountFactor, 2);
+                    $driverNetPrice = (float) ($pivot->driver_net_price ?? 0);
+                    if ($driverNetPrice <= 0 && $afterDiscount > 0) {
+                        $driverNetPrice = round($afterDiscount * 0.92, 2);
+                    }
+                    $platformFee = max(0, round($afterDiscount - $driverNetPrice, 2));
 
                     return [
                         'id'         => $child->id,
@@ -58,20 +88,24 @@ class DriverSubscriptionResource extends JsonResource
                         'grade'      => $child->grade ?? $child->class_name ?? 'غير محدد',
                         'photo_url'  => $child->photo_url,
 
-                        // ملاحظات الطفل (ملاحظات الطلب الخاصة بالطفل من جدول الـ pivot + الملاحظات الطبية من جدول children)
                         'notes' => [
-                          
                             'child_notes' => $child->medical_notes ?? null,
                         ],
 
                         'pricing' => [
-                            'trip_price'  => $netTripPrice,
-                            'total_price' => $netChildTotal,
+                            'trip_price'                  => $tripPrice,
+                            'original_price'              => $rawChildPrice,
+                            'price_per_child'             => $rawChildPrice,
+                            'discount_amount'             => $discountAmt,
+                            'total_amount_after_discount' => $afterDiscount,
+                            'platform_commission'         => $platformFee,
+                            'driver_net_price'            => $driverNetPrice,
+                            'total_price'                 => $driverNetPrice, // صافي السائق
                         ],
 
                         'subscription_period' => [
-                            'start_date' => $pivot->start_date ?? null,
-                            'end_date'   => $pivot->end_date ?? null,
+                            'start_date'         => $pivot->start_date ?? null,
+                            'end_date'           => $pivot->end_date ?? null,
                             'working_days_count' => (int) ($pivot->working_days_count ?? 0),
                         ],
 
@@ -98,7 +132,7 @@ class DriverSubscriptionResource extends JsonResource
                 });
             }),
 
-            'created_at' => $this->created_at?->toIso8601String(),
+            'created_at'           => $this->created_at?->toIso8601String(),
             'created_at_formatted' => $this->created_at?->format('Y-m-d H:i'),
         ];
     }

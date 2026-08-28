@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Shared\Contract;
+use App\Models\Shared\SubscriptionRequest;
 use App\Models\Shared\FinancialLedger;
 use App\Models\Shared\Trip;
 use App\Services\Shared\FinancialLedgerService;
@@ -267,34 +267,34 @@ class FinancialLedgerController extends Controller
     }
 
     /**
-     * 5️⃣ قائمة العقود الجاهزة للتسوية المالية (Pending Monthly Settlements)
+     * 5️⃣ قائمة الاشتراكات الجاهزة للتسوية المالية (Pending Monthly Settlements)
      * GET /api/admin/financial/contracts/pending-settlements
      */
     public function pendingSettlements(): JsonResponse
     {
         $perPage = (int) request('per_page', 15);
 
-        $contracts = Contract::with(['parent.user', 'driver.user', 'routes.trips'])
-            ->where('status', 'active')
+        $subscriptions = SubscriptionRequest::with(['parent.user', 'driver.user', 'routes.trips'])
+            ->where('status', 'accepted')
             ->latest()
             ->paginate($perPage);
 
-        $formatted = collect($contracts->items())->map(function (Contract $contract) {
-            $totalPrice = (float) ($contract->total_price ?? 0);
-            $plannedTrips = max((int) ($contract->days_count ?? 20), 1);
+        $formatted = collect($subscriptions->items())->map(function (SubscriptionRequest $subscription) {
+            $totalPrice = (float) ($subscription->total_amount_after_discount ?? $subscription->total_price ?? 0);
+            $plannedTrips = max((int) ($subscription->days_count ?? 20), 1);
             $perTripCost = $totalPrice / $plannedTrips;
 
-            $trips = Trip::whereHas('route', fn($q) => $q->where('contract_id', $contract->id))->get();
+            $trips = Trip::whereHas('route', fn($q) => $q->where('subscription_request_id', $subscription->id))->get();
             $completedCount = $trips->where('status', 'completed')->count();
 
             $executedAmount = round($completedCount * $perTripCost, 2);
             $pendingAmount  = max(0, round($totalPrice - $executedAmount, 2));
 
             return [
-                'contract_id'       => $contract->id,
-                'contract_number'   => $contract->contract_number ?? "CNT-{$contract->id}",
-                'parent'            => $contract->parent?->user?->full_name,
-                'driver'            => $contract->driver?->user?->full_name,
+                'contract_id'       => $subscription->id,
+                'contract_number'   => "REQ-{$subscription->id}",
+                'parent'            => $subscription->parent?->user?->full_name,
+                'driver'            => $subscription->driver?->user?->full_name,
                 'total_amount'      => $totalPrice,
                 'executed_amount'   => $executedAmount,
                 'pending_amount'    => $pendingAmount,
@@ -307,52 +307,52 @@ class FinancialLedgerController extends Controller
             'success' => true,
             'data'    => $formatted,
             'meta'    => [
-                'current_page' => $contracts->currentPage(),
-                'last_page'    => $contracts->lastPage(),
-                'per_page'     => $contracts->perPage(),
-                'total'        => $contracts->total(),
+                'current_page' => $subscriptions->currentPage(),
+                'last_page'    => $subscriptions->lastPage(),
+                'per_page'     => $subscriptions->perPage(),
+                'total'        => $subscriptions->total(),
             ],
         ]);
     }
 
     /**
-     * 5️⃣-ب تسوية العقد الشهري الإغلاق والمقاصة النهائية (Monthly Subscription Settlement)
+     * 5️⃣-ب تسوية الاشتراك الشهري الإغلاق والمقاصة النهائية (Monthly Subscription Settlement)
      * POST /api/admin/financial/contracts/{contractId}/settle-monthly
      */
     public function settleMonthly(int $contractId): JsonResponse
     {
-        $contract = Contract::findOrFail($contractId);
+        $subscription = SubscriptionRequest::findOrFail($contractId);
 
         // 🔴 Idempotency Guard
-        if ($contract->status === 'settled') {
+        if ($subscription->status === 'settled') {
             return response()->json([
                 'success' => false,
                 'message' => 'لا يمكن تنفيذ العملية.',
-                'errors'  => ['settlement' => ['تم إجراء التسوية النهائية لهذا العقد مسبقاً.']]
+                'errors'  => ['settlement' => ['تم إجراء التسوية النهائية لهذا الاشتراك مسبقاً.']]
             ], 422);
         }
 
-        $result = $this->ledgerService->settleMonthlyContract($contract);
-        $contract->update(['status' => 'settled']);
+        $result = $this->ledgerService->settleMonthlySubscription($subscription);
+        $subscription->update(['status' => 'settled']);
 
         return response()->json([
             'success' => true,
-            'message' => 'تمت تسوية العقد الشهري وجرد الحساب بنجاح.',
+            'message' => 'تمت تسوية الاشتراك الشهري وجرد الحساب بنجاح.',
             'data'    => $result,
         ]);
     }
 
     /**
-     * 6️⃣ معاينة حسابات الإلغاء المبكر للعقد (Termination Preview)
+     * 6️⃣ معاينة حسابات الإلغاء المبكر للاشتراك (Termination Preview)
      * GET /api/admin/financial/contracts/{contractId}/termination-preview
      */
     public function terminationPreview(Request $request, int $contractId): JsonResponse
     {
-        $contract = Contract::findOrFail($contractId);
+        $subscription = SubscriptionRequest::findOrFail($contractId);
         $terminatedBy = $request->query('terminated_by', 'parent');
         $isArbitrary = $request->boolean('is_arbitrary_parent');
 
-        $result = $this->ledgerService->previewContractTermination($contract, $terminatedBy, $isArbitrary);
+        $result = $this->ledgerService->previewSubscriptionTermination($subscription, $terminatedBy, $isArbitrary);
 
         return response()->json([
             'success' => true,
@@ -361,7 +361,7 @@ class FinancialLedgerController extends Controller
     }
 
     /**
-     * 6️⃣-ب الإلغاء المبكر للعقد في منتصف الشهر (Mid-Month Termination)
+     * 6️⃣-ب الإلغاء المبكر للاشتراك في منتصف الشهر (Mid-Month Termination)
      * POST /api/admin/financial/contracts/{contractId}/terminate-mid-month
      */
     public function terminateMidMonth(Request $request, int $contractId): JsonResponse
@@ -371,26 +371,26 @@ class FinancialLedgerController extends Controller
             'is_arbitrary_parent'  => 'nullable|boolean',
         ]);
 
-        $contract = Contract::findOrFail($contractId);
+        $subscription = SubscriptionRequest::findOrFail($contractId);
 
         // 🔴 Idempotency Guard
-        if ($contract->status === 'terminated') {
+        if ($subscription->status === 'cancelled') {
             return response()->json([
                 'success' => false,
                 'message' => 'لا يمكن تنفيذ العملية.',
-                'errors'  => ['termination' => ['العقد ملغى بالفعل مسبقاً.']]
+                'errors'  => ['termination' => ['الاشتراك ملغى بالفعل مسبقاً.']]
             ], 422);
         }
 
-        $result = $this->ledgerService->terminateContractMidMonth(
-            $contract,
+        $result = $this->ledgerService->terminateSubscriptionMidMonth(
+            $subscription,
             $request->terminated_by,
             (bool) $request->is_arbitrary_parent
         );
 
         return response()->json([
             'success' => true,
-            'message' => 'تم الإلغاء المبكر للعقد وإجراء التسوية الفورية.',
+            'message' => 'تم الإلغاء المبكر للاشتراك وإجراء التسوية الفورية.',
             'data'    => $result,
         ]);
     }

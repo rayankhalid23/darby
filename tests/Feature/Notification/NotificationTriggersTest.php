@@ -130,41 +130,30 @@ class NotificationTriggersTest extends TestCase
             'label'      => 'منزل ولي الأمر',
             'lat'        => 32.88,
             'lng'        => 13.19,
-            'is_default' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
 
         $req = SubscriptionRequest::create([
-            'parent_id'         => $this->parent->id,
-            'driver_id'         => $this->driver->id,
-            'school_id'         => $this->school->id,
-            'subscription_type' => 'monthly',
-            'direction'         => 'both',
-            'timing'            => 'MORNING',
-            'start_date'        => now()->addDay()->format('Y-m-d'),
-            'end_date'          => now()->addMonth()->format('Y-m-d'),
-            'days_count'        => 22,
-            'total_price'       => 200,
-            'pickup_time'       => '07:00:00',
-            'dropoff_time'      => '14:00:00',
-            'max_waiting_time'  => 15,
-            'status'            => SubscriptionRequest::STATUS_PENDING,
-            'children_count'    => 1,
+            'parent_id'   => $this->parent->id,
+            'driver_id'   => $this->driver->id,
+            'total_price' => 200,
+            'status'      => SubscriptionRequest::STATUS_PENDING,
+            'notes'       => 'طلب تجريبي للاختبار',
         ]);
 
         DB::table('request_children')->insert([
             'request_id'         => $req->id,
             'child_id'           => $this->child->id,
-            'pickup_address_id'  => $addressId,
-            'dropoff_address_id' => $this->school->id,
-            'home_lat'           => 32.88,
-            'home_lng'           => 13.19,
-            'home_label'         => 'المنزل',
-            'school_lat'         => 32.90,
-            'school_lng'         => 13.20,
-            'school_label'       => 'المدرسة',
+            'subscription_type'  => 'monthly',
+            'trip_direction'     => 'both',
+            'timing'             => 'BOTH',
+            'start_date'         => now()->addDay()->format('Y-m-d'),
+            'end_date'           => now()->addMonth()->format('Y-m-d'),
+            'working_days_count' => 22,
+            'distance_km'        => 5.5,
+            'trip_price'         => 10,
             'price_per_child'    => 200,
+            'created_at'         => now(),
+            'updated_at'         => now(),
         ]);
 
         return $req->fresh();
@@ -179,27 +168,20 @@ class NotificationTriggersTest extends TestCase
             'label'      => 'home',
             'lat'        => 32.88,
             'lng'        => 13.19,
-            'is_default' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
 
         $service = app(SubscriptionRequestService::class);
         $service->createRequest([
-            'driver_id'        => $this->driver->id,
-            'school_id'        => $this->school->id,
-            'timing'           => 'MORNING',
-            'direction'        => 'both',
-            'start_date'       => now()->addDay()->format('Y-m-d'),
-            'end_date'         => now()->addMonth()->format('Y-m-d'),
-            'pickup_time'      => '07:00:00',
-            'dropoff_time'     => '14:00:00',
-            'max_waiting_time' => 15,
-            'children'         => [
+            'driver_id'   => $this->driver->id,
+            'total_price' => 200,
+            'children'    => [
                 [
                     'child_id'           => $this->child->id,
-                    'pickup_address_id'  => $addressId,
-                    'dropoff_address_id' => $this->school->id,
+                    'subscription_type'  => 'monthly',
+                    'trip_direction'     => 'both',
+                    'timing'             => 'BOTH',
+                    'start_date'         => now()->addDay()->format('Y-m-d'),
+                    'end_date'           => now()->addMonth()->format('Y-m-d'),
                     'price_per_child'    => 200,
                 ],
             ],
@@ -267,26 +249,8 @@ class NotificationTriggersTest extends TestCase
 
         $subReq = $this->createSubscriptionRequest();
 
-        $contract = Contract::create([
-            'subscription_request_id' => $subReq->id,
-            'parent_id'         => $this->parentUser->id,
-            'driver_id'         => $this->driverUser->id,
-            'contract_number'   => 'CT-' . uniqid(),
-            'subscription_type' => 'monthly',
-            'direction'         => 'both',
-            'timing'            => 'MORNING',
-            'start_date'        => now()->format('Y-m-d'),
-            'end_date'          => now()->addMonth()->format('Y-m-d'),
-            'days_count'        => 22,
-            'total_price'       => 200,
-            'pickup_time'       => '07:00:00',
-            'dropoff_time'      => '14:00:00',
-            'max_waiting_time'  => 15,
-            'status'            => 'signed',
-        ]);
-
         ActiveSubscription::create([
-            'contract_id'   => $contract->id,
+            'subscription_request_id' => $subReq->id,
             'status'        => 'active',
             'child_id'      => $this->child->id,
             'driver_id'     => $this->driver->id,

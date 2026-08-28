@@ -26,11 +26,10 @@ class InvoiceResource extends JsonResource
             'paid_at'          => $this->paid_at?->format('Y-m-d H:i:s'),
             'created_at'       => $this->created_at?->format('Y-m-d H:i:s'),
 
-            $this->mergeWhen($this->relationLoaded('contract'), [
-                'contract' => [
-                    'id'       => $this->contract?->id,
-                    'number'   => $this->contract?->contract_number,
-                    'status'   => $this->contract?->status,
+            $this->mergeWhen($this->relationLoaded('subscriptionRequest'), [
+                'subscription_request' => [
+                    'id'     => $this->subscriptionRequest?->id,
+                    'status' => $this->subscriptionRequest?->status,
                 ],
             ]),
 

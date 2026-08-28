@@ -42,9 +42,12 @@ class ActiveSubscription extends Model
     // العلاقات
     // ============================================================
 
+    /**
+     * للتوافقية مع الاستدعاءات القديمة: يعيد طلب الاشتراك كعقد معتمد
+     */
     public function contract(): BelongsTo
     {
-        return $this->belongsTo(Contract::class, 'contract_id');
+        return $this->belongsTo(SubscriptionRequest::class, 'subscription_request_id');
     }
 
     /**

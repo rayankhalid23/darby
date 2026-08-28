@@ -3,51 +3,221 @@
 namespace App\Services\Parent;
 
 use App\Models\Shared\RechargeRequest;
+use App\Models\Shared\PaymentMethod;
 use App\Models\Parent\ParentModel;
+use App\Models\Shared\Invoice;
+use App\Models\Shared\MasterEscrowVault;
+use App\Models\User;
+use App\Services\Notification\NotificationService;
+use App\Services\Shared\FinancialLedgerService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Illuminate\Support\Facades\Validator;
 
 class WalletRechargeService
 {
-    private const PAYMENT_METHODS = ['ncb', 'libyana', 'almadar'];
+    protected NotificationService $notificationService;
+    protected FinancialLedgerService $ledgerService;
 
-    public function initiateRecharge(int $userId, float $amount, string $paymentMethod, ?string $referenceNumber = null): RechargeRequest
+    public function __construct(NotificationService $notificationService, FinancialLedgerService $ledgerService)
     {
-        if (!in_array($paymentMethod, self::PAYMENT_METHODS)) {
-            throw ValidationException::withMessages([
-                'payment_method' => ['طريقة الدفع غير مدعومة. الطرق المتاحة: المصرف التجاري، ليبيانا، المدار.'],
-            ]);
-        }
-
-        if ($amount < 1) {
-            throw ValidationException::withMessages([
-                'amount' => ['الحد الأدنى للشحن هو 1 دينار ليبي.'],
-            ]);
-        }
-
-        if ($amount > 50000) {
-            throw ValidationException::withMessages([
-                'amount' => ['الحد الأقصى للشحن هو 50,000 دينار ليبي.'],
-            ]);
-        }
-
-        $methodLabels = [
-            'ncb'     => 'المصرف التجاري الوطني',
-            'libyana' => 'ليبيانا',
-            'almadar' => 'المدار',
-        ];
-
-        return RechargeRequest::create([
-            'parent_id'        => $userId,
-            'amount'           => $amount,
-            'payment_method'   => $paymentMethod,
-            'reference_number' => $referenceNumber,
-            'status'           => 'pending',
-            'notes'            => 'طلب شحن عبر ' . ($methodLabels[$paymentMethod] ?? $paymentMethod),
-        ]);
+        $this->notificationService = $notificationService;
+        $this->ledgerService       = $ledgerService;
     }
 
+    /**
+     * جلب طرق الدفع المفعلة المتاحة لأولياء الأمور
+     */
+    public function getPaymentMethods()
+    {
+        $methods = PaymentMethod::active()
+            ->forParents()
+            ->orderBy('sort_order')
+            ->get();
+
+        if ($methods->isEmpty()) {
+            return $this->getFallbackPaymentMethods();
+        }
+
+        return $methods;
+    }
+
+    /**
+     * بدء عملية شحن محفظة ولي الأمر وإنشاء جلسة الدفع الوهمية
+     */
+    public function initiateRecharge(int $userId, float $amount, $paymentMethodIdentifier, ?string $referenceNumber = null): array
+    {
+        $method = null;
+        if (is_numeric($paymentMethodIdentifier)) {
+            $method = PaymentMethod::find($paymentMethodIdentifier);
+        } else {
+            $method = PaymentMethod::where('code', $paymentMethodIdentifier)->first();
+        }
+
+        $minAmount = $method ? (float) $method->min_amount : 1.0;
+        $maxAmount = $method ? (float) $method->max_amount : 50000.0;
+
+        if ($amount < $minAmount) {
+            throw ValidationException::withMessages([
+                'amount' => ["الحد الأدنى للشحن هو {$minAmount} د.ل."],
+            ]);
+        }
+
+        if ($amount > $maxAmount) {
+            throw ValidationException::withMessages([
+                'amount' => ["الحد الأقصى للشحن هو {$maxAmount} د.ل."],
+            ]);
+        }
+
+        $methodCode = $method ? $method->code : (string) $paymentMethodIdentifier;
+        $methodName = $method ? $method->name_ar : $methodCode;
+
+        $transactionRef = 'TXN-' . strtoupper(Str::random(6)) . '-' . time();
+        $sessionToken   = 'MOCK_SESS_' . Str::random(32);
+
+        $recharge = RechargeRequest::create([
+            'parent_id'         => $userId,
+            'payment_method_id' => $method?->id,
+            'payment_method'    => $methodCode,
+            'amount'            => $amount,
+            'reference_number'  => $referenceNumber,
+            'transaction_ref'   => $transactionRef,
+            'session_token'     => $sessionToken,
+            'status'            => 'pending',
+            'notes'             => 'طلب شحن عبر ' . $methodName,
+        ]);
+
+        return [
+            'recharge_id'       => $recharge->id,
+            'transaction_ref'   => $transactionRef,
+            'session_token'     => $sessionToken,
+            'amount'            => (float) $amount,
+            'currency'          => 'د.ل',
+            'payment_method'    => [
+                'id'              => $method?->id,
+                'code'            => $methodCode,
+                'name'            => $methodName,
+                'processing_type' => $method?->processing_type ?? 'instant_simulation',
+            ],
+            'mock_gateway_url'  => url("/api/parent/wallet/recharge/mock-pay?token={$sessionToken}"),
+            'expires_in_minutes'=> 30,
+        ];
+    }
+
+    /**
+     * تنفيذ محاكاة بوابة الدفع وتحديث رصيد ولي الأمر فوراً
+     */
+    public function processMockPayment(string $sessionToken, array $mockCardData = []): array
+    {
+        return DB::transaction(function () use ($sessionToken, $mockCardData) {
+            $recharge = RechargeRequest::where('session_token', $sessionToken)
+                ->where('status', 'pending')
+                ->lockForUpdate()
+                ->first();
+
+            if (!$recharge) {
+                throw ValidationException::withMessages([
+                    'session_token' => ['جلسة الدفع غير صالحة أو منتهية الصلاحية أو تم سدادها مسبقاً.'],
+                ]);
+            }
+
+            // البحث عن سجل ولي الأمر المقترن
+            $parent = ParentModel::where('user_id', $recharge->parent_id)->first();
+            if (!$parent) {
+                $parent = ParentModel::find($recharge->parent_id);
+            }
+            if (!$parent) {
+                $parent = ParentModel::create([
+                    'user_id'    => $recharge->parent_id,
+                    'is_trusted' => 1,
+                ]);
+            }
+
+            // تحويل المبلغ إلى قروش وإيداعه في المحفظة
+            $amountCents = (int) round($recharge->amount * 100);
+            $parent->deposit($amountCents);
+
+            // تحديث حوض أمانات أولياء الأمور في الخزينة المركزية
+            $vault = MasterEscrowVault::getVault();
+            $vault->increment('parents_escrow_pool', $amountCents);
+
+            // تسجيل القيد في السجل المالي المزدوج
+            try {
+                $this->ledgerService->recordLedgerEntry(
+                    'payment_gateway_clearing',
+                    "parent_wallet_{$parent->id}",
+                    $amountCents,
+                    'parent_deposit',
+                    0,
+                    (int) ($parent->balance ?? 0),
+                    "RECHARGE-PRNT-{$recharge->id}",
+                    ['recharge_id' => $recharge->id, 'transaction_ref' => $recharge->transaction_ref]
+                );
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning("فشل تسجيل قيد السجل المالي لشحن ولي الأمر #{$recharge->id}: " . $e->getMessage());
+            }
+
+            // إنشاء فاتورة/إيصال مالي تلقائي
+            $invoiceNumber = 'INV-' . date('Y') . '-' . str_pad((string) $recharge->id, 6, '0', STR_PAD_LEFT);
+            $invoice = Invoice::create([
+                'invoice_number' => $invoiceNumber,
+                'parent_id'      => $recharge->parent_id,
+                'amount'         => $recharge->amount,
+                'type'           => 'receipt',
+                'status'         => 'paid',
+                'due_date'       => now()->toDateString(),
+                'payment_method' => $recharge->payment_method,
+                'paid_at'        => now(),
+                'details'        => [
+                    'type'            => 'wallet_topup',
+                    'transaction_ref' => $recharge->transaction_ref,
+                    'card_last4'      => substr($mockCardData['card_number'] ?? '4242', -4),
+                    'gateway'         => 'Mock Gateway Simulator',
+                ],
+            ]);
+
+            // تحديث سجل الشحن
+            $recharge->update([
+                'status'          => 'completed',
+                'completed_at'    => now(),
+                'gateway_payload' => array_merge($mockCardData, [
+                    'gateway_status' => 'APPROVED',
+                    'simulated_at'   => now()->toIso8601String(),
+                    'invoice_id'     => $invoice->id,
+                ]),
+            ]);
+
+            // إرسال إشعار لحظي لولي الأمر
+            $user = User::find($recharge->parent_id);
+            if ($user) {
+                $formattedAmount = number_format($recharge->amount, 2);
+                $newBalance = number_format(($parent->balance ?? 0) / 100, 2);
+                $this->notificationService->sendToUser($user, 'recharge_completed', [
+                    'title'   => '💳 تم شحن المحفظة بنجاح',
+                    'message' => "تم شحن محفظتك بمبلغ {$formattedAmount} د.ل بنجاح. رصيدك الحالي: {$newBalance} د.ل",
+                    'entity_id' => (string) $recharge->id,
+                ]);
+            }
+
+            return [
+                'status'           => 'success',
+                'message'          => 'تم الدفع بنجاح وإيداع المبلغ في المحفظة فوراً.',
+                'transaction_ref'  => $recharge->transaction_ref,
+                'amount'           => (float) $recharge->amount,
+                'currency'         => 'د.ل',
+                'current_balance'  => (float) round($parent->balance / 100, 2),
+                'invoice'          => [
+                    'id'             => $invoice->id,
+                    'invoice_number' => $invoice->invoice_number,
+                    'paid_at'        => $invoice->paid_at?->format('Y-m-d H:i:s'),
+                ],
+            ];
+        });
+    }
+
+    /**
+     * إكمال الشحن يدوياً من الأدمن (Legacy support)
+     */
     public function completeRecharge(int $rechargeId, int $adminId): RechargeRequest
     {
         return DB::transaction(function () use ($rechargeId, $adminId) {
@@ -55,12 +225,16 @@ class WalletRechargeService
                 ->where('status', 'pending')
                 ->firstOrFail();
 
-            $parent = ParentModel::find($request->parent_id);
+            $parent = ParentModel::where('user_id', $request->parent_id)->first();
             if (!$parent) {
-                $parent = ParentModel::where('user_id', $request->parent_id)->firstOrFail();
+                $parent = ParentModel::find($request->parent_id);
+            }
+            if (!$parent) {
+                $parent = ParentModel::create(['user_id' => $request->parent_id, 'is_trusted' => 1]);
             }
 
-            $parent->deposit($request->amount * 100);
+            $amountCents = (int) round($request->amount * 100);
+            $parent->deposit($amountCents);
 
             $request->update([
                 'status'       => 'completed',
@@ -87,44 +261,44 @@ class WalletRechargeService
         return $request->fresh();
     }
 
-    public function getPaymentMethods(): array
+    private function getFallbackPaymentMethods(): array
     {
         return [
             [
-                'id'          => 'ncb',
-                'name'        => 'المصرف التجاري الوطني',
+                'id'          => 1,
+                'code'        => 'sadad',
+                'name_ar'     => 'خدمة سداد (Sadad)',
+                'name_en'     => 'Sadad Payment',
+                'target_audience' => 'both',
+                'processing_type' => 'instant_simulation',
+                'min_amount'  => 1.00,
+                'max_amount'  => 5000.00,
+                'instructions_ar' => 'الدفع الإلكتروني المباشر عبر خدمة سداد التابعة لشركة ليبيانا.',
+            ],
+            [
+                'id'          => 2,
+                'code'        => 'tadawul',
+                'name_ar'     => 'تداول / بطاقة مصرفية (Tadawul)',
+                'name_en'     => 'Tadawul / Bank Card',
+                'target_audience' => 'both',
+                'processing_type' => 'instant_simulation',
+                'min_amount'  => 5.00,
+                'max_amount'  => 10000.00,
+                'instructions_ar' => 'الدفع الإلكتروني عبر بطاقات تداول المصرفية وخدمة ادفع لي.',
+            ],
+            [
+                'id'          => 3,
+                'code'        => 'ncb_bank',
+                'name_ar'     => 'المصرف التجاري الوطني (تحويل بنكي)',
                 'name_en'     => 'National Commercial Bank',
-                'description' => 'تحويل بنكي عبر المصرف التجاري الوطني. يرجى إدخال رقم الإحالة.',
-                'requires_reference' => true,
-                'instructions' => [
-                    'قم بتحويل المبلغ إلى حساب الشركة لدى المصرف التجاري الوطني.',
-                    'احتفظ برقم الإحالة (Reference Number) من إيصال التحويل.',
-                    'أدخل رقم الإحالة في الحقل المخصص لإتمام عملية الشحن.',
-                ],
-            ],
-            [
-                'id'          => 'libyana',
-                'name'        => 'ليبيانا',
-                'name_en'     => 'Libyana',
-                'description' => 'شحن المحفظة عبر رصيد ليبيانا.',
-                'requires_reference' => false,
-                'instructions' => [
-                    'اختر شحن المحفظة عبر ليبيانا.',
-                    'سيتم إرسال رمز تأكيد إلى هاتفك.',
-                    'أدخل الرمز لتأكيد عملية الشحن.',
-                ],
-            ],
-            [
-                'id'          => 'almadar',
-                'name'        => 'المدار',
-                'name_en'     => 'Al-Madar',
-                'description' => 'شحن المحفظة عبر رصيد المدار.',
-                'requires_reference' => false,
-                'instructions' => [
-                    'اختر شحن المحفظة عبر المدار.',
-                    'سيتم إرسال رمز تأكيد إلى هاتفك.',
-                    'أدخل الرمز لتأكيد عملية الشحن.',
-                ],
+                'target_audience' => 'both',
+                'processing_type' => 'manual_proof',
+                'account_name'=> 'شركة دربي لنقل الطلاب',
+                'account_number' => '020-1234567-001',
+                'iban'        => 'LY98NCBL0200001234567001',
+                'min_amount'  => 50.00,
+                'max_amount'  => 50000.00,
+                'instructions_ar' => 'التحويل المباشر لحساب الشركة المصرفي وإرفاق صورة الإيصال.',
             ],
         ];
     }

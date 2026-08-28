@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Log;
 use App\Models\User;
 use Illuminate\Database\QueryException;
 
+use App\Models\Shared\PricingSetting;
 use Throwable;
 
 use Carbon\Carbon;
@@ -30,67 +31,136 @@ class SubscriptionRequestService
         $this->notificationService = $notificationService;
     }
     public function createRequest(array $data, $user): SubscriptionRequest
-{
-    return DB::transaction(function () use ($data, $user) {
-        $parentId = null;
+    {
+        $subscriptionRequest = DB::transaction(function () use ($data, $user) {
+            $parentId = null;
 
-        if (is_object($user)) {
-            if (method_exists($user, 'parent') && $user->parent) {
-                $parentId = $user->parent->id;
-            } elseif (isset($user->user_id)) { 
-                $parentId = $user->id;
-            } else {
-                $parentId = DB::table('parents')->where('user_id', $user->id)->value('id');
+            if (is_object($user)) {
+                if (method_exists($user, 'parent') && $user->parent) {
+                    $parentId = $user->parent->id;
+                } elseif (isset($user->user_id)) { 
+                    $parentId = $user->id;
+                } else {
+                    $parentId = DB::table('parents')->where('user_id', $user->id)->value('id');
+                }
+            } elseif (is_numeric($user)) {
+                $parentId = DB::table('parents')
+                    ->where('id', $user)
+                    ->orWhere('user_id', $user)
+                    ->value('id');
             }
-        } elseif (is_numeric($user)) {
-            $parentId = DB::table('parents')
-                ->where('id', $user)
-                ->orWhere('user_id', $user)
-                ->value('id');
+
+            if (!$parentId) {
+                throw new \InvalidArgumentException("حساب ولي الأمر (Parent Profile) غير مكتمل أو غير موجود لهذا المستخدم.");
+            }
+
+            // 1. جلب إعدادات التسعير من قاعدة البيانات
+            $pricingSetting = PricingSetting::first();
+            $discountOne       = (float) ($pricingSetting->discount_one_child ?? 0.00);
+            $discountTwo       = (float) ($pricingSetting->discount_two_children ?? 10.00);
+            $discountThreePlus = (float) ($pricingSetting->discount_three_plus_children ?? 15.00);
+            $commissionRate    = (float) ($pricingSetting->platform_commission_rate ?? 8.00);
+
+            // تحديد نسبة الخصم بناءً على إجمالي عدد الأطفال بالطلب
+            $childrenCount = count($data['children']);
+            $discountPercent = match (true) {
+                $childrenCount === 1 => 0.0, // لا يوجد تخفيض إذا كان الطلب لطفل واحد
+                $childrenCount === 2 => $discountTwo,
+                $childrenCount >= 3  => $discountThreePlus,
+                default              => 0.0,
+            };
+
+            $totalOrderRawPrice = 0.0;
+            $totalOrderDiscount = 0.0;
+            $totalOrderAmountAfterDiscount = 0.0;
+            $childrenPivotData = [];
+
+            foreach ($data['children'] as $child) {
+                $workingDays = $this->calculateWorkingDays(
+                    $child['start_date'], 
+                    $child['end_date'] ?? $child['start_date']
+                );
+
+                // إجمالي سعر الطفل قبل التخفيض وسعر الرحلة
+                $childRawPrice = (float) ($child['price_per_child'] ?? $child['trip_price'] ?? 0);
+                $tripPrice     = (float) ($child['trip_price'] ?? $childRawPrice);
+
+                // حساب قيمة التخفيض للطفل
+                $childDiscount = round(($childRawPrice * $discountPercent) / 100, 2);
+                
+                // السعر بعد التخفيض (أو السعر الأصلي كاملاً إن لم يكن هناك تخفيض)
+                $childTotalAfterDiscount = max(0, round($childRawPrice - $childDiscount, 2));
+
+                // حساب عمولة المنصة وصافي أرباح السائق للطفل الواحد
+                $platformCommission = round(($childTotalAfterDiscount * $commissionRate) / 100, 2);
+                $driverNetPrice     = max(0, round($childTotalAfterDiscount - $platformCommission, 2));
+
+                $totalOrderRawPrice           += $childRawPrice;
+                $totalOrderDiscount           += $childDiscount;
+                $totalOrderAmountAfterDiscount += $childTotalAfterDiscount;
+
+                $childrenPivotData[$child['child_id']] = [
+                    'subscription_type'           => $child['subscription_type'],
+                    'trip_direction'              => $child['trip_direction'] ?? $child['direction'] ?? 'both',
+                    'timing'                      => $child['timing'] ?? 'BOTH',
+                    'start_date'                  => $child['start_date'],
+                    'end_date'                    => $child['end_date'] ?? $child['start_date'],
+                    'working_days_count'          => $workingDays,
+                    'distance_km'                 => $child['distance_km'] ?? 0,
+                    'trip_price'                  => $tripPrice,
+                    'price_per_child'             => $childRawPrice,
+                    'discount_amount'             => $childDiscount,
+                    'total_amount_after_discount' => $childTotalAfterDiscount,
+                    'driver_net_price'            => $driverNetPrice,
+                    'created_at'                  => now(),
+                    'updated_at'                  => now(),
+                ];
+            }
+
+            $parentModel = ParentModel::with('wallet')->find($parentId);
+            $hasSingleDay = collect($data['children'])->contains('subscription_type', 'single_day');
+            if ($hasSingleDay) {
+                $this->validateAndDeductWalletBalance($parentModel, $totalOrderAmountAfterDiscount);
+            }
+
+            // 2. إنشاء الطلب الرئيسي
+            $subscriptionRequest = SubscriptionRequest::create([
+                'parent_id'                   => $parentId,
+                'driver_id'                   => $data['driver_id'],
+                'status'                      => defined(SubscriptionRequest::class . '::STATUS_PENDING') ? SubscriptionRequest::STATUS_PENDING : 'pending',
+                'total_price'                 => $totalOrderRawPrice,
+                'discount_amount'             => $totalOrderDiscount,
+                'total_amount_after_discount' => $totalOrderAmountAfterDiscount,
+                'notes'                       => $data['notes'] ?? null,
+            ]);
+
+            // 3. ربط الأطفال بجدول الـ Pivot
+            $subscriptionRequest->children()->sync($childrenPivotData);
+
+            return $subscriptionRequest->load(['children.school', 'parent.user', 'driver.user']);
+        });
+
+        // 🔔 إرسال إشعار لحظي للسائق بوجود طلب اشتراك جديد
+        try {
+            $driverUser = $subscriptionRequest->driver?->user;
+            if ($driverUser) {
+                $parentName = $subscriptionRequest->parent?->user?->full_name ?? 'ولي الأمر';
+                $this->notifyUser(
+                    $driverUser,
+                    'طلب اشتراك جديد 🆕',
+                    "لديك طلب اشتراك جديد رقم #{$subscriptionRequest->id} من [{$parentName}] بانتظار المراجعة.",
+                    'new_subscription_request',
+                    (string) $subscriptionRequest->id,
+                    ['request_id' => (string) $subscriptionRequest->id]
+                );
+            }
+        } catch (\Throwable $e) {
+            Log::warning("فشل إرسال إشعار طلب الاشتراك الجديد للسائق: " . $e->getMessage());
         }
 
-        if (!$parentId) {
-            throw new \InvalidArgumentException("حساب ولي الأمر (Parent Profile) غير مكتمل أو غير موجود لهذا المستخدم.");
-        }
-
-        $totalAmount = collect($data['children'])->sum('price_per_child');
-
-        $subscriptionRequest = SubscriptionRequest::create([
-            'parent_id'   => $parentId,
-            'driver_id'   => $data['driver_id'],
-            'status'      => defined(SubscriptionRequest::class . '::STATUS_PENDING') ? SubscriptionRequest::STATUS_PENDING : 'pending',
-            'total_price' => $data['total_price'] ?? $totalAmount,
-            'notes'       => $data['notes'] ?? null,
-        ]);
-
-        $childrenPivotData = [];
-        foreach ($data['children'] as $child) {
-            $workingDays = $this->calculateWorkingDays(
-                $child['start_date'], 
-                $child['end_date'] ?? $child['start_date']
-            );
-
-            // تجميع البيانات المتطابقة تماماً مع أعمدة جدول request_children
-            $childrenPivotData[$child['child_id']] = [
-                'subscription_type'  => $child['subscription_type'],
-                'trip_direction'     => $child['trip_direction'] ?? $child['direction'] ?? 'both',
-                'timing'             => $child['timing'] ?? 'BOTH',
-                'start_date'         => $child['start_date'],
-                'end_date'           => $child['end_date'] ?? $child['start_date'],
-                'working_days_count' => $workingDays,
-                'distance_km'        => $child['distance_km'] ?? 0,
-                'trip_price'         => $child['trip_price'] ?? 0, // ✅ سعر الرحلة الواحدة
-                'price_per_child'    => $child['price_per_child'] ?? 0, // السعر الإجمالي للطفل
-                'created_at'         => now(),
-                'updated_at'         => now(),
-            ];
-        }
-
-        $subscriptionRequest->children()->attach($childrenPivotData);
-
-        return $subscriptionRequest->load(['children.address', 'children.school', 'parent', 'driver']);
-    });
-}
+        return $subscriptionRequest;
+    }
+   
 
     /**
      * حساب عدد أيام العمل الفعلية (استثناء الجمعة والسبت)
@@ -185,11 +255,14 @@ class SubscriptionRequestService
         $driver->loadMissing('seatSlots');
 
         foreach ($requiredSlots as $slot) {
-            $seatSlot     = $driver->seatSlots->firstWhere('slot', $slot);
-            $slotCapacity = $seatSlot?->total_seats ?? ($driver->vehicle?->capacity_manual ?? 0);
+            $seatSlot         = $driver->seatSlots->firstWhere('slot', $slot);
+            $slotCapacity     = $seatSlot?->total_seats ?? ($driver->vehicle?->capacity_manual ?? 0);
+            $slotAvailableNow = $seatSlot ? $seatSlot->available_seats : $slotCapacity;
 
-            $peak      = $this->computeSlotPeakConcurrency($driver->id, $slot, $startDate, $endDate);
-            $available = max(0, $slotCapacity - $peak);
+            $peak            = $this->computeSlotPeakConcurrency($driver->id, $slot, $startDate, $endDate);
+            $availableByPeak = max(0, $slotCapacity - $peak);
+
+            $available = min($slotAvailableNow, $availableByPeak);
 
             if ($available < $childrenCount) {
                 $label = $slotLabels[$slot] ?? $slot;
@@ -208,21 +281,22 @@ class SubscriptionRequestService
     {
         $overlapping = ActiveSubscription::where('driver_id', $driverId)
             ->where('status', 'active')
-            ->whereHas('subscriptionRequest', function ($q) use ($startDate, $endDate) {
-                $q->where('start_date', '<=', $endDate)
-                  ->where('end_date', '>=', $startDate);
+            ->whereHas('subscriptionRequest.children', function ($q) use ($startDate, $endDate) {
+                $q->where('request_children.start_date', '<=', $endDate)
+                  ->where('request_children.end_date', '>=', $startDate);
             })
-            ->with('subscriptionRequest:id,timing,direction,start_date,end_date')
-            ->get(['id', 'subscription_request_id'])
+            ->with(['subscriptionRequest.children', 'child'])
+            ->get(['id', 'subscription_request_id', 'child_id'])
             ->filter(function ($sub) use ($slot) {
                 $subReq = $sub->subscriptionRequest;
                 if (!$subReq) {
                     return false;
                 }
-                $subSlots = \App\Models\Driver\DriverSeatSlot::resolveSlots(
-                    $subReq->timing    ?? 'MORNING',
-                    $subReq->direction ?? 'both'
-                );
+                $childPivot = $subReq->children?->firstWhere('id', $sub->child_id)?->pivot ?? $subReq->children?->first()?->pivot;
+                $timing = $childPivot?->timing ?? $subReq->timing ?? 'MORNING';
+                $direction = $childPivot?->trip_direction ?? $subReq->direction ?? 'both';
+
+                $subSlots = \App\Models\Driver\DriverSeatSlot::resolveSlots($timing, $direction);
                 return in_array($slot, $subSlots);
             });
 
@@ -239,9 +313,10 @@ class SubscriptionRequestService
             if (!in_array($cur->dayOfWeek, [\Carbon\Carbon::FRIDAY, \Carbon\Carbon::SATURDAY])) {
                 $dayStr   = $cur->toDateString();
                 $dayCount = $overlapping->filter(function ($sub) use ($dayStr) {
-                    $subReq   = $sub->subscriptionRequest;
-                    $sStart   = $subReq?->start_date;
-                    $sEnd     = $subReq?->end_date;
+                    $subReq = $sub->subscriptionRequest;
+                    $childPivot = $subReq?->children?->firstWhere('id', $sub->child_id)?->pivot ?? $subReq?->children?->first()?->pivot;
+                    $sStart = $childPivot?->start_date ?? $subReq?->start_date;
+                    $sEnd   = $childPivot?->end_date ?? $subReq?->end_date;
                     if (!$sStart || !$sEnd) {
                         return false;
                     }
@@ -301,11 +376,12 @@ class SubscriptionRequestService
         }
 
         // التحقق من توفر المقاعد مع الوعي الزمني الكامل بفترة الاشتراك
-        $requiredSeats = $req->children_count > 0 ? $req->children_count : ($req->children ? $req->children->count() : 1);
-        $startDate     = $req->start_date ?? now()->toDateString();
-        $endDate       = $req->end_date   ?? $startDate;
-        $timing        = $req->timing    ?? 'MORNING';
-        $direction     = $req->direction ?? 'both';
+        $firstChildPivot = $req->children?->first()?->pivot;
+        $requiredSeats   = $req->children_count > 0 ? $req->children_count : ($req->children ? $req->children->count() : 1);
+        $startDate       = $firstChildPivot?->start_date ? \Carbon\Carbon::parse($firstChildPivot->start_date)->toDateString() : ($req->start_date ? \Carbon\Carbon::parse($req->start_date)->toDateString() : now()->toDateString());
+        $endDate         = $firstChildPivot?->end_date ? \Carbon\Carbon::parse($firstChildPivot->end_date)->toDateString() : ($req->end_date ? \Carbon\Carbon::parse($req->end_date)->toDateString() : $startDate);
+        $timing          = $firstChildPivot?->timing ?? $req->timing ?? 'MORNING';
+        $direction       = $firstChildPivot?->trip_direction ?? $req->direction ?? 'both';
 
         // أقفل صفوف المقاعد المعنية لمنع السباق (race condition) عند القبول المتزامن
         $requiredSlots = \App\Models\Driver\DriverSeatSlot::resolveSlots($timing, $direction);
@@ -332,13 +408,15 @@ class SubscriptionRequestService
 
         // 3. إلغاء الطلبات الأخرى المعلقة لنفس العميل ونفس التوقيت
         SubscriptionRequest::where('parent_id', $req->parent_id)
-            ->where('timing', $req->timing)
             ->where('status', SubscriptionRequest::STATUS_PENDING)
             ->where('id', '!=', $req->id)
+            ->whereHas('children', function ($q) use ($timing) {
+                $q->where('request_children.timing', $timing);
+            })
             ->update(['status' => SubscriptionRequest::STATUS_CANCELLED]);
 
         // 4. تحديد الـ slot الأساسي (الفترة/الاتجاه) بناءً على تفضيلات السائق الثابتة
-        $slots = \App\Models\Driver\DriverSeatSlot::resolveSlots($req->timing ?? 'MORNING', $req->direction ?? 'both');
+        $slots = \App\Models\Driver\DriverSeatSlot::resolveSlots($timing, $direction);
         $primarySlot = $slots[0] ?? null;
 
         // 5. البحث عن مسار رئيسي (Master Route) نشط بالفعل لنفس السائق لنفس الفترة/الاتجاه
@@ -403,6 +481,15 @@ class SubscriptionRequestService
         // 6. تفعيل اشتراكات الأطفال لجدول active_subscriptions وتفريغ المقاعد
         $this->createActiveSubscriptions($req, $route);
 
+        // 6.2 حجز مبلغ الاشتراك اليومي في الأمانات إن وُجد
+        $hasSingleDay = $req->children->contains(function ($child) {
+            return ($child->pivot->subscription_type ?? '') === 'single_day';
+        }) || $req->subscription_type === 'single_day';
+
+        if ($hasSingleDay && (float) $req->total_amount_after_discount > 0) {
+            $this->holdSingleDayFundsOnAcceptance($req, $parent);
+        }
+
         // 6.5 مزامنة المسار الرئيسي (Master Route) لكل فترة/اتجاه مطلوبة (route_stops)
         try {
             $this->masterRouteStopSyncService->syncOnAcceptance($req, $route, $slots);
@@ -457,6 +544,254 @@ class SubscriptionRequestService
         return $req->refresh();
     }
 
+    /**
+     * التحقق من الرصيد في محفظة ولي الأمر ومنع إرسال الطلب في حال عدم كفايته
+     * (لا يتم حجز أو خصم المبلغ إلا عند قبول السائق للطلب)
+     */
+    protected function validateAndDeductWalletBalance(?ParentModel $parent, float $totalPrice): void
+    {
+        if (!$parent) {
+            throw new Exception("حساب ولي الأمر غير موجود.");
+        }
+
+        $requiredCents = (int) round($totalPrice * 100);
+        $balanceCents  = (int) ($parent->balance ?? $parent->wallet?->balance ?? 0);
+
+        if ($balanceCents < $requiredCents) {
+            throw new Exception('عذراً، رصيد المحفظة غير كافٍ. يرجى شحن محفظتك بقيمة الرحلة لإتمام الطلب.');
+        }
+    }
+
+    /**
+     * حجز مبلغ الاشتراك اليومي ونقله للأمانات عند قبول السائق للطلب
+     */
+    protected function holdSingleDayFundsOnAcceptance(SubscriptionRequest $req, ?ParentModel $parent): void
+    {
+        if (!$parent) {
+            $parent = ParentModel::find($req->parent_id) ?? ParentModel::where('user_id', $req->parent_id)->first();
+        }
+        if (!$parent) {
+            throw new Exception("تعذر العثور على حساب ولي الأمر لحجز قيمة الرحلة.");
+        }
+
+        $amountDinar = (float) $req->total_amount_after_discount;
+        $amountCents = (int) round($amountDinar * 100);
+
+        $currentBalance = (int) ($parent->balance ?? $parent->wallet?->balance ?? 0);
+        if ($currentBalance < $amountCents) {
+            throw new Exception("تعذر قبول الطلب: رصيد محفظة ولي الأمر غير كافٍ لحجز مبلغ الرحلة.");
+        }
+
+        $balBefore = $currentBalance;
+        $parent->withdraw($amountCents);
+        $balAfter = (int) $parent->balance;
+
+        $vault = \App\Models\Shared\MasterEscrowVault::getVault();
+        $vault->increment('parents_escrow_pool', $amountCents);
+
+        $pricingSetting = PricingSetting::first();
+        $commissionRate = (float) ($pricingSetting->platform_commission_rate ?? 8.00);
+        $commissionAmount = round(($amountDinar * $commissionRate) / 100, 2);
+        $driverNetAmount = max(0, round($amountDinar - $commissionAmount, 2));
+
+        $platformFinance = \App\Models\Shared\PlatformFinance::create([
+            'subscription_request_id'    => $req->id,
+            'parent_id'                  => $parent->id,
+            'driver_id'                  => $req->driver_id,
+            'total_amount'               => $amountDinar,
+            'platform_commission_rate'   => $commissionRate,
+            'platform_commission_amount' => $commissionAmount,
+            'driver_net_amount'          => $driverNetAmount,
+            'status'                     => \App\Models\Shared\PlatformFinance::STATUS_HELD,
+            'held_at'                    => now(),
+        ]);
+
+        try {
+            app(\App\Services\Shared\FinancialLedgerService::class)->recordLedgerEntry(
+                "parent_wallet_{$parent->user_id}",
+                "parents_escrow_pool",
+                $amountCents,
+                'subscription_hold',
+                $balBefore,
+                $balAfter,
+                "REQ-HOLD-{$req->id}",
+                [
+                    'subscription_request_id' => $req->id,
+                    'platform_finance_id'     => $platformFinance->id,
+                ]
+            );
+        } catch (\Throwable $e) {
+            Log::warning("فشل تسجيل حركة السجل المالي لحجز الاشتراك ID {$req->id}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * معالجة استرجاع المبالغ المحجوزة عند إلغاء الاشتراك وفق سياسة التعويض بعد تحرك السائق
+     */
+    public function refundHeldFundsOnCancellation(int $requestId, string $cancelledBy, ?int $driverId = null): ?array
+    {
+        $finance = \App\Models\Shared\PlatformFinance::where('subscription_request_id', $requestId)
+            ->where('status', \App\Models\Shared\PlatformFinance::STATUS_HELD)
+            ->first();
+
+        if (!$finance) {
+            return null;
+        }
+
+        $parent = ParentModel::find($finance->parent_id) ?? ParentModel::where('user_id', $finance->parent_id)->first();
+        $driver = Driver::find($finance->driver_id) ?? Driver::where('user_id', $finance->driver_id)->first();
+        $vault = \App\Models\Shared\MasterEscrowVault::getVault();
+
+        // فحص هل السائق تحرك بالفعل (بدأت الرحلة الفعلية) أم لا
+        $hasDriverMoved = false;
+        if ($finance->trip_id) {
+            $trip = \App\Models\Shared\Trip::find($finance->trip_id);
+            $hasDriverMoved = $trip && ($trip->status === 'in_progress' || !empty($trip->actual_start_time));
+        } else {
+            $hasDriverMoved = \App\Models\Shared\Trip::where('driver_id', $finance->driver_id)
+                ->where('status', 'in_progress')
+                ->whereDate('trip_date', now()->toDateString())
+                ->exists();
+        }
+
+        $totalDinar = (float) $finance->total_amount;
+        $totalCents = (int) round($totalDinar * 100);
+
+        // إذا تحرك السائق الفعلي وكان الإلغاء من ولي الأمر:
+        if ($hasDriverMoved && $cancelledBy === 'parent') {
+            $nominalCompDinar = min(\App\Models\Shared\PlatformFinance::NOMINAL_FUEL_COMPENSATION, $totalDinar);
+            $commissionRate = (float) ($finance->platform_commission_rate ?? 8.00);
+            $commissionOnComp = round(($nominalCompDinar * $commissionRate) / 100, 2);
+            $driverNetComp = max(0, round($nominalCompDinar - $commissionOnComp, 2));
+            $refundToParent = max(0, round($totalDinar - $nominalCompDinar, 2));
+
+            $refundCents = (int) round($refundToParent * 100);
+            $driverCompCents = (int) round($driverNetComp * 100);
+            $commissionCents = (int) round($commissionOnComp * 100);
+
+            $vault->decrement('parents_escrow_pool', $totalCents);
+
+            if ($refundCents > 0 && $parent) {
+                $parent->deposit($refundCents);
+            }
+
+            if ($driverCompCents > 0 && $driver) {
+                $driver->deposit($driverCompCents);
+            }
+
+            if ($commissionCents > 0) {
+                $vault->increment('platform_revenue_pool', $commissionCents);
+            }
+
+            $finance->update([
+                'status'                     => \App\Models\Shared\PlatformFinance::STATUS_PARTIALLY_REFUNDED,
+                'compensation_fee'           => $nominalCompDinar,
+                'platform_commission_amount' => $commissionOnComp,
+                'driver_net_amount'          => $driverNetComp,
+                'refunded_amount'            => $refundToParent,
+                'refunded_at'                => now(),
+                'notes'                      => 'تم إلغاء الرحلة بعد تحرك السائق. تم خصم تعويض وقود للسائق واقتطاع عمولة المنصة منه وإرجاع باقي المبلغ لولي الأمر.',
+            ]);
+
+            try {
+                $ledger = app(\App\Services\Shared\FinancialLedgerService::class);
+                if ($refundCents > 0 && $parent) {
+                    $ledger->recordLedgerEntry(
+                        'parents_escrow_pool',
+                        "parent_wallet_{$parent->user_id}",
+                        $refundCents,
+                        'subscription_refund',
+                        0,
+                        (int) $parent->balance,
+                        "REFUND-PARTIAL-{$requestId}",
+                        ['subscription_request_id' => $requestId, 'cancelled_by' => $cancelledBy]
+                    );
+                }
+                if ($driverCompCents > 0 && $driver) {
+                    $ledger->recordLedgerEntry(
+                        'parents_escrow_pool',
+                        "driver_wallet_{$driver->id}",
+                        $driverCompCents,
+                        'driver_fuel_compensation',
+                        0,
+                        (int) $driver->balance,
+                        "COMP-DRIVER-{$requestId}",
+                        ['subscription_request_id' => $requestId]
+                    );
+                }
+                if ($commissionCents > 0) {
+                    $ledger->recordLedgerEntry(
+                        'parents_escrow_pool',
+                        'platform_revenue_pool',
+                        $commissionCents,
+                        'platform_commission',
+                        0,
+                        $commissionCents,
+                        "COMMISSION-COMP-{$requestId}"
+                    );
+                }
+            } catch (\Throwable $e) {
+                Log::warning("فشل تسجيل حركات السجل المالي للإلغاء الجزئي ID {$requestId}: " . $e->getMessage());
+            }
+
+            return [
+                'refund_amount'     => $refundToParent,
+                'compensation_fee'  => $nominalCompDinar,
+                'driver_net_pay'    => $driverNetComp,
+                'platform_fee'      => $commissionOnComp,
+                'status'            => 'partially_refunded',
+            ];
+        } else {
+            // قبل تحرك السائق أو إذا كان الإلغاء من السائق أو تلقائياً -> استرجاع كامل 100% لولي الأمر
+            $vault->decrement('parents_escrow_pool', $totalCents);
+
+            if ($parent) {
+                $parent->deposit($totalCents);
+            }
+
+            $finance->update([
+                'status'                     => \App\Models\Shared\PlatformFinance::STATUS_REFUNDED,
+                'refunded_amount'            => $totalDinar,
+                'compensation_fee'           => 0.00,
+                'platform_commission_amount' => 0.00,
+                'driver_net_amount'          => 0.00,
+                'refunded_at'                => now(),
+                'notes'                      => 'تم استرجاع كامل المبلغ لولي الأمر (إلغاء قبل تحرك السائق أو إلغاء من السائق).',
+            ]);
+
+            try {
+                app(\App\Services\Shared\FinancialLedgerService::class)->recordLedgerEntry(
+                    'parents_escrow_pool',
+                    "parent_wallet_{$parent?->user_id}",
+                    $totalCents,
+                    'subscription_refund',
+                    0,
+                    (int) ($parent?->balance ?? 0),
+                    "REFUND-FULL-{$requestId}",
+                    ['subscription_request_id' => $requestId, 'cancelled_by' => $cancelledBy]
+                );
+            } catch (\Throwable $e) {
+                Log::warning("فشل تسجيل حركة السجل المالي للاسترجاع الكامل ID {$requestId}: " . $e->getMessage());
+            }
+
+            return [
+                'refund_amount'    => $totalDinar,
+                'compensation_fee' => 0.00,
+                'driver_net_pay'   => 0.00,
+                'platform_fee'     => 0.00,
+                'status'           => 'refunded',
+            ];
+        }
+    }
+
+
+
+
+
+
+
+
+
     // ============================================================
     // 4. إنشاء سجلات الاشتراكات النشطة (مطابق لجدول active_subscriptions)
     // ============================================================
@@ -466,9 +801,6 @@ class SubscriptionRequestService
         $pickupTime  = $req->pickup_time  ?? '07:00:00';
         $dropoffTime = $req->dropoff_time ?? '14:00:00';
         $parentUserId = $req->parent?->user_id ?? $req->parent_id;
-
-        // الـ slots المطلوبة — نحتاجها لتحديث عداد المقاعد المحجوزة
-        $slots = \App\Models\Driver\DriverSeatSlot::resolveSlots($req->timing ?? 'MORNING', $req->direction ?? 'both');
 
         foreach ($req->children as $child) {
             $pickupLat  = $child->pivot->home_lat   ?? $req->pickup_lat   ?? null;
@@ -496,8 +828,12 @@ class SubscriptionRequestService
                 'dropoff_time'            => $dropoffTime,
             ]);
 
-            // زيادة عداد المقاعد المحجوزة لكل slot (مقابل decrement في releaseSeatsForSubscription)
-            foreach ($slots as $slot) {
+            // زيادة عداد المقاعد المحجوزة لكل slot خاصة بهذا الطفل
+            $childTiming    = $child->pivot->timing ?? $req->timing ?? 'MORNING';
+            $childDirection = $child->pivot->trip_direction ?? $req->direction ?? 'both';
+            $childSlots     = \App\Models\Driver\DriverSeatSlot::resolveSlots($childTiming, $childDirection);
+
+            foreach ($childSlots as $slot) {
                 \App\Models\Driver\DriverSeatSlot::where('driver_id', $req->driver_id)
                     ->where('slot', $slot)
                     ->increment('reserved_seats');
@@ -575,6 +911,11 @@ class SubscriptionRequestService
 
             $this->releaseSeatsForSubscription($activeSub);
 
+            // معالجة استرجاع الرصيد المحجوز إن وُجد وفق سياسة التعويض
+            if ($activeSub->subscription_request_id) {
+                $this->refundHeldFundsOnCancellation($activeSub->subscription_request_id, 'parent');
+            }
+
             try {
                 $this->masterRouteStopSyncService->removeChildFromDriverRoutes($activeSub);
             } catch (\Throwable $e) {
@@ -625,6 +966,11 @@ class SubscriptionRequestService
 
             $this->releaseSeatsForSubscription($activeSub);
 
+            // استرجاع كامل المبلغ لولي الأمر عند إلغاء السائق
+            if ($activeSub->subscription_request_id) {
+                $this->refundHeldFundsOnCancellation($activeSub->subscription_request_id, 'driver', $driverId);
+            }
+
             try {
                 $this->masterRouteStopSyncService->removeChildFromDriverRoutes($activeSub);
             } catch (\Throwable $e) {
@@ -661,15 +1007,19 @@ class SubscriptionRequestService
 
     private function releaseSeatsForSubscription(ActiveSubscription $activeSub): void
     {
-        $activeSub->loadMissing('subscriptionRequest');
+        $activeSub->loadMissing(['subscriptionRequest.children']);
         $subReq = $activeSub->subscriptionRequest;
         if (!$subReq) {
             return;
         }
 
+        $childPivot = $subReq->children?->firstWhere('id', $activeSub->child_id)?->pivot;
+        $timing     = $childPivot?->timing ?? $subReq->timing ?? 'MORNING';
+        $direction  = $childPivot?->trip_direction ?? $subReq->direction ?? 'both';
+
         $slots = \App\Models\Driver\DriverSeatSlot::resolveSlots(
-            $subReq->timing    ?? 'MORNING',
-            $subReq->direction ?? 'both'
+            $timing,
+            $direction
         );
 
         foreach ($slots as $slot) {
@@ -742,6 +1092,9 @@ class SubscriptionRequestService
     private function autoCancelRequest(SubscriptionRequest $req, string $reason, string $notificationType): void
     {
         $req->update(['status' => SubscriptionRequest::STATUS_CANCELLED]);
+
+        // استرجاع المبالغ المحجوزة إن وُجدت
+        $this->refundHeldFundsOnCancellation($req->id, 'system');
 
         $driverName = $req->driver?->user?->full_name ?? 'السائق';
 
@@ -873,6 +1226,9 @@ class SubscriptionRequestService
 
         $subscription->update(['status' => SubscriptionRequest::STATUS_CANCELLED]);
 
+        // استرجاع المبالغ المحجوزة إن وُجدت
+        $this->refundHeldFundsOnCancellation($subscription->id, 'parent');
+
         // إشعار السائق إن وُجد
         $subscription->loadMissing('driver.user');
         $driverUser = $subscription->driver?->user;
@@ -890,35 +1246,55 @@ class SubscriptionRequestService
     }
 
     /**
-     * جلب الاشتراكات المفعّلة لولي الأمر والموافَق عليها مقسمة بالفلاتر الذكية
+     * جلب الاشتراكات المفعّلة لولي الأمر والموافَق عليها مقسمة بالفلاتر الذكية وبنفس صيغة طلبات الاشتراك
      */
     public function getParentActiveSubscriptions(int $userId, ?string $filter = null)
     {
-        // 1. جلب سجل ولي الأمر والتأكد من وجوده
         $parent = ParentModel::where('user_id', $userId)->first();
-        if (!$parent) {
-            throw new Exception('هذا الحساب غير مسجل كولي أمر في النظام.');
-        }
+        $parentId = $parent ? $parent->id : $userId;
 
-        // 2. بناء الاستعلام مع العلاقات الأساسية
-        $query = ActiveSubscription::with([
-            'subscriptionRequest', 
-            'child', 
-            'driver.user', 
-            'driver.vehicles',
-            'school'
-        ])
-        ->where(function ($q) use ($userId, $parent) {
-            $q->where('parent_id', $parent->id)
-              ->orWhere('parent_id', $userId);
-        });
+        $query = SubscriptionRequest::query()
+            ->with([
+                'driver.user',
+                'children' => function ($query) {
+                    $query->withPivot([
+                        'subscription_type',
+                        'trip_direction',
+                        'timing',
+                        'start_date',
+                        'end_date',
+                        'working_days_count',
+                        'distance_km',                    
+                        'price_per_child',
+                        'trip_price',
+                        'discount_amount',            
+                        'total_amount_after_discount',
+                        'driver_net_price'
+                    ]);
+                },
+                'children.school',
+                'children.address'
+            ])
+            ->where(function ($q) use ($parentId, $userId) {
+                $q->where('parent_id', $parentId)
+                  ->orWhere('parent_id', $userId);
+            });
 
-        // 3. تطبيق الفلتر بشكل صحيح وآمن فقط إذا تم إرساله وكان ضمن القيم المسموحة
         if (!empty($filter)) {
-            $allowedFilters = ['active', 'pending', 'completed', 'cancelled'];
-            if (in_array($filter, $allowedFilters)) {
+            $filter = strtolower($filter);
+            if ($filter === 'active') {
+                $query->whereIn('status', ['accepted', 'active']);
+            } elseif ($filter === 'pending') {
+                $query->where('status', 'pending');
+            } elseif ($filter === 'completed') {
+                $query->where('status', 'completed');
+            } elseif ($filter === 'cancelled') {
+                $query->where('status', 'cancelled');
+            } else {
                 $query->where('status', $filter);
             }
+        } else {
+            $query->whereIn('status', ['accepted', 'active']);
         }
 
         return $query->orderBy('id', 'desc')->get();
@@ -931,7 +1307,7 @@ class SubscriptionRequestService
     {
         $driver = Driver::where('user_id', $userId)->first();
         if (!$driver) {
-            throw new Exception( ' من  الاساسيه السيرفرلم يتم العثور على ملف السائق الخاص بك .', 403);
+            throw new Exception('لم يتم العثور على ملف السائق الخاص بك.', 403);
         }
 
         $query = SubscriptionRequest::where('driver_id', $driver->id)
@@ -972,45 +1348,71 @@ class SubscriptionRequestService
     }
 
 
-public function getDriverActiveSubscriptions(int $userId, ?string $filter = null)
-{
-    try {
-        // 1. التحقق هل المستخدم موجود أصلاً في جدول المستخدمين
-        $userExists = User::where('id', $userId)->exists();
-        if (!$userExists) {
-            throw new Exception("السبب: المستخدم رقم ({$userId}) غير موجود تماماً في جدول المستخدمين (users).");
+    public function getDriverActiveSubscriptions(int $userId, ?string $filter = null)
+    {
+        try {
+            $userExists = User::where('id', $userId)->exists();
+            if (!$userExists) {
+                throw new Exception("السبب: المستخدم رقم ({$userId}) غير موجود تماماً في جدول المستخدمين (users).");
+            }
+
+            $driver = Driver::where('user_id', $userId)->first();
+            if (!$driver) {
+                throw new Exception("السبب: المستخدم ({$userId}) موجود، ولكن ليس لديه سجل مرادف في جدول السائقين (drivers).");
+            }
+
+            $query = SubscriptionRequest::query()
+                ->with([
+                    'parent.user',
+                    'children' => function ($query) {
+                        $query->withPivot([
+                            'subscription_type',
+                            'trip_direction',
+                            'timing',
+                            'start_date',
+                            'end_date',
+                            'working_days_count',
+                            'distance_km',                    
+                            'price_per_child',
+                            'trip_price',
+                            'discount_amount',            
+                            'total_amount_after_discount',
+                            'driver_net_price'
+                        ]);
+                    },
+                    'children.school',
+                    'children.address'
+                ])
+                ->where('driver_id', $driver->id);
+
+            if (!empty($filter)) {
+                $filter = strtolower($filter);
+                if ($filter === 'active' || $filter === 'current_active') {
+                    $query->whereIn('status', ['accepted', 'active']);
+                } elseif ($filter === 'pending_start') {
+                    $query->whereIn('status', ['accepted', 'active'])
+                          ->whereHas('children', function ($q) {
+                              $q->where('request_children.start_date', '>', now()->toDateString());
+                          });
+                } elseif ($filter === 'completed') {
+                    $query->where('status', 'completed');
+                } elseif ($filter === 'cancelled') {
+                    $query->where('status', 'cancelled');
+                } else {
+                    $query->where('status', $filter);
+                }
+            } else {
+                $query->whereIn('status', ['accepted', 'active']);
+            }
+
+            return $query->orderBy('id', 'desc')->get();
+
+        } catch (QueryException $e) {
+            throw new Exception("خطأ قاعدة البيانات (DB Error): " . $e->getMessage());
+        } catch (Throwable $e) {
+            throw new Exception("خطأ أثناء التنفيذ: " . $e->getMessage());
         }
-
-        // 2. التحقق هل توجد له بيانات في جدول السائقين
-        $driver = Driver::where('user_id', $userId)->first();
-        if (!$driver) {
-            throw new Exception("السبب: المستخدم ({$userId}) موجود، ولكن ليس لديه سجل مرادف في جدول السائقين (drivers).");
-        }
-
-        // ✅ تصحيح العلاقات بحسب هيكلة الجداول لديك
-$query = ActiveSubscription::where('driver_id', $driver->id)
-->with([
-    'subscriptionRequest',
-    'child.school',
-    'parent',           // جلب ولي الأمر مباشرة
-    'driver.vehicles',  // جلب المركبات المرتبطة بالسائق
-]);
-
-        if (!empty($filter)) {
-            $query->where('status', strtolower($filter));
-        }
-
-        return $query->orderBy('id', 'desc')->get();
-
-    } catch (QueryException $e) {
-        // في حال وجود خطأ في SQL أو أسماء الأعمدة/الجداول في قاعدة البيانات
-        throw new Exception("خطأ قاعدة البيانات (DB Error): " . $e->getMessage());
-
-    } catch (Throwable $e) {
-        // لشفافية الخطأ ومعرفة السبب والنص الأصلي بدقة
-        throw new Exception("خطأ أثناء التنفيذ: " . $e->getMessage());
     }
-}
 
     public function getSubscriptionDetails($id)
     {

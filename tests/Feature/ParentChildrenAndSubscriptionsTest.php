@@ -341,10 +341,13 @@ class ParentChildrenAndSubscriptionsTest extends TestCase
             'end_date'          => now()->addMonth()->format('Y-m-d'),
             'children'          => [
                 [
-                    'child_id'           => $child->id,
-                    'pickup_address_id'  => $this->address->id,
-                    'dropoff_address_id' => $this->school->id,
-                    'price_per_child'    => 150.00,
+                    'child_id'          => $child->id,
+                    'subscription_type' => 'multi_day',
+                    'trip_direction'    => 'both',
+                    'timing'            => 'MORNING',
+                    'start_date'        => now()->addDays(2)->format('Y-m-d'),
+                    'end_date'          => now()->addMonth()->format('Y-m-d'),
+                    'price_per_child'   => 150.00,
                 ]
             ]
         ];
