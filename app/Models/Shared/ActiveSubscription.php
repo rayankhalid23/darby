@@ -82,4 +82,30 @@ class ActiveSubscription extends Model
     {
         return $this->belongsTo(School::class, 'school_id');
     }
+
+    /**
+     * احتساب الحالة الفعلية الدقيقة للاشتراك
+     */
+    public function resolveState(): array
+    {
+        $req = $this->subscriptionRequest;
+        if ($req) {
+            return $req->resolveState($this->child, $this);
+        }
+
+        $status = strtolower($this->status ?? 'active');
+        return [
+            'state'       => $status,
+            'status'      => $status,
+            'state_label' => match($status) {
+                'active'    => 'ساري ومفعل',
+                'paused'    => 'متوقف مؤقتاً',
+                'cancelled' => 'ملغي',
+                'completed' => 'مكتمل',
+                default     => $status,
+            },
+            'status_text' => $status,
+            'is_active'   => $status === 'active',
+        ];
+    }
 }

@@ -207,4 +207,107 @@ class SubscriptionRequest extends Model
             default              => $this->timing ?? 'غير محدد',
         };
     }
+
+    /**
+     * احتساب الحالة الفعلية الدقيقة للاشتراك بشكل ديناميكي (ساري، قادم، منتهي، ملغي، متوقف...)
+     */
+    public function resolveState($child = null, $activeSub = null): array
+    {
+        $reqStatus = strtolower($this->status ?? 'pending');
+        $activeStatus = $activeSub ? strtolower($activeSub->status ?? '') : '';
+
+        $pivot = $child?->pivot ?? null;
+        $startDate = $pivot?->start_date ?? $this->start_date ?? null;
+        $endDate = $pivot?->end_date ?? $this->end_date ?? null;
+
+        // 1. الحالات الصريحة للإلغاء والرفض والتعليق
+        if ($reqStatus === 'rejected') {
+            return [
+                'state'       => 'rejected',
+                'status'      => 'rejected',
+                'state_label' => 'مرفوض',
+                'status_text' => 'تم الرفض من السائق',
+                'is_active'   => false,
+            ];
+        }
+
+        if ($reqStatus === 'cancelled' || $activeStatus === 'cancelled') {
+            return [
+                'state'       => 'cancelled',
+                'status'      => 'cancelled',
+                'state_label' => 'ملغي',
+                'status_text' => 'اشتراك ملغي',
+                'is_active'   => false,
+            ];
+        }
+
+        if ($reqStatus === 'pending') {
+            return [
+                'state'       => 'pending',
+                'status'      => 'pending',
+                'state_label' => 'قيد الانتظار',
+                'status_text' => 'معلق — بانتظار رد السائق',
+                'is_active'   => false,
+            ];
+        }
+
+        if ($activeStatus === 'paused') {
+            return [
+                'state'       => 'paused',
+                'status'      => 'paused',
+                'state_label' => 'متوقف مؤقتاً',
+                'status_text' => 'اشتراك متوقف مؤقتاً',
+                'is_active'   => false,
+            ];
+        }
+
+        if ($reqStatus === 'completed' || $activeStatus === 'completed') {
+            return [
+                'state'       => 'completed',
+                'status'      => 'completed',
+                'state_label' => 'مكتمل',
+                'status_text' => 'اشتراك مكتمل',
+                'is_active'   => false,
+            ];
+        }
+
+        // 2. الحالات المقبولة أو النشطة (حساب الحالة وفق التاريخ)
+        if (in_array($reqStatus, ['accepted', 'active', 'contract_offered'])) {
+            if ($startDate && \Carbon\Carbon::parse($startDate)->startOfDay()->isFuture()) {
+                return [
+                    'state'       => 'pending_start',
+                    'status'      => 'pending_start',
+                    'state_label' => 'قادم (لم يبدأ بعد)',
+                    'status_text' => 'اشتراك قادم — لم يبدأ بعد',
+                    'is_active'   => false,
+                ];
+            }
+
+            if ($endDate && \Carbon\Carbon::parse($endDate)->endOfDay()->isPast()) {
+                return [
+                    'state'       => 'completed',
+                    'status'      => 'completed',
+                    'state_label' => 'منتهي',
+                    'status_text' => 'اشتراك منتهي الصلاحية',
+                    'is_active'   => false,
+                ];
+            }
+
+            return [
+                'state'       => 'active',
+                'status'      => 'active',
+                'state_label' => 'ساري ومفعل',
+                'status_text' => 'اشتراك نشط وساري',
+                'is_active'   => true,
+            ];
+        }
+
+        return [
+            'state'       => $reqStatus,
+            'status'      => $reqStatus,
+            'state_label' => $reqStatus,
+            'status_text' => $reqStatus,
+            'is_active'   => $reqStatus === 'active',
+        ];
+    }
 }

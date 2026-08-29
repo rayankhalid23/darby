@@ -57,8 +57,10 @@ class UpdateAdminRequest extends FormRequest
                 'string',
                 'min:6'
             ],
-            'is_active' => ['sometimes', 'nullable', 'boolean'],
-            'avatar' => ['sometimes', 'nullable', 'image', 'mimes:jpeg,png,jpg', 'max:2048'],
+            'is_active'          => ['sometimes', 'nullable', 'boolean'],
+            'role_id'            => ['sometimes', 'nullable', 'integer'],
+            'custom_permissions' => ['sometimes', 'nullable', 'array'],
+            'avatar'             => ['sometimes', 'nullable', 'image', 'mimes:jpeg,png,jpg', 'max:2048'],
         ];
     }
 

@@ -1273,7 +1273,8 @@ class SubscriptionRequestService
                     ]);
                 },
                 'children.school',
-                'children.address'
+                'children.address',
+                'activeSubscriptions'
             ])
             ->where(function ($q) use ($parentId, $userId) {
                 $q->where('parent_id', $parentId)
@@ -1381,7 +1382,8 @@ class SubscriptionRequestService
                         ]);
                     },
                     'children.school',
-                    'children.address'
+                    'children.address',
+                    'activeSubscriptions'
                 ])
                 ->where('driver_id', $driver->id);
 

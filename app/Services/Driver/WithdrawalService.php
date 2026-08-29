@@ -4,11 +4,20 @@ namespace App\Services\Driver;
 
 use App\Models\Shared\WithdrawalRequest;
 use App\Models\Driver\Driver;
+use App\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class WithdrawalService
 {
+    protected ?NotificationService $notificationService;
+
+    public function __construct(?NotificationService $notificationService = null)
+    {
+        $this->notificationService = $notificationService ?? app(NotificationService::class);
+    }
+
     public function requestWithdrawal(int $driverId, float $amount, ?array $paymentDetails = null): WithdrawalRequest
     {
         $driver = Driver::findOrFail($driverId);
@@ -66,7 +75,26 @@ class WithdrawalService
             'processed_at' => now(),
         ]);
 
-        return $request->fresh();
+        $fresh = $request->fresh(['driver.user']);
+
+        try {
+            $driverUser = $fresh->driver?->user;
+            if ($driverUser && $this->notificationService) {
+                $formattedAmount = number_format($fresh->amount, 2);
+                $this->notificationService->sendToUser($driverUser, 'withdrawal_approved', [
+                    'title'       => '💵 تمت الموافقة على طلب السحب',
+                    'message'     => "تمت معالجة طلب سحب مبلغ ({$formattedAmount} د.ل) بنجاح وتحويله إلى حسابك.",
+                    'amount'      => $fresh->amount,
+                    'entity_type' => 'withdrawal',
+                    'entity_id'   => (string) $fresh->id,
+                    'screen'      => 'WALLET',
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning("فشل إرسال إشعار الموافقة على السحب للسائق: " . $e->getMessage());
+        }
+
+        return $fresh;
     }
 
     public function rejectWithdrawal(int $withdrawalId, int $adminId, string $reason): WithdrawalRequest
@@ -85,7 +113,26 @@ class WithdrawalService
             'processed_at'     => now(),
         ]);
 
-        return $request->fresh();
+        $fresh = $request->fresh(['driver.user']);
+
+        try {
+            $driverUser = $fresh->driver?->user;
+            if ($driverUser && $this->notificationService) {
+                $formattedAmount = number_format($fresh->amount, 2);
+                $this->notificationService->sendToUser($driverUser, 'withdrawal_rejected', [
+                    'title'       => '⚠️ رفض طلب سحب الرصيد',
+                    'message'     => "تم رفض طلب سحب مبلغ ({$formattedAmount} د.ل) وإعادة المبلغ إلى محفظتك. السبب: {$reason}",
+                    'amount'      => $fresh->amount,
+                    'entity_type' => 'withdrawal',
+                    'entity_id'   => (string) $fresh->id,
+                    'screen'      => 'WALLET',
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning("فشل إرسال إشعار رفض السحب للسائق: " . $e->getMessage());
+        }
+
+        return $fresh;
     }
 
     public function getDriverWithdrawals(int $driverId, array $filters = [])

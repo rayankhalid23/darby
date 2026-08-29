@@ -50,7 +50,7 @@ class DriverMatchResource extends JsonResource
                 'total_price_raw'   => $totalPrice,
                 'platform_fee'      => $this->platform_fee ?? 0,
                 'driver_net_amount' => $this->driver_net_amount ?? 0,
-                'price_per_km'      => $pricingBreakdown[0]['price_per_km'] ?? null,
+                'price_per_km'      => $pricingBreakdown[0]['price_per_km'] ?? $this->price_per_km ?? null,
                 'children_count'    => count($pricingBreakdown),
                 'breakdown'         => collect($pricingBreakdown)->map(function ($item) {
                     $subType = $item['subscription_type'] ?? 'multi_day';

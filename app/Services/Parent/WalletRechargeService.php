@@ -242,6 +242,25 @@ class WalletRechargeService
                 'completed_at' => now(),
             ]);
 
+            // إرسال إشعار فوري لولي الأمر
+            try {
+                $user = User::find($request->parent_id);
+                if ($user) {
+                    $formattedAmount = number_format($request->amount, 2);
+                    $newBalance = number_format(($parent->balance ?? 0) / 100, 2);
+                    $this->notificationService->sendToUser($user, 'recharge_completed', [
+                        'title'       => '💳 تم تأكيد شحن المحفظة',
+                        'message'     => "تمت مراجعة وتأكيد طلب الشحن بمبلغ ({$formattedAmount} د.ل) بنجاح. رصيدك الحالي: {$newBalance} د.ل",
+                        'amount'      => $request->amount,
+                        'entity_type' => 'wallet',
+                        'entity_id'   => (string) $request->id,
+                        'screen'      => 'WALLET',
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                Log::warning("فشل إرسال إشعار تأكيد الشحن لولي الأمر: " . $e->getMessage());
+            }
+
             return $request->fresh();
         });
     }
@@ -257,6 +276,24 @@ class WalletRechargeService
             'admin_id' => $adminId,
             'notes'    => $reason,
         ]);
+
+        // إرسال إشعار رفض الشحن لولي الأمر
+        try {
+            $user = User::find($request->parent_id);
+            if ($user) {
+                $formattedAmount = number_format($request->amount, 2);
+                $this->notificationService->sendToUser($user, 'recharge_rejected', [
+                    'title'       => '⚠️ رفض طلب شحن المحفظة',
+                    'message'     => "تم رفض طلب شحن المحفظة بمبلغ ({$formattedAmount} د.ل). السبب: {$reason}",
+                    'amount'      => $request->amount,
+                    'entity_type' => 'wallet',
+                    'entity_id'   => (string) $request->id,
+                    'screen'      => 'WALLET',
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning("فشل إرسال إشعار رفض الشحن لولي الأمر: " . $e->getMessage());
+        }
 
         return $request->fresh();
     }

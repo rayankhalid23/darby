@@ -262,4 +262,106 @@ class DriverSearchPricingTest extends TestCase
             $this->assertEqualsWithDelta($child1Price * 2, $child2Price, 0.05);
         }
     }
+
+    /** Test 5: البحث باسم السائق بدون تحديد أي أطفال ينجح ويعيد نفس هيكل البيانات */
+    public function test_search_by_driver_name_without_children_returns_identical_structure(): void
+    {
+        $response = $this->actingAs($this->parentUser, 'sanctum')
+            ->postJson('/api/parent/drivers/search', [
+                'search_query' => 'عبد السلام',
+            ]);
+
+        $response->assertStatus(200);
+        $this->assertNotEmpty($response->json('data'));
+
+        $driverEntry = $response->json('data.0');
+        $this->assertEquals($this->driver->id, $driverEntry['id']);
+        $this->assertEquals('الكابتن عبد السلام الزنتاني', $driverEntry['full_name']);
+
+        // التحقق من وجود كافة الحقول بنفس هيكلية الفلترة الذكية
+        $this->assertArrayHasKey('id', $driverEntry);
+        $this->assertArrayHasKey('full_name', $driverEntry);
+        $this->assertArrayHasKey('phone_number', $driverEntry);
+        $this->assertArrayHasKey('alternative_phone', $driverEntry);
+        $this->assertArrayHasKey('avatar_url', $driverEntry);
+        $this->assertArrayHasKey('gender', $driverEntry);
+        $this->assertArrayHasKey('accepted_gender', $driverEntry);
+        $this->assertArrayHasKey('subscription_type', $driverEntry);
+        $this->assertArrayHasKey('rating', $driverEntry);
+        $this->assertArrayHasKey('completed_trips', $driverEntry);
+        $this->assertArrayHasKey('status', $driverEntry);
+        $this->assertArrayHasKey('vehicle', $driverEntry);
+        $this->assertArrayHasKey('working_zones', $driverEntry);
+        $this->assertArrayHasKey('pricing', $driverEntry);
+
+        // تفاصيل التسعير
+        $pricing = $driverEntry['pricing'];
+        $this->assertArrayHasKey('total_price', $pricing);
+        $this->assertArrayHasKey('total_price_raw', $pricing);
+        $this->assertArrayHasKey('platform_fee', $pricing);
+        $this->assertArrayHasKey('driver_net_amount', $pricing);
+        $this->assertArrayHasKey('price_per_km', $pricing);
+        $this->assertArrayHasKey('children_count', $pricing);
+        $this->assertArrayHasKey('breakdown', $pricing);
+
+        $this->assertEquals(0, $pricing['children_count']);
+        $this->assertIsArray($pricing['breakdown']);
+        $this->assertNotNull($pricing['price_per_km']);
+    }
+
+    /** Test 6: البحث برقم الهاتف مع عدم وجود مصفوفة أطفال */
+    public function test_search_by_driver_phone_without_children(): void
+    {
+        $response = $this->actingAs($this->parentUser, 'sanctum')
+            ->postJson('/api/parent/drivers/search', [
+                'phone' => $this->driverUser->phone_number,
+            ]);
+
+        $response->assertStatus(200);
+        $this->assertNotEmpty($response->json('data'));
+
+        $driverEntry = $response->json('data.0');
+        $this->assertEquals($this->driver->id, $driverEntry['id']);
+        $this->assertEquals($this->driverUser->phone_number, $driverEntry['phone_number']);
+    }
+
+    /** Test 7: البحث برقم هاتف جزئي (مثلاً آخر 6 أرقام) بدون أطفال */
+    public function test_search_by_partial_phone_number(): void
+    {
+        $partialPhone = substr($this->driverUser->phone_number, 3);
+
+        $response = $this->actingAs($this->parentUser, 'sanctum')
+            ->postJson('/api/parent/drivers/search', [
+                'search_query' => $partialPhone,
+            ]);
+
+        $response->assertStatus(200);
+        $this->assertNotEmpty($response->json('data'));
+        $this->assertEquals($this->driver->id, $response->json('data.0.id'));
+    }
+
+    /** Test 8: البحث باسم السائق مع وجود أطفال يحسب السعر ويجلب السائق المطلوب */
+    public function test_search_by_driver_name_with_children_computes_pricing(): void
+    {
+        $child = $this->makeChild('طفل بحث مع تسعير', 'male', 4);
+        ChildLogistics::create([
+            'child_id'            => $child->id,
+            'preferred_time_slot' => 'morning',
+            'trip_direction'      => 'go',
+            'subscription_type'   => 'single_day',
+        ]);
+
+        $response = $this->actingAs($this->parentUser, 'sanctum')
+            ->postJson('/api/parent/drivers/search', [
+                'name'      => 'عبد السلام',
+                'child_ids' => [$child->id],
+            ]);
+
+        $response->assertStatus(200);
+        $this->assertNotEmpty($response->json('data'));
+        $driverEntry = $response->json('data.0');
+        $this->assertEquals($this->driver->id, $driverEntry['id']);
+        $this->assertEquals(1, $driverEntry['pricing']['children_count']);
+        $this->assertGreaterThan(0, $driverEntry['pricing']['total_price_raw']);
+    }
 }

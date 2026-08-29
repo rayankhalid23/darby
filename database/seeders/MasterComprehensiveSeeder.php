@@ -110,26 +110,64 @@ class MasterComprehensiveSeeder extends Seeder
     {
         $this->command->info('1️⃣ زرع الأدوار والصلاحيات (Roles)...');
 
+        $defaultPerms = \App\Constants\PermissionConstants::getDefaultRolePermissions();
+
         $roles = [
             [
-                'id' => 1, 'name' => 'super_admin', 'display_name' => 'مدير النظام العام',
+                'id'          => 1,
+                'name'        => 'super_admin',
+                'display_name'=> 'مدير النظام العام',
                 'description' => 'صلاحيات كاملة وغير مقيدة لإدارة المنصة والإعدادات والمالية بالكامل.',
-                'permissions' => json_encode(['all' => true, 'dashboard' => ['view', 'stats', 'active_trips'], 'financial' => ['manage', 'export'], 'users' => ['manage']], JSON_UNESCAPED_UNICODE),
+                'permissions' => json_encode($defaultPerms['super_admin'], JSON_UNESCAPED_UNICODE),
             ],
             [
-                'id' => 2, 'name' => 'supervisor', 'display_name' => 'مشرف العمليات',
-                'description' => 'صلاحيات مراقبة الرحلات الحية ومراجعة وثائق السائقين ومعالجة الشكاوى والنزاعات.',
-                'permissions' => json_encode(['dashboard' => ['view', 'active_trips'], 'drivers' => ['review', 'approve', 'reject'], 'complaints' => ['resolve'], 'trips' => ['monitor_live']], JSON_UNESCAPED_UNICODE),
+                'id'          => 2,
+                'name'        => 'operations_supervisor',
+                'display_name'=> 'مشرف العمليات والرادار',
+                'description' => 'صلاحيات مراقبة وتتبع الرحلات الحية على الرادار، تشغيل الرحلات، وإدارة المدارس والمناطق.',
+                'permissions' => json_encode($defaultPerms['operations_supervisor'], JSON_UNESCAPED_UNICODE),
             ],
             [
-                'id' => 3, 'name' => 'parent', 'display_name' => 'ولي أمر',
+                'id'          => 3,
+                'name'        => 'parent',
+                'display_name'=> 'ولي أمر',
                 'description' => 'إدارة بيانات الأبناء، حجز الاشتراكات، شحن المحفظة، تتبع الرحلات الحية، وتقديم التقييمات والشكاوى.',
                 'permissions' => json_encode(['children' => ['create', 'update'], 'subscriptions' => ['request', 'cancel'], 'wallet' => ['recharge', 'view'], 'trips' => ['track_live']], JSON_UNESCAPED_UNICODE),
             ],
             [
-                'id' => 4, 'name' => 'driver', 'display_name' => 'سائق حافلة/فان',
+                'id'          => 4,
+                'name'        => 'driver',
+                'display_name'=> 'سائق حافلة/فان',
                 'description' => 'استقبال وتأكيد طلبات التوصيل، إدارة المسارات والوقفات، تشغيل الرحلات، مسح الحضور وتتبع الموقع.',
                 'permissions' => json_encode(['trips' => ['start', 'complete', 'update_location', 'board_child'], 'routes' => ['manage'], 'wallet' => ['withdraw']], JSON_UNESCAPED_UNICODE),
+            ],
+            [
+                'id'          => 5,
+                'name'        => 'fleet_supervisor',
+                'display_name'=> 'مشرف شؤون السائقين والأسطول',
+                'description' => 'مراجعة وتدقيق واعتماد طلبات انضمام السائقين، مراجعة تعديلات المركبات، وتجميد الحسابات.',
+                'permissions' => json_encode($defaultPerms['fleet_supervisor'], JSON_UNESCAPED_UNICODE),
+            ],
+            [
+                'id'          => 6,
+                'name'        => 'support_supervisor',
+                'display_name'=> 'مشرف خدمة العملاء والشكاوى',
+                'description' => 'معالجة شكاوى أولياء الأمور والسائقين، متابعة تنبيهات الجودة والتقييمات، وإرسال الإشعارات.',
+                'permissions' => json_encode($defaultPerms['support_supervisor'], JSON_UNESCAPED_UNICODE),
+            ],
+            [
+                'id'          => 7,
+                'name'        => 'finance_officer',
+                'display_name'=> 'المشرف المالي ومسؤول الخزينة',
+                'description' => 'إدارة الخزينة، تدقيق طلبات السحب والشحن، تحرير الأمانات، البت في النزاعات والتسويات المالية.',
+                'permissions' => json_encode($defaultPerms['finance_officer'], JSON_UNESCAPED_UNICODE),
+            ],
+            [
+                'id'          => 8,
+                'name'        => 'geography_supervisor',
+                'display_name'=> 'مشرف المدارس والبيانات الجغرافية',
+                'description' => 'إدارة المدارس، البلديات، المحلات، وتخطيط المناطق الجغرافية.',
+                'permissions' => json_encode($defaultPerms['geography_supervisor'], JSON_UNESCAPED_UNICODE),
             ],
         ];
 
@@ -1848,18 +1886,36 @@ class MasterComprehensiveSeeder extends Seeder
     {
         $this->command->info('1️⃣6️⃣ إنشاء الإشعارات الفورية، رسائل المحادثة، ورموز التحقق (Notifications, Messages & OTP)...');
 
-        // إشعارات لولي الأمر والسائق
+        // إشعارات لولي الأمر والسائق والإدارة بصياغة نصية قياسية كاملة
+        $notif1 = \App\Services\Notification\NotificationFormatter::format('trip_started', [
+            'title'   => 'انطلقت رحلة الصباح 🚌',
+            'message' => 'السائق عبد السلام تحرك بالمركبة باتجاه نقطة التجمع الخاصة بأبنائك.',
+            'trip_id' => 2,
+        ]);
+        $notif2 = \App\Services\Notification\NotificationFormatter::format('child_picked_up', [
+            'title'      => 'صعود آمن للطفل ✅',
+            'message'    => 'تم تسجيل صعود ابنكم سند إلى الحافلة بنجاح عبر مسح البطاقة الذكية.',
+            'child_name' => 'سند',
+            'trip_id'    => 2,
+        ]);
+        $notif3 = \App\Services\Notification\NotificationFormatter::format('new_subscription_request', [
+            'title'      => 'طلب اشتراك جديد 📩',
+            'message'    => 'تلقيت طلب اشتراك جديد من ولي الأمر محمود الورفلي لنقل ابنه أيمن.',
+            'request_id' => 2,
+        ]);
+        $notif4 = \App\Services\Notification\NotificationFormatter::format('recharge_completed', [
+            'title'   => '💳 تم شحن المحفظة بنجاح',
+            'message' => 'تم شحن محفظتك بمبلغ (150.00 د.ل) بنجاح. رصيدك الحالي: 650.00 د.ل',
+            'amount'  => 150.00,
+        ]);
+
         DB::table('notifications')->insert([
             [
                 'id'              => Str::uuid()->toString(),
-                'type'            => 'App\Notifications\TripStartedNotification',
+                'type'            => 'App\Notifications\SystemNotification',
                 'notifiable_type' => 'App\Models\User',
                 'notifiable_id'   => $p['p1User']->id,
-                'data'            => json_encode([
-                    'title'   => 'انطلقت رحلة الصباح 🚌',
-                    'message' => 'السائق عبد السلام تحرك بالمركبة باتجاه نقطة التجمع الخاصة بأبنائك.',
-                    'trip_id' => 2,
-                ], JSON_UNESCAPED_UNICODE),
+                'data'            => json_encode($notif1, JSON_UNESCAPED_UNICODE),
                 'dedupe_key'      => 'trip_start_2_' . $p['p1User']->id,
                 'read_at'         => null,
                 'created_at'      => now()->subMinutes(20),
@@ -1867,14 +1923,10 @@ class MasterComprehensiveSeeder extends Seeder
             ],
             [
                 'id'              => Str::uuid()->toString(),
-                'type'            => 'App\Notifications\ChildBoardedNotification',
+                'type'            => 'App\Notifications\SystemNotification',
                 'notifiable_type' => 'App\Models\User',
                 'notifiable_id'   => $p['p1User']->id,
-                'data'            => json_encode([
-                    'title'    => 'صعود آمن للطفل ✅',
-                    'message'  => 'تم تسجيل صعود ابنكم سند إلى الحافلة بنجاح عبر مسح البطاقة الذكية.',
-                    'child_id' => $p['child1']->id,
-                ], JSON_UNESCAPED_UNICODE),
+                'data'            => json_encode($notif2, JSON_UNESCAPED_UNICODE),
                 'dedupe_key'      => 'boarded_' . $p['child1']->id,
                 'read_at'         => now()->subMinutes(10),
                 'created_at'      => now()->subMinutes(15),
@@ -1882,18 +1934,25 @@ class MasterComprehensiveSeeder extends Seeder
             ],
             [
                 'id'              => Str::uuid()->toString(),
-                'type'            => 'App\Notifications\NewSubscriptionRequestNotification',
+                'type'            => 'App\Notifications\SystemNotification',
                 'notifiable_type' => 'App\Models\User',
                 'notifiable_id'   => $d['d2User']->id,
-                'data'            => json_encode([
-                    'title'      => 'طلب اشتراك جديد 📩',
-                    'message'    => 'تلقيت طلب اشتراك جديد من ولي الأمر محمود الورفلي لنقل ابنه أيمن.',
-                    'request_id' => 2,
-                ], JSON_UNESCAPED_UNICODE),
+                'data'            => json_encode($notif3, JSON_UNESCAPED_UNICODE),
                 'dedupe_key'      => 'req_new_2',
                 'read_at'         => null,
                 'created_at'      => now()->subHours(8),
                 'updated_at'      => now()->subHours(8),
+            ],
+            [
+                'id'              => Str::uuid()->toString(),
+                'type'            => 'App\Notifications\SystemNotification',
+                'notifiable_type' => 'App\Models\User',
+                'notifiable_id'   => $p['p1User']->id,
+                'data'            => json_encode($notif4, JSON_UNESCAPED_UNICODE),
+                'dedupe_key'      => 'recharge_seed_' . $p['p1User']->id,
+                'read_at'         => now()->subDays(1),
+                'created_at'      => now()->subDays(1),
+                'updated_at'      => now()->subDays(1),
             ],
         ]);
 

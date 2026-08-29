@@ -94,8 +94,30 @@ class DriverSubscriptionController extends Controller
                 $user->id, 
                 $request->query('filter')
             );
-    
-            return DriverSubscriptionResource::collection($activeSubscriptions)->additional([
+
+            // تفكيك الاشتراكات ليتم عرض كل طفل باشتراكه المستقل
+            $childSubscriptions = collect();
+            foreach ($activeSubscriptions as $subscriptionRequest) {
+                if ($subscriptionRequest->children && $subscriptionRequest->children->isNotEmpty()) {
+                    foreach ($subscriptionRequest->children as $child) {
+                        $matchingActiveSub = optional($subscriptionRequest->activeSubscriptions)->firstWhere('child_id', $child->id);
+                        $activeSubId = $matchingActiveSub ? $matchingActiveSub->id : $subscriptionRequest->id;
+                        $childSubscriptions->push([
+                            'subscriptionRequest' => $subscriptionRequest,
+                            'child'               => $child,
+                            'activeSubId'         => $activeSubId,
+                        ]);
+                    }
+                } else {
+                    $childSubscriptions->push([
+                        'subscriptionRequest' => $subscriptionRequest,
+                        'child'               => null,
+                        'activeSubId'         => $subscriptionRequest->id,
+                    ]);
+                }
+            }
+
+            return \App\Http\Resources\Api\Driver\DriverActiveChildSubscriptionResource::collection($childSubscriptions)->additional([
                 'status'  => true,
                 'success' => true,
                 'message' => 'تم جلب الاشتراكات النشطة بنجاح',
@@ -152,6 +174,18 @@ class DriverSubscriptionController extends Controller
         }
     }
 
+    public function accept(Request $request, $id): JsonResponse
+    {
+        $request->merge(['status' => 'accepted']);
+        return $this->updateStatus($request, $id);
+    }
+
+    public function reject(Request $request, $id): JsonResponse
+    {
+        $request->merge(['status' => 'rejected']);
+        return $this->updateStatus($request, $id);
+    }
+
     public function activeSubscriptionDetails(Request $request, $id)
     {
         $driver = $this->getAuthenticatedDriver($request);
@@ -160,6 +194,49 @@ class DriverSubscriptionController extends Controller
         }
 
         try {
+            // 1. البحث برقم اشتراك الطفل المحدد من جدول active_subscriptions
+            $activeSub = \App\Models\Shared\ActiveSubscription::query()
+                ->with([
+                    'child.school',
+                    'child.address',
+                    'driver.user',
+                    'subscriptionRequest.parent.user',
+                    'subscriptionRequest.children' => function ($query) {
+                        $query->withPivot([
+                            'subscription_type',
+                            'trip_direction',
+                            'timing',
+                            'start_date',
+                            'end_date',
+                            'working_days_count',
+                            'distance_km',                    
+                            'price_per_child',
+                            'trip_price',
+                            'discount_amount',            
+                            'total_amount_after_discount',
+                            'driver_net_price'
+                        ]);
+                    },
+                    'subscriptionRequest.activeSubscriptions'
+                ])
+                ->where('driver_id', $driver->id)
+                ->where('id', $id)
+                ->first();
+
+            if ($activeSub && $activeSub->subscriptionRequest && $activeSub->child) {
+                $childWithPivot = $activeSub->subscriptionRequest->children->firstWhere('id', $activeSub->child_id) ?? $activeSub->child;
+                return (new \App\Http\Resources\Api\Driver\DriverActiveChildSubscriptionResource([
+                    'subscriptionRequest' => $activeSub->subscriptionRequest,
+                    'child'               => $childWithPivot,
+                    'activeSubId'         => $activeSub->id,
+                ]))->additional([
+                    'status'  => true,
+                    'success' => true,
+                    'message' => 'تم جلب تفاصيل الاشتراك النشط بنجاح',
+                ]);
+            }
+
+            // 2. إذا تم تمرير المعرف العام للطلب
             $subscriptionRequest = SubscriptionRequest::query()
                 ->with([
                     'parent.user',
@@ -180,7 +257,8 @@ class DriverSubscriptionController extends Controller
                         ]);
                     },
                     'children.school',
-                    'children.address'
+                    'children.address',
+                    'activeSubscriptions'
                 ])
                 ->where('driver_id', $driver->id)
                 ->where(function ($q) use ($id) {
@@ -199,7 +277,11 @@ class DriverSubscriptionController extends Controller
                 ], 404);
             }
 
-            return (new DriverSubscriptionResource($subscriptionRequest))->additional([
+            $firstChild = $subscriptionRequest->children?->first();
+            return (new \App\Http\Resources\Api\Driver\DriverActiveChildSubscriptionResource([
+                'subscriptionRequest' => $subscriptionRequest,
+                'child'               => $firstChild,
+            ]))->additional([
                 'status'  => true,
                 'success' => true,
                 'message' => 'تم جلب تفاصيل الاشتراك النشط بنجاح',

@@ -25,12 +25,15 @@ class AdminResource extends JsonResource
             // يمر عبر مسار لارافيل ليحصل على ترويسات CORS التي يحتاجها Flutter Web
             'avatar_url'   => AdminAvatarController::urlFor($this->user->avatar_url ?? null),
             'is_active'    => (bool) ($this->user->is_active ?? false),
-            'role_id'      => $this->user->role_id ?? null,
-            'role_name'    => ((int) ($this->user->role_id ?? 0) === 1) ? 'مدير النظام' : 'مشرف',
-            'created_by'   => $this->created_by,
-            'creator_name' => $this->creator->full_name ?? null,
-            'created_at'   => optional($this->user)->created_at?->toDateTimeString(),
-            'last_login_at'=> optional($this->user)->last_login_at?->toDateTimeString(),
+            'role_id'            => $this->user->role_id ?? null,
+            'role_key'           => $this->user?->role?->name ?? 'supervisor',
+            'role_name'          => $this->user?->role?->display_name ?? (((int) ($this->user->role_id ?? 0) === 1) ? 'مدير النظام العام' : 'مشرف'),
+            'permissions'        => $this->user ? $this->user->getAllPermissions() : [],
+            'custom_permissions' => $this->user?->custom_permissions ?? [],
+            'created_by'         => $this->created_by,
+            'creator_name'       => $this->creator->full_name ?? null,
+            'created_at'         => optional($this->user)->created_at?->toDateTimeString(),
+            'last_login_at'      => optional($this->user)->last_login_at?->toDateTimeString(),
 
             // حالة تغيير البريد الإلكتروني المعلّق
             'email_change_pending' => $pendingEmail !== null,

@@ -14,9 +14,17 @@ class ActiveSubscribedChildResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $resolvedState = $this->resource instanceof \App\Models\Shared\SubscriptionRequest 
+            ? $this->resource->resolveState() 
+            : ($this->resource instanceof \App\Models\Shared\ActiveSubscription ? $this->resource->resolveState() : ['state' => 'active', 'status' => 'active', 'state_label' => 'ساري ومفعل', 'status_text' => 'اشتراك نشط وساري', 'is_active' => true]);
+
         return [
             'id'          => $this->id,
-            'status'      => $this->status ?? 'pending',
+            'state'       => $resolvedState['state'],
+            'state_label' => $resolvedState['state_label'],
+            'status'      => $resolvedState['status'],
+            'status_text' => $resolvedState['status_text'],
+            'is_active'   => $resolvedState['is_active'],
             'total_price' => (float) ($this->total_price ?? 0),
             'notes'       => $this->notes,
 

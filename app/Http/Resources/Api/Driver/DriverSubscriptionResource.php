@@ -38,13 +38,25 @@ class DriverSubscriptionResource extends JsonResource
             $netTotalAmount = round($totalAfterDiscount * 0.92, 2);
         }
 
+        $resolvedState = $this->resource instanceof \App\Models\Shared\SubscriptionRequest 
+            ? $this->resource->resolveState() 
+            : ['state' => 'active', 'status' => 'active', 'state_label' => 'ساري ومفعل', 'status_text' => 'اشتراك نشط وساري', 'is_active' => true];
+
         return [
-            'id'                     => $this->id,
-            'status'                 => [
-                'value' => $this->status,
+            'id'                      => $this->id,
+            'subscription_id'         => $this->id,
+            'subscription_request_id' => $this->id,
+            'state'                   => $resolvedState['state'],
+            'state_label'             => $resolvedState['state_label'],
+            'status'                  => [
+                'value' => $resolvedState['status'],
+                'label' => $resolvedState['state_label'],
             ],
-            'notes'                  => $this->notes ?? $this->general_notes ?? null, 
-            'total_amount'           => round($netTotalAmount, 2), // صافي مستحقات السائق للطلب
+            'status_value'            => $resolvedState['status'],
+            'status_text'             => $resolvedState['status_text'],
+            'is_active'               => $resolvedState['is_active'],
+            'notes'                   => $this->notes ?? $this->general_notes ?? null, 
+            'total_amount'            => round($netTotalAmount, 2), // صافي مستحقات السائق للطلب
             'driver_net_total'       => round($netTotalAmount, 2),
             'original_total'         => round($totalRawPrice, 2),
             'discount_total'         => round($totalDiscount, 2),
@@ -73,34 +85,43 @@ class DriverSubscriptionResource extends JsonResource
                     if ($afterDiscount <= 0 && $rawChildPrice > 0) {
                         $afterDiscount = max(0, $rawChildPrice - $discountAmt);
                     }
+                    $discountPercent = $rawChildPrice > 0 ? round(($discountAmt / $rawChildPrice) * 100, 2) : 0.0;
 
                     $driverNetPrice = (float) ($pivot->driver_net_price ?? 0);
                     if ($driverNetPrice <= 0 && $afterDiscount > 0) {
                         $driverNetPrice = round($afterDiscount * 0.92, 2);
                     }
-                    $platformFee = max(0, round($afterDiscount - $driverNetPrice, 2));
+                    $platformFeeAmount  = max(0, round($afterDiscount - $driverNetPrice, 2));
+                    $platformFeePercent = $afterDiscount > 0 ? round(($platformFeeAmount / $afterDiscount) * 100, 2) : 8.0;
 
                     return [
-                        'id'         => $child->id,
-                        'name'       => $child->full_name ?? $child->name,
-                        'gender'     => $child->gender,
-                        'age'        => $child->age,
-                        'grade'      => $child->grade ?? $child->class_name ?? 'غير محدد',
-                        'photo_url'  => $child->photo_url,
+                        'id'                      => $child->id,
+                        'child_id'                => $child->id,
+                        'subscription_id'         => $this->id,
+                        'subscription_request_id' => $this->id,
+                        'active_subscription_id'  => optional($this->activeSubscriptions?->firstWhere('child_id', $child->id))->id ?? $this->id,
+                        'name'                    => $child->full_name ?? $child->name,
+                        'gender'                  => $child->gender,
+                        'age'                     => $child->age,
+                        'grade'                   => $child->grade ?? $child->class_name ?? 'غير محدد',
+                        'photo_url'               => $child->photo_url,
 
                         'notes' => [
                             'child_notes' => $child->medical_notes ?? null,
                         ],
 
                         'pricing' => [
-                            'trip_price'                  => $tripPrice,
-                            'original_price'              => $rawChildPrice,
-                            'price_per_child'             => $rawChildPrice,
-                            'discount_amount'             => $discountAmt,
-                            'total_amount_after_discount' => $afterDiscount,
-                            'platform_commission'         => $platformFee,
-                            'driver_net_price'            => $driverNetPrice,
-                            'total_price'                 => $driverNetPrice, // صافي السائق
+                            'trip_price'                  => $tripPrice,          // 1. سعر الرحلة الواحدة
+                            'original_price'              => $rawChildPrice,      // 2. إجمالي المبلغ للطفل قبل التخفيض
+                            'price_per_child'             => $rawChildPrice,      // 2. إجمالي المبلغ للطفل
+                            'discount_percentage'         => $discountPercent,    // 3. نسبة التخفيض %
+                            'discount_amount'             => $discountAmt,        // 4. قيمة التخفيض
+                            'total_amount_after_discount' => $afterDiscount,      // 5. السعر بعد التخفيض
+                            'platform_commission_rate'    => $platformFeePercent, // 6. نسبة عمولة المنصة %
+                            'platform_commission_amount'  => $platformFeeAmount,  // 7. قيمة عمولة المنصة
+                            'platform_commission'         => $platformFeeAmount,
+                            'driver_net_price'            => $driverNetPrice,     // 8. إجمالي السعر للسائق بعد التخفيض وعمولة المنصة
+                            'total_price'                 => $driverNetPrice,     // صافي السائق
                         ],
 
                         'subscription_period' => [

@@ -67,13 +67,14 @@ class AdminService
             $generatedPassword = $data['password'] ?? (Str::random(8) . rand(10, 99));
 
             $user = User::create([
-                'full_name'     => $data['full_name'],
-                'email'         => $data['email'],
-                'phone_number'  => $data['phone_number'],
-                'password_hash' => Hash::make($generatedPassword),
-                'role_id'       => $data['role_id'] ?? 2,
-                'is_active'     => $data['is_active'] ?? 1,
-                'avatar_url'    => $avatarUrl,
+                'full_name'          => $data['full_name'],
+                'email'              => $data['email'],
+                'phone_number'       => $data['phone_number'],
+                'password_hash'      => Hash::make($generatedPassword),
+                'role_id'            => $data['role_id'] ?? 2,
+                'custom_permissions' => $data['custom_permissions'] ?? null,
+                'is_active'          => $data['is_active'] ?? 1,
+                'avatar_url'         => $avatarUrl,
             ]);
 
             $admin = Admin::create([
@@ -88,7 +89,7 @@ class AdminService
                 $generatedPassword
             );
 
-            return $admin->load(['user', 'creator']);
+            return $admin->load(['user.role', 'creator']);
         });
     }
 
@@ -99,7 +100,7 @@ class AdminService
     {
         $currentUser = auth()->user();
 
-        if ($currentUser && $currentUser->role_id != 1) {
+        if ($currentUser && !$currentUser->isSuperAdmin()) {
             // 🛑 منع المشرف من تعديل بيانات أي مشرف آخر
             if ($currentUser->id !== $admin->user_id) {
                 throw new \Exception('ليس لديك الصلاحية لتعديل بيانات المشرفين.');
@@ -111,14 +112,20 @@ class AdminService
             }
         }
 
-        return DB::transaction(function () use ($admin, $data, $avatar) {
+        return DB::transaction(function () use ($admin, $data, $avatar, $currentUser) {
             try {
                 $user = $admin->user;
                 $updateData = [];
 
-                if (array_key_exists('full_name', $data))    $updateData['full_name'] = $data['full_name'];
-                if (array_key_exists('phone_number', $data)) $updateData['phone_number'] = $data['phone_number'];
-                if (array_key_exists('is_active', $data))    $updateData['is_active'] = $data['is_active'];
+                if (array_key_exists('full_name', $data))          $updateData['full_name'] = $data['full_name'];
+                if (array_key_exists('phone_number', $data))       $updateData['phone_number'] = $data['phone_number'];
+                if (array_key_exists('is_active', $data))          $updateData['is_active'] = $data['is_active'];
+                if (array_key_exists('role_id', $data) && ($currentUser?->isSuperAdmin() ?? false)) {
+                    $updateData['role_id'] = $data['role_id'];
+                }
+                if (array_key_exists('custom_permissions', $data) && ($currentUser?->isSuperAdmin() ?? false)) {
+                    $updateData['custom_permissions'] = $data['custom_permissions'];
+                }
 
                 if (!empty($data['password'])) {
                     $updateData['password_hash'] = Hash::make($data['password']);
@@ -136,7 +143,7 @@ class AdminService
                     $user->update($updateData);
                 }
 
-                return $admin->refresh()->load(['user', 'creator']);
+                return $admin->refresh()->load(['user.role', 'creator']);
 
             } catch (\Exception $e) {
                 Log::error("Error updating admin ID {$admin->id}: " . $e->getMessage());

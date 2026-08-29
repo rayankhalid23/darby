@@ -57,7 +57,7 @@ class DashboardController extends Controller
                 // 5. إجمالي الاشتراكات اليومية النشطة
                 $dailySubscriptions = ActiveSubscription::where('status', 'active')
                     ->where(function ($query) {
-                        $query->whereHas('subscriptionRequest', fn($q) => $q->whereIn('subscription_type', ['single_day', 'daily']))
+                        $query->whereHas('subscriptionRequest.children', fn($q) => $q->whereIn('request_children.subscription_type', ['single_day', 'daily']))
                               ->orWhereHas('child.logistics', fn($q) => $q->whereIn('subscription_type', ['single_day', 'daily']));
                     })
                     ->count();
@@ -65,7 +65,7 @@ class DashboardController extends Controller
                 // 6. إجمالي الاشتراكات متعددة الأيام النشطة
                 $monthlySubscriptions = ActiveSubscription::where('status', 'active')
                     ->where(function ($query) {
-                        $query->whereHas('subscriptionRequest', fn($q) => $q->whereIn('subscription_type', ['multi_day', 'monthly']))
+                        $query->whereHas('subscriptionRequest.children', fn($q) => $q->whereIn('request_children.subscription_type', ['multi_day', 'monthly']))
                               ->orWhereHas('child.logistics', fn($q) => $q->whereIn('subscription_type', ['multi_day', 'monthly']));
                     })
                     ->count();

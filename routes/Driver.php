@@ -195,6 +195,37 @@ Route::get('zones', [ZoneController::class, 'index'])
     });
 
     // -------------------------------------------------------------
+    // 📩 طلبات الاشتراك والاشتراكات النشطة للسائق (Subscription Requests)
+    // -------------------------------------------------------------
+    Route::get('requests', [\App\Http\Controllers\Api\Driver\DriverSubscriptionController::class, 'index']);
+    Route::get('subscription-requests', [\App\Http\Controllers\Api\Driver\DriverSubscriptionController::class, 'index']);
+
+    Route::get('requests/{id}', [\App\Http\Controllers\Api\Driver\DriverSubscriptionController::class, 'show']);
+    Route::get('subscription-requests/{id}', [\App\Http\Controllers\Api\Driver\DriverSubscriptionController::class, 'show']);
+
+    Route::get('requests/{id}/trip-details', [\App\Http\Controllers\Api\Driver\DriverSubscriptionController::class, 'tripDetails']);
+    Route::get('subscription-requests/{id}/trip-details', [\App\Http\Controllers\Api\Driver\DriverSubscriptionController::class, 'tripDetails']);
+
+    Route::get('requests/{id}/feasibility-check', [\App\Http\Controllers\Api\Driver\DriverSubscriptionController::class, 'feasibilityCheck']);
+    Route::get('subscription-requests/{id}/feasibility-check', [\App\Http\Controllers\Api\Driver\DriverSubscriptionController::class, 'feasibilityCheck']);
+
+    Route::match(['put', 'patch', 'post'], 'requests/{id}/status', [\App\Http\Controllers\Api\Driver\DriverSubscriptionController::class, 'updateStatus']);
+    Route::match(['put', 'patch', 'post'], 'subscription-requests/{id}/status', [\App\Http\Controllers\Api\Driver\DriverSubscriptionController::class, 'updateStatus']);
+
+    Route::post('requests/{id}/accept', [\App\Http\Controllers\Api\Driver\DriverSubscriptionController::class, 'accept']);
+    Route::post('subscription-requests/{id}/accept', [\App\Http\Controllers\Api\Driver\DriverSubscriptionController::class, 'accept']);
+
+    Route::post('requests/{id}/reject', [\App\Http\Controllers\Api\Driver\DriverSubscriptionController::class, 'reject']);
+    Route::post('subscription-requests/{id}/reject', [\App\Http\Controllers\Api\Driver\DriverSubscriptionController::class, 'reject']);
+
+    // الاشتراكات النشطة للسائق
+    Route::get('active-subscriptions', [\App\Http\Controllers\Api\Driver\DriverSubscriptionController::class, 'activeSubscriptions']);
+    Route::get('active-subscriptions/{id}', [\App\Http\Controllers\Api\Driver\DriverSubscriptionController::class, 'activeSubscriptionDetails']);
+    Route::post('active-subscriptions/{id}/cancel', [\App\Http\Controllers\Api\Driver\DriverSubscriptionController::class, 'cancelActiveSubscription']);
+
+    Route::get('chats', [\App\Http\Controllers\Api\Driver\DriverSubscriptionController::class, 'getDriverChatList']);
+
+    // -------------------------------------------------------------
     // 📍 طلبات تغيير موقع الاستلام/التسليم الواردة من أولياء الأمور
     // -------------------------------------------------------------
     Route::prefix('location-change-requests')->group(function () {

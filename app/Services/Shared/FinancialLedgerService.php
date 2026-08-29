@@ -14,6 +14,7 @@ use App\Models\Shared\TripEscrowHold;
 use App\Models\Shared\TripStudentAttendance;
 use App\Models\Shared\WithdrawalRequest;
 use App\Models\User;
+use App\Services\Notification\NotificationService;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +23,13 @@ use Illuminate\Validation\ValidationException;
 
 class FinancialLedgerService
 {
+    protected ?NotificationService $notificationService;
+
+    public function __construct(?NotificationService $notificationService = null)
+    {
+        $this->notificationService = $notificationService ?? app(NotificationService::class);
+    }
+
     // شروط ومحددات النظام المالي
     public const COMMISSION_RATE = 0.12; // 12% عمولة المنصة
     public const FIXED_SERVICE_FEE = 100; // 1 دينار (100 قرش) رسوم خدمة ثابتة
@@ -474,7 +482,45 @@ class FinancialLedgerService
                 ]);
             }
 
-            return $dispute->fresh();
+            $freshDispute = $dispute->fresh(['parent.user', 'driver.user']);
+
+            // 🔔 إرسال إشعار لولي الأمر والسائق بحل النزاع المالي
+            try {
+                $parentUser = $freshDispute->parent?->user ?? User::find($dispute->parent_id);
+                $driverUser = $freshDispute->driver?->user ?? Driver::find($dispute->driver_id)?->user;
+
+                if ($parentUser && $this->notificationService) {
+                    $parentMsg = $resolution === 'resolve_parent_refunded'
+                        ? 'تمت مراجعة النزاع المالي بقرار الإدارة وإعادة المبلغ إلى محفظتك بنجاح.'
+                        : 'تمت مراجعة النزاع المالي من قبل الإدارة واعتماد مستحقات الرحلة.';
+                    
+                    $this->notificationService->sendToUser($parentUser, 'dispute_resolved', [
+                        'title'       => '⚖️ نتيجة مراجعة النزاع المالي',
+                        'message'     => $parentMsg,
+                        'entity_type' => 'dispute',
+                        'entity_id'   => (string) $dispute->id,
+                        'screen'      => 'DISPUTE_DETAILS',
+                    ]);
+                }
+
+                if ($driverUser && $this->notificationService) {
+                    $driverMsg = $resolution === 'resolve_driver_paid'
+                        ? 'تمت مراجعة النزاع المالي بقرار الإدارة وتحويل أرباح الرحلة إلى محفظتك.'
+                        : 'تمت مراجعة النزاع المالي من قبل الإدارة وإعادة المبلغ لولي الأمر.';
+                    
+                    $this->notificationService->sendToUser($driverUser, 'dispute_resolved', [
+                        'title'       => '⚖️ نتيجة مراجعة النزاع المالي',
+                        'message'     => $driverMsg,
+                        'entity_type' => 'dispute',
+                        'entity_id'   => (string) $dispute->id,
+                        'screen'      => 'DISPUTE_DETAILS',
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                Log::warning("فشل إرسال إشعار حل النزاع المالي: " . $e->getMessage());
+            }
+
+            return $freshDispute;
         });
     }
 

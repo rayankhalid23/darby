@@ -4,13 +4,21 @@ namespace App\Services\Admin;
 
 use App\Models\Shared\Complaint;
 use App\Models\Driver\Driver;
+use App\Services\Notification\NotificationService;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Validator;
 
 class ComplaintService
 {
+    protected ?NotificationService $notificationService;
+
+    public function __construct(?NotificationService $notificationService = null)
+    {
+        $this->notificationService = $notificationService ?? app(NotificationService::class);
+    }
     /**
      * جلب كافة الشكاوى في النظام مع الفلترة الذكية والربط الآمن للعلاقات
      */
@@ -126,8 +134,52 @@ class ComplaintService
             $complaint->resolved_at = now();
             $complaint->save();
 
+            $loaded = $complaint->fresh()->load(['submittedBy.user', 'driver.user', 'resolvedBy']);
+
+            // 🔔 1. إرسال إشعار لمقدم الشكوى (ولي الأمر) بالبت فيها
+            try {
+                $parentUser = $loaded->submittedBy?->user;
+                if ($parentUser && $this->notificationService) {
+                    $this->notificationService->sendToUser($parentUser, 'complaint_resolved', [
+                        'title'       => '✅ تم البت في الشكوى المقدمة',
+                        'message'     => 'تمت مراجعة الشكوى من قبل الإدارة واتخاذ الإجراء الإداري اللازم.',
+                        'entity_type' => 'complaint',
+                        'entity_id'   => (string) $complaint->id,
+                        'screen'      => 'COMPLAINT_DETAILS',
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                Log::warning("فشل إرسال إشعار البت في الشكوى لولي الأمر: " . $e->getMessage());
+            }
+
+            // 🔔 2. إرسال إشعار للسائق في حال تطبيق إنذار أو إيقاف
+            try {
+                $driverUser = $loaded->driver?->user;
+                if ($driverUser && $this->notificationService) {
+                    if ($action === 'suspension') {
+                        $this->notificationService->sendToUser($driverUser, 'driver_suspended', [
+                            'title'       => '⛔ تم إيقاف حسابك مؤقتاً',
+                            'message'     => 'تم إيقاف حسابك بناءً على مراجعة شكوى وبقرار من الإدارة. يرجى مراجعة الدعم الفني.',
+                            'entity_type' => 'complaint',
+                            'entity_id'   => (string) $complaint->id,
+                            'screen'      => 'DRIVER_PROFILE',
+                        ]);
+                    } elseif ($action === 'warning') {
+                        $this->notificationService->sendToUser($driverUser, 'driver_ai_alert', [
+                            'title'       => '⚠️ تنبيه إداري رسمي',
+                            'message'     => $actionDetails ? "تنبيه من الإدارة: {$actionDetails}" : "تم تسجيل تنبيه إداري بحقك، يرجى الالتزام بمعايير جودة الخدمة.",
+                            'entity_type' => 'complaint',
+                            'entity_id'   => (string) $complaint->id,
+                            'screen'      => 'DRIVER_PROFILE',
+                        ]);
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::warning("فشل إرسال إشعار القرار الإداري للسائق: " . $e->getMessage());
+            }
+
             // إعادة تحميل الكائن محمل ببيانات العلاقات المحدثة ليعود مباشرة للـ API Client
-            return $complaint->fresh()->load(['submittedBy.user', 'driver.user', 'resolvedBy']);
+            return $loaded;
         });
     }
 

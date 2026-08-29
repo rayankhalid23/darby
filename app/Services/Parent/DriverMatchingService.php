@@ -97,12 +97,21 @@ class DriverMatchingService
                 return $driver;
             });
         } else {
-            $drivers->getCollection()->transform(function (Driver $driver) {
+            $settings     = PricingSetting::first();
+            $priceKmAc    = (float) ($settings->price_per_km_ac ?? 2.50);
+            $priceKmNonAc = (float) ($settings->price_per_km_non_ac ?? 2.00);
+
+            $drivers->getCollection()->transform(function (Driver $driver) use ($priceKmAc, $priceKmNonAc) {
+                $activeVehicle = $driver->vehicles->where('status', 'Active')->first() ?? $driver->vehicles->first();
+                $hasAc = $activeVehicle ? (bool) $activeVehicle->has_ac : false;
+                $driverPriceKm = $hasAc ? $priceKmAc : $priceKmNonAc;
+
                 $driver->estimated_total_price = 0.0;
                 $driver->pricing_breakdown      = [];
                 $driver->platform_fee           = 0.0;
                 $driver->driver_net_amount      = 0.0;
                 $driver->children_context       = collect();
+                $driver->price_per_km           = $driverPriceKm;
                 return $driver;
             });
         }
@@ -114,13 +123,19 @@ class DriverMatchingService
     {
         $keyword = trim($keyword);
         $normalizedKeyword = str_replace(['أ', 'إ', 'آ'], 'ا', $keyword);
+        $phoneDigits = ltrim(preg_replace('/[^0-9]/', '', $keyword), '0');
 
-        $query->whereHas('user', function ($q) use ($keyword, $normalizedKeyword) {
-            $q->where(function ($sub) use ($keyword, $normalizedKeyword) {
+        $query->whereHas('user', function ($q) use ($keyword, $normalizedKeyword, $phoneDigits) {
+            $q->where(function ($sub) use ($keyword, $normalizedKeyword, $phoneDigits) {
                 $sub->where('users.full_name', 'like', "%{$keyword}%")
                     ->orWhere('users.full_name', 'like', "%{$normalizedKeyword}%")
                     ->orWhere('users.phone_number', 'like', "%{$keyword}%")
                     ->orWhere('users.alternative_phone', 'like', "%{$keyword}%");
+
+                if (!empty($phoneDigits) && strlen($phoneDigits) >= 3) {
+                    $sub->orWhere('users.phone_number', 'like', "%{$phoneDigits}%")
+                        ->orWhere('users.alternative_phone', 'like', "%{$phoneDigits}%");
+                }
             });
         });
     }

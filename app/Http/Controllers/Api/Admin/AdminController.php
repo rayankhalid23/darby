@@ -23,6 +23,39 @@ class AdminController extends Controller
     }
 
     /**
+     * جلب شجرة الصلاحيات والأدوار المتاحة للنظام
+     */
+    public function rolesAndPermissions(Request $request): JsonResponse
+    {
+        try {
+            $roles = \App\Models\Role::whereNotIn('name', ['parent', 'driver'])->get()->map(function ($role) {
+                return [
+                    'id'          => $role->id,
+                    'key'         => $role->name,
+                    'name'        => $role->display_name,
+                    'description' => $role->description,
+                    'permissions' => is_array($role->permissions) ? $role->permissions : (json_decode($role->permissions, true) ?? []),
+                ];
+            });
+
+            $permissionsTree = \App\Constants\PermissionConstants::getPermissionsTree();
+
+            return response()->json([
+                'status'  => true,
+                'success' => true,
+                'message' => 'تم جلب شجرة الأدوار والصلاحيات بنجاح.',
+                'data'    => [
+                    'roles'            => $roles,
+                    'permissions_tree' => $permissionsTree,
+                ]
+            ], 200);
+        } catch (Exception $e) {
+            Log::error("Fetch Roles and Permissions Error: " . $e->getMessage());
+            return response()->json(['status' => false, 'message' => 'حدث خطأ أثناء جلب الأدوار والصلاحيات.'], 500);
+        }
+    }
+
+    /**
      * عرض قائمة المشرفين
      */
     public function index(Request $request): JsonResponse

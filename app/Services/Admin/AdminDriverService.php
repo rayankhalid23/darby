@@ -190,6 +190,29 @@ class AdminDriverService
                 $driver->gender
             );
 
+            // 🔔 إرسال إشعار فوري داخل التطبيق وعبر FCM للسائق
+            try {
+                if ($status === 'Approved') {
+                    $this->notificationService->sendToUser($driver->user, 'driver_account_approved', [
+                        'title'       => '🎉 تم اعتماد حسابك بنجاح',
+                        'message'     => 'تهانينا كابتن! تمت مراجعة واعتماد حسابك ووثائقك بنجاح، يمكنك الآن البدء باستقبال طلبات النقل المدرسي.',
+                        'entity_type' => 'driver',
+                        'entity_id'   => (string) $driver->id,
+                        'screen'      => 'DRIVER_HOME',
+                    ]);
+                } else {
+                    $this->notificationService->sendToUser($driver->user, 'driver_account_rejected', [
+                        'title'       => '⚠️ مراجعة حساب السائق',
+                        'message'     => $rejectionReason ? "نأسف، لم يتم قبول طلب تسجيل الحساب للسبب التالي: {$rejectionReason}" : "نأسف، لم يتم قبول طلب تسجيل الحساب، يرجى مراجعة الإدارة.",
+                        'entity_type' => 'driver',
+                        'entity_id'   => (string) $driver->id,
+                        'screen'      => 'DRIVER_PROFILE',
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                Log::warning("فشل إرسال إشعار مراجعة حساب السائق #{$driver->id}: " . $e->getMessage());
+            }
+
             return $driver;
         });
     }

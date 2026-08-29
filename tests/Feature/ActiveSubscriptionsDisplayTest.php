@@ -187,7 +187,7 @@ class ActiveSubscriptionsDisplayTest extends TestCase
             ]
         ]);
 
-        ActiveSubscription::create([
+        $this->activeSub1 = ActiveSubscription::create([
             'subscription_request_id' => $this->acceptedRequest->id,
             'child_id'                => $this->child1->id,
             'driver_id'               => $this->driver->id,
@@ -195,7 +195,7 @@ class ActiveSubscriptionsDisplayTest extends TestCase
             'status'                  => 'active',
         ]);
 
-        ActiveSubscription::create([
+        $this->activeSub2 = ActiveSubscription::create([
             'subscription_request_id' => $this->acceptedRequest->id,
             'child_id'                => $this->child2->id,
             'driver_id'               => $this->driver->id,
@@ -226,36 +226,34 @@ class ActiveSubscriptionsDisplayTest extends TestCase
                         'phone',
                         'photo',
                     ],
-                    'children' => [
-                        '*' => [
+                    'child' => [
+                        'id',
+                        'name',
+                        'photo',
+                        'details' => [
+                            'subscription_type',
+                            'trip_direction',
+                            'timing',
+                            'start_date',
+                            'end_date',
+                            'working_days_count',
+                            'distance_km',
+                            'trip_price',
+                            'price_per_child',
+                        ],
+                        'Home' => [
                             'id',
                             'name',
-                            'photo',
-                            'details' => [
-                                'subscription_type',
-                                'trip_direction',
-                                'timing',
-                                'start_date',
-                                'end_date',
-                                'working_days_count',
-                                'distance_km',
-                                'trip_price',
-                                'price_per_child',
-                            ],
-                            'Home' => [
-                                'id',
-                                'name',
-                                'address',
-                                'latitude',
-                                'longitude',
-                            ],
-                            'School' => [
-                                'id',
-                                'name',
-                                'address',
-                                'latitude',
-                                'longitude',
-                            ]
+                            'address',
+                            'latitude',
+                            'longitude',
+                        ],
+                        'School' => [
+                            'id',
+                            'name',
+                            'address',
+                            'latitude',
+                            'longitude',
                         ]
                     ],
                     'created_at',
@@ -266,14 +264,10 @@ class ActiveSubscriptionsDisplayTest extends TestCase
             'message'
         ]);
 
-        $item = $response->json('data.0');
-        $this->assertEquals($this->acceptedRequest->id, $item['id']);
-        $this->assertEquals('accepted', $item['status']);
-        $this->assertEquals($this->driver->id, $item['driver']['id']);
-        $this->assertCount(2, $item['children']);
-        $this->assertEquals('سليم أحمد', $item['children'][0]['name']);
-        $this->assertEquals('multi_day', $item['children'][0]['details']['subscription_type']);
-        $this->assertEquals(300.00, $item['children'][0]['details']['price_per_child']);
+        $activeIds = collect($response->json('data'))->pluck('id')->toArray();
+        $this->assertContains($this->activeSub1->id, $activeIds);
+        $this->assertContains($this->activeSub2->id, $activeIds);
+        $this->assertCount(2, $response->json('data')); // طفلان معروضان كاشتراكين منفصلين
     }
 
     /**
@@ -282,15 +276,16 @@ class ActiveSubscriptionsDisplayTest extends TestCase
     public function test_parent_show_active_subscription_matches_request_format(): void
     {
         $response = $this->actingAs($this->parentUser)
-            ->getJson("/api/parent/active-subscriptions/{$this->acceptedRequest->id}");
+            ->getJson("/api/parent/active-subscriptions/{$this->activeSub1->id}");
 
         $response->assertStatus(200);
         $response->assertJsonPath('status', true);
-        $response->assertJsonPath('data.id', $this->acceptedRequest->id);
+        $response->assertJsonPath('data.id', $this->activeSub1->id);
+        $response->assertJsonPath('data.subscription_request_id', $this->acceptedRequest->id);
         $response->assertJsonPath('data.driver.name', $this->driverUser->full_name);
-        $this->assertCount(2, $response->json('data.children'));
-        $this->assertArrayHasKey('Home', $response->json('data.children.0'));
-        $this->assertArrayHasKey('School', $response->json('data.children.0'));
+        $this->assertEquals('سليم أحمد', $response->json('data.child.name'));
+        $this->assertArrayHasKey('Home', $response->json('data.child'));
+        $this->assertArrayHasKey('School', $response->json('data.child'));
     }
 
     /**
@@ -320,44 +315,42 @@ class ActiveSubscriptionsDisplayTest extends TestCase
                         'email',
                         'avatar',
                     ],
-                    'children' => [
-                        '*' => [
+                    'child' => [
+                        'id',
+                        'name',
+                        'gender',
+                        'age',
+                        'grade',
+                        'photo_url',
+                        'notes' => [
+                            'child_notes',
+                        ],
+                        'pricing' => [
+                            'trip_price',
+                            'total_price',
+                        ],
+                        'subscription_period' => [
+                            'start_date',
+                            'end_date',
+                            'working_days_count',
+                        ],
+                        'trip_details' => [
+                            'subscription_type',
+                            'trip_direction',
+                            'timing',
+                        ],
+                        'school' => [
                             'id',
                             'name',
-                            'gender',
-                            'age',
-                            'grade',
-                            'photo_url',
-                            'notes' => [
-                                'child_notes',
-                            ],
-                            'pricing' => [
-                                'trip_price',
-                                'total_price',
-                            ],
-                            'subscription_period' => [
-                                'start_date',
-                                'end_date',
-                                'working_days_count',
-                            ],
-                            'trip_details' => [
-                                'subscription_type',
-                                'trip_direction',
-                                'timing',
-                            ],
-                            'school' => [
-                                'id',
-                                'name',
-                                'address',
-                                'lat',
-                                'lng',
-                            ],
-                            'home' => [
-                                'address',
-                                'lat',
-                                'lng',
-                            ],
-                        ]
+                            'address',
+                            'lat',
+                            'lng',
+                        ],
+                        'home' => [
+                            'address',
+                            'lat',
+                            'lng',
+                        ],
                     ],
                     'created_at',
                     'created_at_formatted',
@@ -367,13 +360,10 @@ class ActiveSubscriptionsDisplayTest extends TestCase
             'message'
         ]);
 
-        $item = $response->json('data.0');
-        $this->assertEquals($this->acceptedRequest->id, $item['id']);
-        $this->assertEquals('accepted', $item['status']['value']);
-        $this->assertEquals(506.00, $item['total_amount']);
-        $this->assertEquals($this->parent->id, $item['parent']['id']);
-        $this->assertCount(2, $item['children']);
-        $this->assertEquals(253.00, $item['children'][0]['pricing']['total_price']);
+        $activeIds = collect($response->json('data'))->pluck('id')->toArray();
+        $this->assertContains($this->activeSub1->id, $activeIds);
+        $this->assertContains($this->activeSub2->id, $activeIds);
+        $this->assertCount(2, $response->json('data')); // طفلان معروضان كاشتراكين منفصلين للسائق
     }
 
     /**
@@ -382,14 +372,15 @@ class ActiveSubscriptionsDisplayTest extends TestCase
     public function test_driver_show_active_subscription_matches_request_format(): void
     {
         $response = $this->actingAs($this->driverUser)
-            ->getJson("/api/driver/active-subscriptions/{$this->acceptedRequest->id}");
+            ->getJson("/api/driver/active-subscriptions/{$this->activeSub1->id}");
 
         $response->assertStatus(200);
         $response->assertJsonPath('status', true);
-        $response->assertJsonPath('data.id', $this->acceptedRequest->id);
+        $response->assertJsonPath('data.id', $this->activeSub1->id);
+        $response->assertJsonPath('data.subscription_request_id', $this->acceptedRequest->id);
         $response->assertJsonPath('data.parent.name', $this->parentUser->full_name);
-        $this->assertCount(2, $response->json('data.children'));
-        $this->assertEquals(506.00, $response->json('data.total_amount'));
+        $this->assertEquals('سليم أحمد', $response->json('data.child.name'));
+        $this->assertEquals(253.00, $response->json('data.total_amount'));
     }
 
     /**
@@ -400,11 +391,11 @@ class ActiveSubscriptionsDisplayTest extends TestCase
         // 1. فلتر active
         $parentRes = $this->actingAs($this->parentUser)->getJson('/api/parent/active-subscriptions?filter=active');
         $parentRes->assertStatus(200);
-        $this->assertCount(1, $parentRes->json('data'));
+        $this->assertCount(2, $parentRes->json('data'));
 
         $driverRes = $this->actingAs($this->driverUser)->getJson('/api/driver/active-subscriptions?filter=current_active');
         $driverRes->assertStatus(200);
-        $this->assertCount(1, $driverRes->json('data'));
+        $this->assertCount(2, $driverRes->json('data'));
 
         // 2. فلتر cancelled
         $cancelledRes = $this->actingAs($this->parentUser)->getJson('/api/parent/active-subscriptions?filter=cancelled');

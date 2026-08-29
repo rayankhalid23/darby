@@ -16,10 +16,10 @@ class StoreAdminRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $this->merge([
-            'is_active'  => 1,
-            'role_id'    => 2, // دور "مشرف" في جدول roles
-            // منشئ الحساب هو المستخدم صاحب التوكن الحالي، ونرجع للمدير الأساسي كقيمة احتياطية
-            'created_by' => $this->user()?->id ?? 1,
+            'is_active'          => $this->input('is_active', 1),
+            'role_id'            => $this->input('role_id', 2),
+            'custom_permissions' => $this->input('custom_permissions', null),
+            'created_by'         => $this->user()?->id ?? 1,
         ]);
     }
 
@@ -27,23 +27,23 @@ class StoreAdminRequest extends FormRequest
     {
         return [
             // يدعم العربية والانجليزية ويشترط 3 مقاطع على الأقل لتوثيق الهوية
-    'full_name' => [
-    'required',
-    'string',
-    'regex:/^[\x{0600}-\x{06FF}\s]+$/u', // يمنع الإنجليزية، الأرقام، والرموز ويقبل أحرف عربية ومسافات فقط
-    'unique:users,full_name',
-    function ($attribute, $value, $fail) {
-        $words = explode(' ', trim(preg_replace('/\s+/', ' ', $value)));
-        if (count($words) < 3) {
-            $fail('الاسم يجب أن يكون ثلاثياً على الأقل.');
-        }
-    }
-],
-'email' => [
-    'required',
-    'email:filter', // فحص دقيق لصيغة البريد
-    'unique:users,email'
-],
+            'full_name' => [
+                'required',
+                'string',
+                'regex:/^[\x{0600}-\x{06FF}\s]+$/u', // يمنع الإنجليزية، الأرقام، والرموز ويقبل أحرف عربية ومسافات فقط
+                'unique:users,full_name',
+                function ($attribute, $value, $fail) {
+                    $words = explode(' ', trim(preg_replace('/\s+/', ' ', $value)));
+                    if (count($words) < 3) {
+                        $fail('الاسم يجب أن يكون ثلاثياً على الأقل.');
+                    }
+                }
+            ],
+            'email' => [
+                'required',
+                'email:filter', // فحص دقيق لصيغة البريد
+                'unique:users,email'
+            ],
             'phone_number' => [
                 'required',
                 'numeric',
@@ -52,11 +52,11 @@ class StoreAdminRequest extends FormRequest
                 'unique:users,phone_number'
             ],
             'password' => [
-    'nullable',
-    'string',
-    'min:6',
-    'regex:/[a-zA-Z]/' // يشترط وجود حرف إنجليزي واحد على الأقل
-],
+                'nullable',
+                'string',
+                'min:6',
+                'regex:/[a-zA-Z]/' // يشترط وجود حرف إنجليزي واحد على الأقل
+            ],
             'avatar' => [
                 'sometimes',
                 'nullable',
@@ -64,9 +64,10 @@ class StoreAdminRequest extends FormRequest
                 'mimes:jpeg,png,jpg',
                 'max:2048'
             ],
-            'is_active'  => 'required|boolean',
-            'role_id'    => 'required|integer',
-            'created_by' => 'required|integer',
+            'is_active'          => 'required|boolean',
+            'role_id'            => 'required|integer',
+            'custom_permissions' => 'nullable|array',
+            'created_by'         => 'required|integer',
         ];
     }
 

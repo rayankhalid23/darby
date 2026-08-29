@@ -28,6 +28,7 @@ class User extends Authenticatable implements HasName
         'password_hash',
         'avatar_url',
         'role_id',
+        'custom_permissions',
         'is_active',
         'phone_verified',
         'email_verified_at',
@@ -47,6 +48,7 @@ class User extends Authenticatable implements HasName
     protected function casts(): array
     {
         return [
+            'custom_permissions'   => 'array',
             'is_active'            => 'boolean',
             'phone_verified'       => 'boolean',
             'email_verified_at'    => 'datetime',
@@ -94,8 +96,135 @@ class User extends Authenticatable implements HasName
         return $this->hasMany(UserDevice::class, 'user_id');
     }
 
+    public function notifications()
+    {
+        return $this->morphMany(\App\Models\Shared\DatabaseNotification::class, 'notifiable')->latest();
+    }
+
+    public function unreadNotifications()
+    {
+        return $this->notifications()->whereNull('read_at');
+    }
+
+    public function readNotifications()
+    {
+        return $this->notifications()->whereNotNull('read_at');
+    }
+
     public function getFilamentName(): string
     {
         return $this->full_name ?? 'مدير النظام';
+    }
+
+    // ============================================================
+    // 🛡️ دوال التحقق من الأدوار والصلاحيات (RBAC Methods)
+    // ============================================================
+
+    /**
+     * هل المستخدم مدير عام بصلاحيات كاملة؟
+     */
+    public function isSuperAdmin(): bool
+    {
+        if ((int) $this->role_id === 1) {
+            return true;
+        }
+
+        $roleName = $this->role?->name;
+        return $roleName === 'super_admin' || $roleName === 'admin';
+    }
+
+    /**
+     * جلب كافة الصلاحيات الممنوحة للمستخدم (دمج صلاحيات الدور مع الصلاحيات المخصصة)
+     */
+    public function getAllPermissions(): array
+    {
+        if ($this->isSuperAdmin()) {
+            return ['*'];
+        }
+
+        $rolePerms = $this->role?->permissions ?? [];
+        if (!is_array($rolePerms)) {
+            $rolePerms = json_decode($rolePerms, true) ?? [];
+        }
+
+        // إذا كان الدور يحمل All
+        if (in_array('*', $rolePerms, true) || isset($rolePerms['all'])) {
+            return ['*'];
+        }
+
+        $customPerms = $this->custom_permissions ?? [];
+        if (!is_array($customPerms)) {
+            $customPerms = json_decode($customPerms, true) ?? [];
+        }
+
+        return array_values(array_unique(array_merge($rolePerms, $customPerms)));
+    }
+
+    /**
+     * التحقق من امتلاك المستخدم لصلاحية محددة
+     */
+    public function hasPermission(string $permission): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        $permissions = $this->getAllPermissions();
+
+        if (in_array('*', $permissions, true)) {
+            return true;
+        }
+
+        // التحقق من الصلاحية المباشرة
+        if (in_array($permission, $permissions, true)) {
+            return true;
+        }
+
+        // التحقق من صلاحيات القسم الشاملة (مثال: 'financial.*' تطابق 'financial.manage_withdrawals')
+        $parts = explode('.', $permission);
+        if (count($parts) > 1) {
+            $wildcard = $parts[0] . '.*';
+            if (in_array($wildcard, $permissions, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * التحقق من امتلاك المستخدم لأي من الصلاحيات الممررة
+     */
+    public function hasAnyPermission(array $permissions): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        foreach ($permissions as $permission) {
+            if ($this->hasPermission($permission)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * التحقق من امتلاك المستخدم لكافة الصلاحيات الممررة
+     */
+    public function hasAllPermissions(array $permissions): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        foreach ($permissions as $permission) {
+            if (!$this->hasPermission($permission)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
