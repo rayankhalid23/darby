@@ -26,6 +26,10 @@ class PricingSettingController extends Controller
             'platform_commission_rate'    => 8.00,
             'price_per_km_ac'              => 2.50,
             'price_per_km_non_ac'          => 2.00,
+            'location_change_fee'           => PricingSetting::DEFAULT_LOCATION_CHANGE_FEE,
+            'location_change_fee_under_2km' => PricingSetting::DEFAULT_TIER_FEES[PricingSetting::TIER_UNDER_2KM],
+            'location_change_fee_2_to_6km'  => PricingSetting::DEFAULT_TIER_FEES[PricingSetting::TIER_2_TO_6KM],
+            'location_change_fee_6_to_10km' => PricingSetting::DEFAULT_TIER_FEES[PricingSetting::TIER_6_TO_10KM],
         ]);
 
         // 2. في حالة كان الطلب جلب بيانات (GET)

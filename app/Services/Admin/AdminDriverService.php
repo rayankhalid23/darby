@@ -5,7 +5,11 @@ namespace App\Services\Admin;
 use App\Models\Driver\Driver;
 use App\Models\Driver\DriverApproval;
 use App\Models\Driver\DriverDocument;
+use App\Models\Driver\DriverAbsence;
 use App\Models\Driver\Vehicle;
+use App\Models\Shared\Trip;
+use App\Models\Shared\ActiveSubscription;
+use App\Models\User;
 
 use App\Services\Notification\NotificationService;
 
@@ -692,5 +696,192 @@ class AdminDriverService
         });
     }
 
-    
+    /**
+     * جلب قائمة طلبات غياب السائقين مع الفلترة
+     */
+    public function getDriverAbsenceRequests(array $filters = []): LengthAwarePaginator
+    {
+        $query = DriverAbsence::with([
+            'driver.user',
+            'trips.route',
+            'reviewer'
+        ])->latest();
+
+        if (!empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
+        if (!empty($filters['driver_id'])) {
+            $query->where('driver_id', $filters['driver_id']);
+        }
+
+        if (!empty($filters['date'])) {
+            $query->whereDate('absence_date', $filters['date']);
+        }
+
+        if (!empty($filters['search'])) {
+            $search = $filters['search'];
+            $query->whereHas('driver.user', function ($q) use ($search) {
+                $q->where('full_name', 'like', "%{$search}%")
+                  ->orWhere('phone_number', 'like', "%{$search}%");
+            });
+        }
+
+        $perPage = (int) ($filters['per_page'] ?? 15);
+        return $query->paginate($perPage);
+    }
+
+    /**
+     * جلب تفاصيل طلب غياب محدد
+     */
+    public function getDriverAbsenceDetails(int $absenceId): DriverAbsence
+    {
+        return DriverAbsence::with([
+            'driver.user',
+            'trips.route',
+            'trips.stops',
+            'reviewer'
+        ])->findOrFail($absenceId);
+    }
+
+    /**
+     * الموافقة على طلب غياب السائق ونزعه فقط من الرحلات المحددة
+     */
+    public function approveDriverAbsence(int $absenceId, ?string $adminNotes = null, int $adminId = 1): DriverAbsence
+    {
+        return DB::transaction(function () use ($absenceId, $adminNotes, $adminId) {
+            $absence = DriverAbsence::with(['driver.user', 'trips.stops', 'trips.route'])->findOrFail($absenceId);
+
+            if ($absence->status === DriverAbsence::STATUS_APPROVED) {
+                throw new Exception('تمت الموافقة على طلب الغياب هذا مسبقاً.');
+            }
+
+            $absence->update([
+                'status'      => DriverAbsence::STATUS_APPROVED,
+                'reviewed_by' => $adminId,
+                'reviewed_at' => now(),
+                'admin_notes' => $adminNotes,
+            ]);
+
+            // نزع السائق من الرحلات المحددة فقط
+            $trips = $absence->trips;
+            $unassignedTripIds = [];
+
+            foreach ($trips as $trip) {
+                $trip->update([
+                    'driver_id' => null,
+                    'status'    => 'pending',
+                ]);
+                $unassignedTripIds[] = $trip->id;
+            }
+
+            // إشعار السائق بالموافقة
+            if ($absence->driver?->user) {
+                try {
+                    $tripsList = implode(', ', $unassignedTripIds);
+                    $this->notificationService->sendToUser($absence->driver->user, 'driver_absence_approved', [
+                        'title'       => '✅ تمت الموافقة على طلب الغياب',
+                        'message'     => "تمت الموافقة على طلب غيابك لتاريخ ({$absence->absence_date->toDateString()}) وتم فصلك عن الرحلات رقم: [{$tripsList}].",
+                        'entity_type' => 'driver_absence',
+                        'entity_id'   => (string) $absence->id,
+                    ]);
+                } catch (\Throwable $e) {
+                    Log::warning("فشل إرسال إشعار موافقة الغياب للسائق: " . $e->getMessage());
+                }
+            }
+
+            // إشعار أولياء الأمور المرتبطين بهذه الرحلات
+            try {
+                if (!empty($unassignedTripIds)) {
+                    $parentUserIds = ActiveSubscription::whereIn('route_id', $trips->pluck('route_id')->filter())
+                        ->join('children', 'active_subscriptions.child_id', '=', 'children.id')
+                        ->join('parents', 'children.parent_id', '=', 'parents.id')
+                        ->pluck('parents.user_id')
+                        ->unique();
+
+                    $usersToNotify = User::whereIn('id', $parentUserIds)->get();
+                    if ($usersToNotify->isNotEmpty()) {
+                        $this->notificationService->sendToUsers($usersToNotify, 'trip_driver_absence_update', [
+                            'title'     => 'تنبيه بشأن رحلة طفلكم',
+                            'message'   => "نفيدكم علماً بتحديث جدول الرحلة لتاريخ ({$absence->absence_date->toDateString()}) وجارٍ العمل على توفير سائق بديل.",
+                            'entity_id' => (string) $absence->id,
+                        ]);
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::warning("فشل إرسال إشعار غياب السائق لأولياء الأمور: " . $e->getMessage());
+            }
+
+            // تسجيل التدقيق الإداري
+            try {
+                if (isset($this->auditLogService)) {
+                    $this->auditLogService->record(
+                        action: 'approve_driver_absence',
+                        entityType: 'driver_absence',
+                        entityId: $absence->id,
+                        entityName: $absence->driver?->user?->full_name ?? 'سائق',
+                        result: 'approved',
+                        reason: $adminNotes,
+                        changes: ['unassigned_trip_ids' => $unassignedTripIds],
+                        adminId: $adminId
+                    );
+                }
+            } catch (\Throwable $e) {
+                Log::warning("فشل تسجيل حركة التدقيق لغياب السائق: " . $e->getMessage());
+            }
+
+            return $absence->fresh(['driver.user', 'trips', 'reviewer']);
+        });
+    }
+
+    /**
+     * رفض طلب غياب السائق
+     */
+    public function rejectDriverAbsence(int $absenceId, string $rejectionReason, int $adminId = 1): DriverAbsence
+    {
+        return DB::transaction(function () use ($absenceId, $rejectionReason, $adminId) {
+            $absence = DriverAbsence::with(['driver.user', 'trips'])->findOrFail($absenceId);
+
+            $absence->update([
+                'status'      => DriverAbsence::STATUS_REJECTED,
+                'reviewed_by' => $adminId,
+                'reviewed_at' => now(),
+                'admin_notes' => $rejectionReason,
+            ]);
+
+            // إشعار السائق بالرفض
+            if ($absence->driver?->user) {
+                try {
+                    $this->notificationService->sendToUser($absence->driver->user, 'driver_absence_rejected', [
+                        'title'       => '❌ رفض طلب الغياب',
+                        'message'     => "تم رفض طلب غيابك لتاريخ ({$absence->absence_date->toDateString()}) بسبب: {$rejectionReason}",
+                        'entity_type' => 'driver_absence',
+                        'entity_id'   => (string) $absence->id,
+                    ]);
+                } catch (\Throwable $e) {
+                    Log::warning("فشل إرسال إشعار رفض الغياب للسائق: " . $e->getMessage());
+                }
+            }
+
+            // تسجيل التدقيق الإداري
+            try {
+                if (isset($this->auditLogService)) {
+                    $this->auditLogService->record(
+                        action: 'reject_driver_absence',
+                        entityType: 'driver_absence',
+                        entityId: $absence->id,
+                        entityName: $absence->driver?->user?->full_name ?? 'سائق',
+                        result: 'rejected',
+                        reason: $rejectionReason,
+                        changes: [],
+                        adminId: $adminId
+                    );
+                }
+            } catch (\Throwable $e) {
+                Log::warning("فشل تسجيل حركة التدقيق لرفض غياب السائق: " . $e->getMessage());
+            }
+
+            return $absence->fresh(['driver.user', 'trips', 'reviewer']);
+        });
+    }
 }

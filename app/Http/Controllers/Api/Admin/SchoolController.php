@@ -143,8 +143,11 @@ class SchoolController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // 2. التحقق من وجود طلبات اشتراك أو محطات مسارات مرتبطة بالمدرسة
-        $hasRequests = \Illuminate\Support\Facades\DB::table('requests')
+        // 2. التحقق من وجود طلبات اشتراك أو محطات مسارات مرتبطة بالمدرسة.
+        // المدرسة لم تعد عموداً في جدول requests (مهاجرة 2026_08_26_131258) بل صارت
+        // على مستوى الطفل، لذا نتحقق من ارتباط أي طفل بهذه المدرسة بدل الاستعلام
+        // عن عمود محذوف — الاستعلام القديم كان يُسقط الطلب بخطأ 500.
+        $hasRequests = \Illuminate\Support\Facades\DB::table('children')
             ->where('school_id', $schoolModel->id)
             ->exists();
         $hasRouteStops = \Illuminate\Support\Facades\DB::table('route_stops')

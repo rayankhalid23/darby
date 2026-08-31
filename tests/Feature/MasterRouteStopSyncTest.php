@@ -89,6 +89,10 @@ class MasterRouteStopSyncTest extends TestCase
             'is_trusted' => 1,
         ]);
 
+        // قيمة الاشتراك تُحجز في الأمانات لكل الأنواع (وليس اليومي فقط)،
+        // لذا يجب أن تكون محفظة ولي الأمر ممولة قبل إرسال الطلب أو قبوله.
+        $this->parent->deposit(500000);
+
         $this->school = School::create([
             'name'    => 'ظ…ط¯ط±ط³ط© ظ…ط²ط§ظ…ظ†ط© ط§ظ„ظ…ط³ط§ط±',
             'address' => 'ط´ط§ط±ط¹ ط§ظ„ط§ط®طھط¨ط§ط±',

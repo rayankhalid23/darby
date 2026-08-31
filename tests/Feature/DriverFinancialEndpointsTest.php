@@ -8,7 +8,6 @@ use Illuminate\Support\Facades\DB;
 use App\Models\User;
 use App\Models\Driver\Driver;
 use App\Models\Parent\ParentModel;
-use App\Models\Shared\Contract;
 use App\Models\Shared\Invoice;
 use App\Models\Shared\WithdrawalRequest;
 
@@ -19,7 +18,6 @@ class DriverFinancialEndpointsTest extends TestCase
     protected User $driverUser;
     protected Driver $driver;
     protected User $parentUser;
-    protected Contract $contract;
     protected Invoice $invoice;
 
     protected function setUp(): void
@@ -72,42 +70,20 @@ class DriverFinancialEndpointsTest extends TestCase
         $subscriptionRequestId = DB::table('requests')->insertGetId([
             'parent_id'         => $parentModel->id,
             'driver_id'         => $this->driver->id,
-            'school_id'         => 9999,
-            'timing'            => 'MORNING',
-            'direction'         => 'both',
             'status'            => 'accepted',
-            'subscription_type' => 'multi_day',
             'children_count'    => 1,
             'created_at'        => now(),
         ]);
         DB::statement('SET FOREIGN_KEY_CHECKS=1');
 
-        // 4. Contract
-        $this->contract = Contract::create([
-            'subscription_request_id' => $subscriptionRequestId,
-            'parent_id'               => $this->parentUser->id,
-            'driver_id'               => $this->driverUser->id,
-            'contract_number'         => 'DRBY-FIN-' . rand(100000, 999999),
-            'subscription_type' => 'multi_day',
-            'direction'               => 'both',
-            'timing'                  => 'MORNING',
-            'pickup_time'             => '07:00:00',
-            'dropoff_time'            => '14:00:00',
-            'max_waiting_time'        => 15,
-            'start_date'              => now()->subDays(5)->format('Y-m-d'),
-            'end_date'                => now()->addDays(25)->format('Y-m-d'),
-            'days_count'              => 22,
-            'total_price'             => 300.00,
-            'clauses'                 => [],
-            'status'                  => 'active',
-        ]);
-
         // 4. Invoice
+        // جدول contracts حُذف (مهاجرة 2026_08_24_000001) وأُعيد ربط دورة حياة
+        // الاشتراك والفواتير بـ subscription_request_id مباشرة.
         $this->invoice = Invoice::create([
-            'contract_id'       => $this->contract->id,
+            'subscription_request_id' => $subscriptionRequestId,
             'parent_id'         => $this->parentUser->id,
             'driver_id'         => $this->driver->id,
-            'invoice_number'    => 'INV-' . $this->contract->contract_number,
+            'invoice_number'    => 'INV-DRBY-FIN-' . rand(100000, 999999),
             'amount'            => 300.00,
             'type'              => 'proforma',
             'status'            => 'pending',

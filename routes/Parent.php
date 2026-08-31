@@ -58,6 +58,16 @@ Route::middleware('auth:sanctum')->group(function () {
     // مسار جلب المدارس المعتمدة (الآن أصبح: api/parent/schools فوراً وبشكل صحيح)
     Route::get('schools', [SchoolController::class, 'index']);
 
+    // --- 🔔 موديول إشعارات ولي الأمر (Notifications Module) ---
+    Route::prefix('notifications')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Shared\NotificationController::class, 'index']);
+        Route::get('/unread-count', [\App\Http\Controllers\Api\Shared\NotificationController::class, 'unreadCount']);
+        Route::post('/{id}/read', [\App\Http\Controllers\Api\Shared\NotificationController::class, 'markAsRead']);
+        Route::patch('/{id}/read', [\App\Http\Controllers\Api\Shared\NotificationController::class, 'markAsRead']);
+        Route::post('/read-all', [\App\Http\Controllers\Api\Shared\NotificationController::class, 'markAllAsRead']);
+        Route::delete('/{id}', [\App\Http\Controllers\Api\Shared\NotificationController::class, 'destroy']);
+    });
+
     Route::prefix('children/{childId}')->group(function () {
         
         // تسجيل غياب طفل مع تحديد نوع الغياب (pickup/dropoff/both)
@@ -169,6 +179,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // -------------------------------------------------------------
     Route::prefix('location-change-requests')->group(function () {
         Route::get('/options', [App\Http\Controllers\Api\Parent\LocationChangeController::class, 'options']);
+        Route::post('/preview', [App\Http\Controllers\Api\Parent\LocationChangeController::class, 'preview']);
         Route::get('/', [App\Http\Controllers\Api\Parent\LocationChangeController::class, 'index']);
         Route::post('/', [App\Http\Controllers\Api\Parent\LocationChangeController::class, 'store']);
     });
@@ -176,9 +187,23 @@ Route::middleware('auth:sanctum')->group(function () {
     // -------------------------------------------------------------
     // 🕓 الرد على طلبات التأكيد اليدوي لرحلات سابقة لم يوثّقها التطبيق
     // -------------------------------------------------------------
+    // ⚠️ كانت هذه المجموعة استُبدلت بالخطأ بمجموعة "الدعم الفني" أدناه بدل أن
+    // تُضاف بجانبها، فأصبح كل طلب تأكيد يدوي من ولي الأمر يرجع 404.
     Route::prefix('trip-manual-confirmations')->group(function () {
         Route::get('/', [App\Http\Controllers\Api\Parent\TripManualConfirmationController::class, 'index']);
         Route::post('/{id}/respond', [App\Http\Controllers\Api\Parent\TripManualConfirmationController::class, 'respond']);
+    });
+
+    // -------------------------------------------------------------
+    // 🎫 مسارات الدعم الفني وتذاكر المشاكل لولي الأمر
+    // -------------------------------------------------------------
+    Route::prefix('support-tickets')->group(function () {
+        Route::get('/financial-history', [\App\Http\Controllers\Api\Parent\SupportTicketController::class, 'financialHistory']);
+        Route::get('/driver-trips', [\App\Http\Controllers\Api\Parent\SupportTicketController::class, 'driverTrips']);
+        Route::get('/', [\App\Http\Controllers\Api\Parent\SupportTicketController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\Parent\SupportTicketController::class, 'store']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\Parent\SupportTicketController::class, 'show']);
+        Route::post('/{id}/reply', [\App\Http\Controllers\Api\Parent\SupportTicketController::class, 'reply']);
     });
 
 });

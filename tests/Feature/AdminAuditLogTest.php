@@ -18,6 +18,8 @@ class AdminAuditLogTest extends TestCase
     protected User $adminUser;
     protected Admin $admin;
     protected User $supervisorUser;
+    protected User $fleetSupervisorUser;
+    protected Admin $fleetSupervisor;
     protected Admin $supervisor;
     protected User $driverUser;
     protected Driver $driver;
@@ -54,6 +56,22 @@ class AdminAuditLogTest extends TestCase
             'created_by' => $this->adminUser->id,
         ]);
 
+        // 2-ب. مشرف الأسطول (role_id = 5) — هو صاحب صلاحية drivers.edit_data.
+        // مشرف العمليات (role 2) يملك drivers.view فقط، لذا لا يصلح لاختبارات
+        // تعديل بيانات السائق: رفضه بـ 403 هو السلوك الصحيح لا خطأ في النظام.
+        $this->fleetSupervisorUser = User::create([
+            'full_name'     => 'ناصر مشرف الأسطول',
+            'email'         => 'fleet.audit.' . uniqid() . '@darby.test',
+            'phone_number'  => '09' . rand(10000000, 99999999),
+            'password_hash' => Hash::make('password123'),
+            'role_id'       => 5,
+            'is_active'     => 1,
+        ]);
+        $this->fleetSupervisor = Admin::create([
+            'user_id'    => $this->fleetSupervisorUser->id,
+            'created_by' => $this->adminUser->id,
+        ]);
+
         // 3. حساب سائق للاختبار
         $this->driverUser = User::create([
             'full_name'     => 'الكابتن عبد السلام المهدوي',
@@ -80,10 +98,12 @@ class AdminAuditLogTest extends TestCase
         $response = $this->actingAs($this->supervisorUser, 'sanctum')
             ->getJson('/api/admin/admin-audit-logs');
 
+        // النظام يستخدم رسالة صلاحيات موحّدة تُرفق معها الصلاحية المطلوبة بالضبط،
+        // وهي أدق من رسالة الدور القديمة وتساعد الواجهة على توجيه المستخدم.
         $response->assertStatus(403)
             ->assertJson([
-                'success' => false,
-                'message' => 'عذراً، هذا السجل مخصص للإدارة العامة فقط.',
+                'success'             => false,
+                'required_permission' => 'audit_logs.view',
             ]);
     }
 
@@ -125,7 +145,7 @@ class AdminAuditLogTest extends TestCase
             'reason'         => 'تصحيح بعد مطابقة الوثائق في المقابلة',
         ];
 
-        $response = $this->actingAs($this->supervisorUser, 'sanctum')
+        $response = $this->actingAs($this->fleetSupervisorUser, 'sanctum')
             ->putJson("/api/admin/drivers/{$this->driver->id}", $payload);
 
         $response->assertStatus(200)
@@ -153,9 +173,13 @@ class AdminAuditLogTest extends TestCase
             ->first();
 
         $this->assertNotNull($auditLog);
-        $this->assertEquals($this->supervisor->id, $auditLog->admin_id);
-        $this->assertEquals('سالم المشرف', $auditLog->admin_name);
-        $this->assertEquals('مشرف', $auditLog->admin_role);
+        $this->assertEquals($this->fleetSupervisor->id, $auditLog->admin_id);
+        $this->assertEquals('ناصر مشرف الأسطول', $auditLog->admin_name);
+        // اسم الدور يُقرأ من جدول roles لا يُثبَّت نصياً (يختلف بين البيئات)
+        $this->assertEquals(
+            \Illuminate\Support\Facades\DB::table('roles')->where('id', 5)->value('display_name'),
+            $auditLog->admin_role
+        );
         $this->assertEquals('تعديل بيانات سائق', $auditLog->action_label);
         $this->assertEquals('update', $auditLog->action_group);
         $this->assertEquals('تصحيح بعد مطابقة الوثائق في المقابلة', $auditLog->reason);
@@ -180,7 +204,7 @@ class AdminAuditLogTest extends TestCase
      */
     public function test_driver_rejection_logs_decision_and_reason(): void
     {
-        $response = $this->actingAs($this->supervisorUser, 'sanctum')
+        $response = $this->actingAs($this->fleetSupervisorUser, 'sanctum')
             ->postJson("/api/admin/drivers/{$this->driver->id}/review", [
                 'status'           => 'Rejected',
                 'rejection_reason' => 'صورة الرخصة غير واضحة',

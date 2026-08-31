@@ -7,7 +7,9 @@ use App\Models\Parent\Address;
 use App\Models\Parent\ParentModel;
 use App\Models\Shared\ActiveSubscription;
 use App\Models\Shared\LocationChangeRequest;
+use App\Models\Shared\PricingSetting;
 use App\Models\User;
+use App\Support\GeoEstimator;
 use App\Services\Notification\NotificationService;
 use App\Services\Trip\MasterRouteStopSyncService;
 use Illuminate\Support\Facades\DB;
@@ -90,17 +92,23 @@ class LocationChangeService
     }
 
     /**
-     * إنشاء طلب تغيير موقع جديد من ولي الأمر، بانتظار موافقة السائق.
+     * يبني عرض السعر الكامل لتغيير الموقع دون حفظ أي شيء: معلومات الرحلة المختارة،
+     * سعرها، المسافة بين الموقع الجديد والموقع الحالي، شريحة الرسوم المطبَّقة،
+     * والتفصيل المالي (الإجمالي / عمولة المنصة / صافي السائق).
+     *
+     * تستخدمه شاشة المعاينة عند ولي الأمر وأيضاً عملية الإنشاء نفسها، حتى يكون
+     * الرقم الذي رآه ولي الأمر هو نفسه الرقم المحفوظ تماماً.
      */
-    public function requestChange(
+    public function quoteChange(
         int $userId,
         int $activeSubscriptionId,
         string $pointType,
         ?int $addressId,
         ?float $lat,
         ?float $lng,
-        ?string $label
-    ): LocationChangeRequest {
+        ?string $label,
+        ?string $changeDate = null
+    ): array {
         $parent = ParentModel::where('user_id', $userId)->first();
         if (!$parent) {
             throw new Exception('هذا الحساب غير مسجل كولي أمر في النظام.');
@@ -110,6 +118,7 @@ class LocationChangeService
             ->where(function ($q) use ($userId, $parent) {
                 $q->where('parent_id', $parent->id)->orWhere('parent_id', $userId);
             })
+            ->with(['child', 'driver.user', 'route', 'subscriptionRequest'])
             ->first();
 
         if (!$activeSub) {
@@ -120,46 +129,120 @@ class LocationChangeService
             throw new Exception('لا يمكن طلب تغيير الموقع لاشتراك غير نشط.');
         }
 
-        $parentIds = array_values(array_unique(array_filter([$userId, $parent->id])));
-        if ($addressId) {
-            $address = Address::where('id', $addressId)->whereIn('parent_id', $parentIds)->first();
-            if (!$address) {
-                throw new Exception('العنوان المحدد غير موجود ضمن مواقعك المحفوظة.');
-            }
-            $newLat   = (float) $address->lat;
-            $newLng   = (float) $address->lng;
-            $newLabel = $address->label;
-        } else {
-            if ($lat === null || $lng === null) {
-                throw new Exception('يجب تحديد عنوان محفوظ أو إحداثيات الموقع الجديد.');
-            }
-            $newLat     = $lat;
-            $newLng     = $lng;
-            $newLabel   = $label;
-            $addressId  = null;
+        $newPoint   = $this->resolveNewPoint($userId, $parent->id, $addressId, $lat, $lng, $label);
+        $parsedDate = $changeDate ? \Carbon\Carbon::parse($changeDate)->toDateString() : now()->toDateString();
+
+        $isPickup     = $pointType === LocationChangeRequest::POINT_TYPE_PICKUP;
+        $currentLat   = (float) ($isPickup ? $activeSub->pickup_lat : $activeSub->dropoff_lat);
+        $currentLng   = (float) ($isPickup ? $activeSub->pickup_lng : $activeSub->dropoff_lng);
+        $currentLabel = $isPickup ? $activeSub->pickup_label : $activeSub->dropoff_label;
+
+        if (!$currentLat || !$currentLng) {
+            throw new Exception('لا يمكن حساب رسوم التغيير لأن الموقع الحالي المسجّل في الاشتراك غير مضبوط. يرجى مراجعة الدعم.');
         }
 
-        return DB::transaction(function () use ($activeSub, $parent, $pointType, $addressId, $newLat, $newLng, $newLabel, $userId) {
-            $existingPending = LocationChangeRequest::where('active_subscription_id', $activeSub->id)
+        // المسافة المعتمدة في التسعير هي المسافة بين الموقع الجديد والموقع الحالي للطفل (المنزل).
+        $distanceKm = round(
+            GeoEstimator::haversineKm($currentLat, $currentLng, $newPoint['lat'], $newPoint['lng']),
+            2
+        );
+
+        $tier = PricingSetting::resolveFeeTier($distanceKm);
+        if ($tier === null) {
+            $max = PricingSetting::MAX_LOCATION_CHANGE_DISTANCE_KM;
+            throw new Exception("المسافة بين الموقع الجديد والموقع الحالي ({$distanceKm} كم) تتجاوز الحد الأقصى المسموح به ({$max} كم)، ولا توجد شريحة رسوم مطبَّقة عليها.");
+        }
+
+        $feeAmount = round(PricingSetting::feeForTier($tier), 2);
+        $fee       = $this->splitFee($feeAmount);
+
+        return [
+            'active_subscription' => $activeSub,
+            'parsed_date'         => $parsedDate,
+            'point_type'          => $pointType,
+            'address_id'          => $newPoint['address_id'],
+            'new_lat'             => $newPoint['lat'],
+            'new_lng'             => $newPoint['lng'],
+            'new_label'           => $newPoint['label'],
+            'distance_km'         => $distanceKm,
+            'fee_tier'            => $tier,
+            'fee'                 => $fee,
+            'payload'             => [
+                'active_subscription_id' => $activeSub->id,
+                'point_type'             => $pointType,
+                'change_date'            => $parsedDate,
+                'trip'                   => $this->buildTripSummary($activeSub),
+                'current_location'       => [
+                    'lat'   => $currentLat,
+                    'lng'   => $currentLng,
+                    'label' => $currentLabel,
+                ],
+                'new_location'           => [
+                    'lat'   => $newPoint['lat'],
+                    'lng'   => $newPoint['lng'],
+                    'label' => $newPoint['label'],
+                ],
+                'distance_km'            => $distanceKm,
+                'fee_tier'               => $tier,
+                'fee_tier_label'         => PricingSetting::TIER_LABELS[$tier],
+                'fee_breakdown'          => $fee,
+                'fee_tiers'              => PricingSetting::locationChangeFeeTiers(),
+                'currency'               => 'د.ل',
+            ],
+        ];
+    }
+
+    /**
+     * إنشاء طلب تغيير موقع جديد من ولي الأمر، بانتظار موافقة السائق.
+     *
+     * التغيير يخص رحلة واحدة فقط (اشتراك واحد + يوم واحد محدد)، فلا يُطبَّق على
+     * باقي أيام الاشتراك ولا على بقية رحلات المسار.
+     */
+    public function requestChange(
+        int $userId,
+        int $activeSubscriptionId,
+        string $pointType,
+        ?int $addressId,
+        ?float $lat,
+        ?float $lng,
+        ?string $label,
+        ?string $changeDate = null
+    ): LocationChangeRequest {
+        $quote      = $this->quoteChange($userId, $activeSubscriptionId, $pointType, $addressId, $lat, $lng, $label, $changeDate);
+        $activeSub  = $quote['active_subscription'];
+        $parsedDate = $quote['parsed_date'];
+        $fee        = $quote['fee'];
+
+        return DB::transaction(function () use ($activeSub, $pointType, $quote, $userId, $parsedDate, $fee) {
+            $alreadyPending = LocationChangeRequest::where('active_subscription_id', $activeSub->id)
                 ->where('point_type', $pointType)
                 ->where('status', LocationChangeRequest::STATUS_PENDING)
-                ->first();
+                ->whereDate('change_date', $parsedDate)
+                ->exists();
 
-            if ($existingPending) {
-                throw new Exception('يوجد بالفعل طلب تغيير موقع معلّق لنفس النقطة بانتظار رد السائق.');
+            if ($alreadyPending) {
+                throw new Exception('يوجد بالفعل طلب تغيير موقع معلّق لنفس الرحلة ونفس اليوم بانتظار رد السائق.');
             }
 
             $changeRequest = LocationChangeRequest::create([
-                'active_subscription_id' => $activeSub->id,
-                'child_id'               => $activeSub->child_id,
-                'parent_id'              => $userId,
-                'driver_id'              => $activeSub->driver_id,
-                'point_type'             => $pointType,
-                'new_address_id'         => $addressId,
-                'new_lat'                => $newLat,
-                'new_lng'                => $newLng,
-                'new_label'              => $newLabel,
-                'status'                 => LocationChangeRequest::STATUS_PENDING,
+                'active_subscription_id'     => $activeSub->id,
+                'child_id'                   => $activeSub->child_id,
+                'parent_id'                  => $userId,
+                'driver_id'                  => $activeSub->driver_id,
+                'point_type'                 => $pointType,
+                'change_date'                => $parsedDate,
+                'is_single_day'              => true,
+                'new_address_id'             => $quote['address_id'],
+                'new_lat'                    => $quote['new_lat'],
+                'new_lng'                    => $quote['new_lng'],
+                'new_label'                  => $quote['new_label'],
+                'distance_km'                => $quote['distance_km'],
+                'fee_tier'                   => $quote['fee_tier'],
+                'fee_amount'                 => $fee['gross_fee'],
+                'commission_rate'            => $fee['commission_rate'],
+                'platform_commission_amount' => $fee['platform_commission'],
+                'driver_net_fee'             => $fee['driver_net_fee'],
+                'status'                     => LocationChangeRequest::STATUS_PENDING,
             ]);
 
             $changeRequest->loadMissing(['child', 'driver.user']);
@@ -167,15 +250,22 @@ class LocationChangeService
             try {
                 $driverUser = $changeRequest->driver?->user;
                 if ($driverUser) {
-                    $childName = $changeRequest->child?->full_name ?? 'الطفل';
+                    $childName  = $changeRequest->child?->full_name ?? 'الطفل';
                     $pointLabel = $pointType === LocationChangeRequest::POINT_TYPE_PICKUP ? 'الاستلام' : 'التسليم';
+                    $netFee     = $fee['driver_net_fee'];
                     $this->notifyUser(
                         $driverUser,
                         'طلب تغيير موقع 📍',
-                        "طلب ولي أمر الطفل ({$childName}) تغيير موقع {$pointLabel} إلى: " . ($newLabel ?? 'موقع جديد') . '. يرجى المراجعة والموافقة أو الرفض.',
+                        "طلب ولي أمر الطفل ({$childName}) تغيير موقع {$pointLabel} ليوم {$parsedDate} إلى: " . ($quote['new_label'] ?? 'موقع جديد')
+                            . " (المسافة: {$quote['distance_km']} كم — صافي الرسوم لك بعد خصم عمولة المنصة: {$netFee} د.ل). يرجى المراجعة والموافقة أو الرفض.",
                         'location_change_requested',
                         (string) $changeRequest->id,
-                        ['child_name' => $childName]
+                        [
+                            'child_name'     => $childName,
+                            'change_date'    => $parsedDate,
+                            'distance_km'    => $quote['distance_km'],
+                            'driver_net_fee' => $netFee,
+                        ]
                     );
                 }
             } catch (Throwable $e) {
@@ -184,6 +274,104 @@ class LocationChangeService
 
             return $changeRequest;
         });
+    }
+
+    /**
+     * يحدد إحداثيات الموقع الجديد إما من عنوان محفوظ لولي الأمر أو من إحداثيات مُرسلة.
+     */
+    private function resolveNewPoint(int $userId, ?int $parentId, ?int $addressId, ?float $lat, ?float $lng, ?string $label): array
+    {
+        if ($addressId) {
+            $parentIds = array_values(array_unique(array_filter([$userId, $parentId])));
+            $address   = Address::where('id', $addressId)->whereIn('parent_id', $parentIds)->first();
+            if (!$address) {
+                throw new Exception('العنوان المحدد غير موجود ضمن مواقعك المحفوظة.');
+            }
+
+            return [
+                'address_id' => $address->id,
+                'lat'        => (float) $address->lat,
+                'lng'        => (float) $address->lng,
+                'label'      => $address->label,
+            ];
+        }
+
+        if ($lat === null || $lng === null) {
+            throw new Exception('يجب تحديد عنوان محفوظ أو إحداثيات الموقع الجديد.');
+        }
+
+        return [
+            'address_id' => null,
+            'lat'        => $lat,
+            'lng'        => $lng,
+            'label'      => $label,
+        ];
+    }
+
+    /**
+     * يقسّم الرسم الإجمالي إلى عمولة منصة وصافي للسائق.
+     * الجمع مضمون بالدينار الواحد: gross = commission + net (بدون فروقات تقريب).
+     */
+    private function splitFee(float $grossFee): array
+    {
+        $grossFee   = round($grossFee, 2);
+        $rate       = PricingSetting::commissionRatePercent();
+        $commission = round(($grossFee * $rate) / 100, 2);
+        $net        = round($grossFee - $commission, 2);
+
+        return [
+            'gross_fee'           => $grossFee,
+            'commission_rate'     => round($rate, 2),
+            'platform_commission' => $commission,
+            'driver_net_fee'      => max(0, $net),
+            'currency'            => 'د.ل',
+        ];
+    }
+
+    /**
+     * ملخص الرحلة المختارة (الطفل/السائق/التوقيت) مع سعرها كما هو مسجّل في عقد الاشتراك.
+     */
+    private function buildTripSummary(ActiveSubscription $activeSub): array
+    {
+        $pivot = null;
+        $request = $activeSub->subscriptionRequest;
+        if ($request) {
+            $pivot = $request->children()->where('children.id', $activeSub->child_id)->first()?->pivot;
+        }
+
+        return [
+            'active_subscription_id' => $activeSub->id,
+            'child' => [
+                'id'   => $activeSub->child?->id,
+                'name' => $activeSub->child?->full_name,
+            ],
+            'driver' => [
+                'id'   => $activeSub->driver_id,
+                'name' => $activeSub->driver?->user?->full_name,
+            ],
+            'route' => [
+                'id'         => $activeSub->route_id,
+                'name'       => $activeSub->route?->route_name,
+                'type'       => $activeSub->route?->route_type,
+                'shift_slot' => $activeSub->route?->shift_slot,
+                'start_time' => $activeSub->route?->start_time,
+            ],
+            'pickup_time'  => $activeSub->pickup_time,
+            'dropoff_time' => $activeSub->dropoff_time,
+            'pricing' => [
+                'trip_price'                  => $pivot ? (float) $pivot->trip_price : null,
+                'price_per_child'             => $pivot ? (float) $pivot->price_per_child : null,
+                'total_amount_after_discount' => $pivot ? (float) $pivot->total_amount_after_discount : null,
+                'driver_net_price'            => $pivot ? (float) $pivot->driver_net_price : null,
+                'distance_km'                 => $pivot ? (float) $pivot->distance_km : null,
+                'working_days_count'          => $pivot ? (int) $pivot->working_days_count : null,
+                'trip_direction'              => $pivot?->trip_direction,
+                'timing'                      => $pivot?->timing,
+                'start_date'                  => $pivot?->start_date,
+                'end_date'                    => $pivot?->end_date,
+                'currency'                    => 'د.ل',
+            ],
+        ];
     }
 
     /**
@@ -215,33 +403,67 @@ class LocationChangeService
             }
 
             if ($approve) {
-                if ($changeRequest->point_type === LocationChangeRequest::POINT_TYPE_PICKUP) {
-                    $activeSub->update([
-                        'pickup_lat'   => $changeRequest->new_lat,
-                        'pickup_lng'   => $changeRequest->new_lng,
-                        'pickup_label' => $changeRequest->new_label,
-                    ]);
+                $isSingleDay = (bool) $changeRequest->is_single_day;
+                $changeDate  = $changeRequest->change_date ? \Carbon\Carbon::parse($changeRequest->change_date)->toDateString() : null;
 
-                    try {
-                        $this->routeStopSyncService->updateChildHomeStop(
-                            $activeSub->child_id,
-                            $activeSub->driver_id,
-                            $changeRequest->new_lat,
-                            $changeRequest->new_lng,
-                            $changeRequest->new_label
-                        );
-                    } catch (Throwable $e) {
-                        Log::warning("فشل مزامنة مسار محطة الاستلام بعد الموافقة على الطلب ID {$changeRequest->id}: " . $e->getMessage());
+                if ($isSingleDay && $changeDate) {
+                    // التغيير يخص رحلة واحدة فقط: نحصر التحديث في مسار هذا الاشتراك وفي
+                    // يوم التغيير المحدد، حتى لا يتأثر أي مسار آخر للسائق أو أي اشتراك
+                    // آخر لنفس الطفل (مثلاً رحلة الصباح مقابل رحلة العودة).
+                    $tripsQuery = \App\Models\Shared\Trip::where('driver_id', $activeSub->driver_id)
+                        ->whereDate('trip_date', $changeDate);
+
+                    if ($activeSub->route_id) {
+                        $tripsQuery->where('route_id', $activeSub->route_id);
+                    }
+
+                    $trips = $tripsQuery->get();
+
+                    $stopType = $changeRequest->point_type === LocationChangeRequest::POINT_TYPE_PICKUP
+                        ? \App\Models\Shared\TripStop::TYPE_HOME
+                        : \App\Models\Shared\TripStop::TYPE_SCHOOL;
+
+                    foreach ($trips as $trip) {
+                        $tripStop = \App\Models\Shared\TripStop::where('trip_id', $trip->id)
+                            ->where('child_id', $activeSub->child_id)
+                            ->where('stop_type', $stopType)
+                            ->first();
+
+                        if ($tripStop && $tripStop->status === \App\Models\Shared\TripStop::STATUS_PENDING) {
+                            $tripStop->update([
+                                'lat'   => $changeRequest->new_lat,
+                                'lng'   => $changeRequest->new_lng,
+                                'label' => $changeRequest->new_label,
+                            ]);
+                        }
                     }
                 } else {
-                    // نقطة التسليم مرتبطة عادة بمحطة مدرسة مشتركة بين عدة أطفال (route_stops بنوع school)،
-                    // لذا لا تُعدَّل هذه المحطة المشتركة هنا. يُحدَّث سجل active_subscriptions فقط كمصدر
-                    // الحقيقة لنقطة تسليم هذا الطفل تحديداً، ليُعتمد عليه عند أي تطوير لاحق لمحطات مخصصة لكل طفل.
-                    $activeSub->update([
-                        'dropoff_lat'   => $changeRequest->new_lat,
-                        'dropoff_lng'   => $changeRequest->new_lng,
-                        'dropoff_label' => $changeRequest->new_label,
-                    ]);
+                    // تغيير دائم على كامل الاشتراك والمسار المرجعي
+                    if ($changeRequest->point_type === LocationChangeRequest::POINT_TYPE_PICKUP) {
+                        $activeSub->update([
+                            'pickup_lat'   => $changeRequest->new_lat,
+                            'pickup_lng'   => $changeRequest->new_lng,
+                            'pickup_label' => $changeRequest->new_label,
+                        ]);
+
+                        try {
+                            $this->routeStopSyncService->updateChildHomeStop(
+                                $activeSub->child_id,
+                                $activeSub->driver_id,
+                                $changeRequest->new_lat,
+                                $changeRequest->new_lng,
+                                $changeRequest->new_label
+                            );
+                        } catch (Throwable $e) {
+                            Log::warning("فشل مزامنة مسار محطة الاستلام بعد الموافقة على الطلب ID {$changeRequest->id}: " . $e->getMessage());
+                        }
+                    } else {
+                        $activeSub->update([
+                            'dropoff_lat'   => $changeRequest->new_lat,
+                            'dropoff_lng'   => $changeRequest->new_lng,
+                            'dropoff_label' => $changeRequest->new_label,
+                        ]);
+                    }
                 }
 
                 $changeRequest->update([
@@ -261,21 +483,25 @@ class LocationChangeService
             try {
                 $parentUser = $changeRequest->parent;
                 if ($parentUser) {
-                    $childName = $changeRequest->child?->full_name ?? 'الطفل';
+                    $childName  = $changeRequest->child?->full_name ?? 'الطفل';
+                    $fee        = (float) ($changeRequest->fee_amount ?? PricingSetting::DEFAULT_LOCATION_CHANGE_FEE);
+                    $pointLabel = $changeRequest->point_type === LocationChangeRequest::POINT_TYPE_PICKUP ? 'استلام' : 'تسليم';
+                    $dayText    = $changeRequest->change_date ? " ليوم " . \Carbon\Carbon::parse($changeRequest->change_date)->toDateString() : '';
+
                     if ($approve) {
                         $this->notifyUser(
                             $parentUser,
                             'تمت الموافقة على تغيير الموقع 🟢',
-                            "وافق السائق على تغيير موقع " . ($changeRequest->point_type === LocationChangeRequest::POINT_TYPE_PICKUP ? 'استلام' : 'تسليم') . " الطفل ({$childName})، وتم تحديث المسار.",
+                            "وافق السائق على تغيير موقع {$pointLabel} الطفل ({$childName}){$dayText}، وتم تحديث مسار هذه الرحلة وفرض رسوم إضافية {$fee} د.ل ستُحسب مع الاشتراك.",
                             'location_change_approved',
                             (string) $changeRequest->id,
-                            ['child_name' => $childName]
+                            ['child_name' => $childName, 'fee' => $fee]
                         );
                     } else {
                         $this->notifyUser(
                             $parentUser,
                             'تم رفض طلب تغيير الموقع 🔴',
-                            "عذراً، رفض السائق طلب تغيير موقع الطفل ({$childName})." . ($rejectionReason ? " السبب: {$rejectionReason}" : ''),
+                            "عذراً، رفض السائق طلب تغيير موقع الطفل ({$childName}){$dayText}." . ($rejectionReason ? " السبب: {$rejectionReason}" : ''),
                             'location_change_rejected',
                             (string) $changeRequest->id,
                             ['child_name' => $childName]

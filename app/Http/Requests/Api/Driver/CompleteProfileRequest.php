@@ -158,12 +158,12 @@ class CompleteProfileRequest extends FormRequest
             'has_ac'          => 'required|boolean',
 
             // صور ومستندات السائق (تدعم الصور)
-            'doc_license'     => 'required|file|mimes:jpeg,png,jpg,webp,heic,heif|max:10240',
-            'doc_logbook'     => 'required|file|mimes:jpeg,png,jpg,webp,heic,heif|max:10240',
-            'doc_insurance'   => 'required|file|mimes:jpeg,png,jpg,webp,heic,heif|max:10240',
-            'doc_booklet_page'         => 'required|file|mimes:jpeg,png,jpg,webp,heic,heif|max:10240',
-            'doc_stamp'                => 'required|file|mimes:jpeg,png,jpg,webp,heic,heif|max:10240',
-            'doc_technical_inspection' => 'required|file|mimes:jpeg,png,jpg,webp,heic,heif|max:10240',
+            'doc_license'     => 'required|file|mimes:jpeg,png,jpg,webp,heic,heif,pdf|max:10240',
+            'doc_logbook'     => 'required|file|mimes:jpeg,png,jpg,webp,heic,heif,pdf|max:10240',
+            'doc_insurance'   => 'required|file|mimes:jpeg,png,jpg,webp,heic,heif,pdf|max:10240',
+            'doc_booklet_page'         => 'required|file|mimes:jpeg,png,jpg,webp,heic,heif,pdf|max:10240',
+            'doc_stamp'                => 'required|file|mimes:jpeg,png,jpg,webp,heic,heif,pdf|max:10240',
+            'doc_technical_inspection' => 'required|file|mimes:jpeg,png,jpg,webp,heic,heif,pdf|max:10240',
         ];
     }
 
@@ -198,15 +198,15 @@ class CompleteProfileRequest extends FormRequest
             'vehicle_image.max'         => 'حجم صورة المركبة يجب ألا يتجاوز 10 ميجابايت.',
             'doc_license.required'      => 'يرجى إرفاق صورة رخصة القيادة.',
             'doc_license.file'          => 'ملف رخصة القيادة يجب أن يكون ملفاً صالحاً.',
-            'doc_license.mimes'         => 'يُسمح فقط بالصور لرخصة القيادة.',
+            'doc_license.mimes'         => 'يُسمح بالصور أو ملف PDF لرخصة القيادة.',
             'doc_license.max'           => 'حجم ملف رخصة القيادة يجب ألا يتجاوز 10 ميجابايت.',
             'doc_logbook.required'      => 'يرجى إرفاق صورة كتيب المركبة.',
             'doc_logbook.file'          => 'ملف كتيب المركبة يجب أن يكون ملفاً صالحاً.',
-            'doc_logbook.mimes'         => 'يُسمح فقط بالصور لكتيب المركبة.',
+            'doc_logbook.mimes'         => 'يُسمح بالصور أو ملف PDF لكتيب المركبة.',
             'doc_logbook.max'           => 'حجم ملف كتيب المركبة يجب ألا يتجاوز 10 ميجابايت.',
             'doc_insurance.required'    => 'يرجى إرفاق صورة وثيقة التأمين.',
             'doc_insurance.file'        => 'ملف وثيقة التأمين يجب أن يكون ملفاً صالحاً.',
-            'doc_insurance.mimes'       => 'يُسمح فقط بالصور لوثيقة التأمين.',
+            'doc_insurance.mimes'       => 'يُسمح بالصور أو ملف PDF لوثيقة التأمين.',
             'doc_insurance.max'         => 'حجم ملف وثيقة التأمين يجب ألا يتجاوز 10 ميجابايت.',
 
             'stamp_expiry.required'                => 'تاريخ انتهاء الدمغة مطلوب.',
@@ -218,17 +218,17 @@ class CompleteProfileRequest extends FormRequest
 
             'doc_booklet_page.required' => 'يرجى إرفاق صورة بيانات الكتيب الشخصية.',
             'doc_booklet_page.file'     => 'ملف بيانات الكتيب يجب أن يكون ملفاً صالحاً.',
-            'doc_booklet_page.mimes'    => 'يُسمح فقط بالصور لصورة بيانات الكتيب.',
+            'doc_booklet_page.mimes'    => 'يُسمح بالصور أو ملف PDF لصورة بيانات الكتيب.',
             'doc_booklet_page.max'      => 'حجم ملف بيانات الكتيب يجب ألا يتجاوز 10 ميجابايت.',
 
             'doc_stamp.required'        => 'يرجى إرفاق صورة الدمغة.',
             'doc_stamp.file'            => 'ملف الدمغة يجب أن يكون ملفاً صالحاً.',
-            'doc_stamp.mimes'           => 'يُسمح فقط بالصور للدمغة.',
+            'doc_stamp.mimes'           => 'يُسمح بالصور أو ملف PDF للدمغة.',
             'doc_stamp.max'             => 'حجم ملف الدمغة يجب ألا يتجاوز 10 ميجابايت.',
 
             'doc_technical_inspection.required' => 'يرجى إرفاق صورة الفحص الفني.',
             'doc_technical_inspection.file'     => 'ملف الفحص الفني يجب أن يكون ملفاً صالحاً.',
-            'doc_technical_inspection.mimes'    => 'يُسمح فقط بالصور للفحص الفني.',
+            'doc_technical_inspection.mimes'    => 'يُسمح بالصور أو ملف PDF للفحص الفني.',
             'doc_technical_inspection.max'      => 'حجم ملف الفحص الفني يجب ألا يتجاوز 10 ميجابايت.',
         ];
     }

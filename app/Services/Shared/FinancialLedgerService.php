@@ -31,11 +31,20 @@ class FinancialLedgerService
     }
 
     // شروط ومحددات النظام المالي
-    public const COMMISSION_RATE = 0.12; // 12% عمولة المنصة
     public const FIXED_SERVICE_FEE = 100; // 1 دينار (100 قرش) رسوم خدمة ثابتة
     public const MAX_PARENT_BALANCE = 500000; // 5,000 دينار (500,000 قرش) الحد الأعلى لرصيد محفظة ولي الأمر
     public const MIN_WITHDRAWAL_AMOUNT = 5000; // 50 دينار (5,000 قرش) الحد الأدنى لسحب السائق
     public const ESCROW_HOLD_HOURS = 24; // 24 ساعة فترة السماح للنزاع والتحويل للرصيد المتاح
+
+    /**
+     * ⚠️ لا تُثبّت نسبة العمولة كثابت هنا. المصدر الوحيد هو جدول pricing_settings عبر
+     * PricingSetting::commissionRateFraction()، وإلا اختلفت العمولة بين هذه الخدمة
+     * وبقية النظام (كانت 12٪ هنا و8٪ في كل مكان آخر) ولم تتطابق التقارير أبداً.
+     */
+    protected function commissionRate(): float
+    {
+        return \App\Models\Shared\PricingSetting::commissionRateFraction();
+    }
 
     /**
      * 1️⃣ تسجيل حركة مالية غير قابلة للمسح في السجل المالي (Immutable Double-Entry Ledger)
@@ -197,7 +206,7 @@ class FinancialLedgerService
                 $vault = MasterEscrowVault::getVault();
 
                 $totalCents    = $hold->amount;
-                $commission    = (int) round($totalCents * self::COMMISSION_RATE);
+                $commission    = (int) round($totalCents * $this->commissionRate());
                 $netDriverPay  = $totalCents - $commission;
 
                 $vault->decrement('driver_pending_pool', $totalCents);
@@ -271,7 +280,7 @@ class FinancialLedgerService
                 }
             } elseif ($cancelledBy === 'no_show') { // عدم خروج الطفل عند وصول السائق
                 $parentRefundCents = 0; // خصم 100%
-                $platformFeeCents  = (int) round($amountCents * self::COMMISSION_RATE);
+                $platformFeeCents  = (int) round($amountCents * $this->commissionRate());
                 $driverPayCents    = $amountCents - $platformFeeCents;
             } elseif ($cancelledBy === 'driver') { // إلغاء من السائق في أي وقت
                 $parentRefundCents = $amountCents; // استرجاع 100% لولي الأمر
@@ -346,21 +355,33 @@ class FinancialLedgerService
             $driverAbsentCount = $trips->where('driver_attendance', false)->count();
             $holidaysCount     = $trips->where('status', 'holiday')->count();
 
+            // احتساب عدد مرات تغيير الموقع المعتمدة ورسومها
+            $activeSubIds = \App\Models\Shared\ActiveSubscription::where('subscription_request_id', $subscription->id)->pluck('id');
+            $approvedChanges = \App\Models\Shared\LocationChangeRequest::whereIn('active_subscription_id', $activeSubIds)
+                ->where('status', \App\Models\Shared\LocationChangeRequest::STATUS_APPROVED)
+                ->get();
+            $locationChangesCount = $approvedChanges->count();
+            $locationChangesFees  = (float) $approvedChanges->sum('fee_amount');
+
             $billableTrips = $completedCount + $parentAbsentCount;
-            $finalAmount   = round($billableTrips * $perTripCost, 2);
-            $refundAmount  = max(0, round($totalContractPrice - $finalAmount, 2));
+            $finalAmount   = round(($billableTrips * $perTripCost) + $locationChangesFees, 2);
+            $refundAmount  = max(0, round($totalContractPrice - round($billableTrips * $perTripCost, 2), 2));
+
+            \App\Models\Shared\LocationChangeRequest::whereIn('id', $approvedChanges->pluck('id'))->update(['is_settled' => true]);
 
             return [
-                'contract_number'       => "REQ-{$subscription->id}",
-                'total_contract_price'  => $totalContractPrice,
-                'planned_trips'         => $plannedTripsCount,
-                'per_trip_cost'         => round($perTripCost, 2),
-                'completed_trips'       => $completedCount,
-                'parent_absent_trips'   => $parentAbsentCount,
-                'driver_absent_trips'   => $driverAbsentCount,
-                'holidays_trips'        => $holidaysCount,
-                'final_settled_amount'  => $finalAmount,
-                'rollover_refund_credit'=> $refundAmount,
+                'contract_number'        => "REQ-{$subscription->id}",
+                'total_contract_price'   => $totalContractPrice,
+                'planned_trips'          => $plannedTripsCount,
+                'per_trip_cost'          => round($perTripCost, 2),
+                'completed_trips'        => $completedCount,
+                'parent_absent_trips'    => $parentAbsentCount,
+                'driver_absent_trips'    => $driverAbsentCount,
+                'holidays_trips'         => $holidaysCount,
+                'location_changes_count' => $locationChangesCount,
+                'location_changes_fees'  => $locationChangesFees,
+                'final_settled_amount'   => $finalAmount,
+                'rollover_refund_credit' => $refundAmount,
             ];
         });
     }
@@ -384,7 +405,15 @@ class FinancialLedgerService
                 ->where('status', 'completed')
                 ->count();
 
-            $executedCost = round($tripsCompleted * $perTripCost, 2);
+            // احتساب رسوم تغيير العنوان المعتمدة
+            $activeSubIds = \App\Models\Shared\ActiveSubscription::where('subscription_request_id', $subscription->id)->pluck('id');
+            $approvedChanges = \App\Models\Shared\LocationChangeRequest::whereIn('active_subscription_id', $activeSubIds)
+                ->where('status', \App\Models\Shared\LocationChangeRequest::STATUS_APPROVED)
+                ->get();
+            $locationChangesCount = $approvedChanges->count();
+            $locationChangesFees  = (float) $approvedChanges->sum('fee_amount');
+
+            $executedCost = round(($tripsCompleted * $perTripCost) + $locationChangesFees, 2);
             $remaining    = max(0, round($totalPrice - $executedCost, 2));
 
             $cancellationFee = 0;
@@ -395,17 +424,23 @@ class FinancialLedgerService
             $refundToParent = max(0, round($remaining - $cancellationFee, 2));
 
             if ($refundToParent > 0 && $subscription->parent) {
-                $subscription->parent->deposit($refundToParent * 100);
+                // (int) round(...) إلزامي: المحفظة تخزّن قروشاً صحيحة، وضرب float في 100
+                // ينتج قيماً مثل 9154.999... تُقتطع لقرش ناقص أو ترفضها المحفظة.
+                $subscription->parent->deposit((int) round($refundToParent * 100));
             }
+
+            \App\Models\Shared\LocationChangeRequest::whereIn('id', $approvedChanges->pluck('id'))->update(['is_settled' => true]);
 
             $subscription->update(['status' => 'cancelled']);
 
             return [
-                'contract_id'       => $subscription->id,
-                'executed_cost'     => $executedCost,
-                'remaining_balance' => $remaining,
-                'cancellation_fee'  => $cancellationFee,
-                'refunded_to_parent'=> $refundToParent,
+                'contract_id'            => $subscription->id,
+                'executed_cost'          => $executedCost,
+                'remaining_balance'      => $remaining,
+                'cancellation_fee'       => $cancellationFee,
+                'refunded_to_parent'     => $refundToParent,
+                'location_changes_count' => $locationChangesCount,
+                'location_changes_fees'  => $locationChangesFees,
             ];
         });
     }
@@ -462,7 +497,7 @@ class FinancialLedgerService
                 ]);
             } else {
                 $vault = MasterEscrowVault::getVault();
-                $commission   = (int) round($hold->amount * self::COMMISSION_RATE);
+                $commission   = (int) round($hold->amount * $this->commissionRate());
                 $netDriverPay = $hold->amount - $commission;
 
                 $vault->increment('platform_revenue_pool', $commission);
@@ -580,7 +615,7 @@ class FinancialLedgerService
         if ($cancelledBy === 'parent') {
             $parentRefundDinar = $tripPriceDinar;
         } elseif ($cancelledBy === 'no_show') {
-            $platformFeeDinar = round($tripPriceDinar * self::COMMISSION_RATE, 2);
+            $platformFeeDinar = round($tripPriceDinar * $this->commissionRate(), 2);
             $driverPayDinar = round($tripPriceDinar - $platformFeeDinar, 2);
         } elseif ($cancelledBy === 'driver') {
             $parentRefundDinar = $tripPriceDinar;

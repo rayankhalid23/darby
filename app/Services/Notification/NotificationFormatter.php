@@ -26,6 +26,14 @@ class NotificationFormatter
     public const TYPE_MANUAL_PICKUP_CONFIRMED   = 'manual_pickup_confirmed';
     public const TYPE_DRIVER_ABSENCE            = 'driver_absence';
 
+    // --- طوارئ وتوقف المركبة واستبدال السائقين ---
+    public const TYPE_EMERGENCY_SUBSTITUTE_REQUEST           = 'emergency_substitute_request';
+    public const TYPE_EMERGENCY_SUBSTITUTE_ACCEPTED_PARENT   = 'emergency_substitute_accepted_parent';
+    public const TYPE_EMERGENCY_SUBSTITUTE_ACCEPTED_ORIGINAL = 'emergency_substitute_accepted_original';
+    public const TYPE_EMERGENCY_BREAKDOWN_PARENT_PICKUP      = 'emergency_breakdown_parent_pickup';
+    public const TYPE_EMERGENCY_DRIVER_CALL_PARENTS         = 'emergency_driver_call_parents';
+    public const TYPE_EMERGENCY_REQUEST_CANCELLED_OTHER      = 'emergency_request_cancelled_other';
+
     // --- العقود والاشتراكات ---
     public const TYPE_CONTRACT_CREATED          = 'contract_created';
     public const TYPE_CONTRACT_SIGNED           = 'contract_signed';
@@ -78,16 +86,21 @@ class NotificationFormatter
     public const TYPE_DRIVER_DOC_EXPIRED        = 'driver_document_expired';
     public const TYPE_DRIVER_DOC_EXPIRED_ADMIN  = 'driver_document_expired_admin_alert';
 
-    // --- الشكاوى والذكاء الاصطناعي ---
-    public const TYPE_NEW_COMPLAINT_SUBMITTED   = 'new_complaint_submitted';
-    public const TYPE_COMPLAINT_RESOLVED        = 'complaint_resolved';
-    public const TYPE_DRIVER_AI_NEEDS_REVIEW    = 'driver_ai_needs_review';
-    public const TYPE_DRIVER_AI_SUSPENDED       = 'driver_ai_suspended';
-    public const TYPE_DRIVER_SUSPENDED          = 'driver_suspended';
-    public const TYPE_DRIVER_AI_ALERT           = 'driver_ai_alert';
-    public const TYPE_DRIVER_REVIEW_FLAGGED     = 'driver_review_flagged';
-    public const TYPE_AI_SERVICE_OUTAGE         = 'ai_service_outage';
-    public const TYPE_GENERAL_ANNOUNCEMENT      = 'general_announcement';
+    // --- الشكاوى والذكاء الاصطناعي والدعم الفني ---
+    public const TYPE_NEW_COMPLAINT_SUBMITTED          = 'new_complaint_submitted';
+    public const TYPE_COMPLAINT_RESOLVED               = 'complaint_resolved';
+    public const TYPE_DRIVER_AI_NEEDS_REVIEW           = 'driver_ai_needs_review';
+    public const TYPE_DRIVER_AI_SUSPENDED              = 'driver_ai_suspended';
+    public const TYPE_DRIVER_SUSPENDED                 = 'driver_suspended';
+    public const TYPE_DRIVER_AI_ALERT                  = 'driver_ai_alert';
+    public const TYPE_DRIVER_REVIEW_FLAGGED            = 'driver_review_flagged';
+    public const TYPE_AI_SERVICE_OUTAGE                = 'ai_service_outage';
+    public const TYPE_GENERAL_ANNOUNCEMENT             = 'general_announcement';
+    public const TYPE_SUPPORT_TICKET_CREATED           = 'support_ticket_created';
+    public const TYPE_SUPPORT_TICKET_REPLY             = 'support_ticket_reply';
+    public const TYPE_SUPPORT_TICKET_STATUS_CHANGED    = 'support_ticket_status_changed';
+    public const TYPE_SUPPORT_TICKET_RESOLVED          = 'support_ticket_resolved';
+    public const TYPE_SUPPORT_TICKET_CLOSED            = 'support_ticket_closed';
 
     /**
      * صياغة كائن الإشعار الموحد مع نصوص واضحة ودقيقة في كل الحالات
@@ -254,6 +267,66 @@ class NotificationFormatter
                 $message = $customMessage ?? 'السائق المسؤول عن رحلتك غائب اليوم، سيتم إعلامك بالبديل إن وجد.';
                 $screen = 'TRIP_DETAILS';
                 $entityType = 'driver_absence';
+                $action = 'open';
+                break;
+
+            // =========================================================
+            // 🚨 حالات الطوارئ وتعطل الحافلة واستبدال السائقين
+            // =========================================================
+            case self::TYPE_EMERGENCY_SUBSTITUTE_REQUEST:
+                $title = $customTitle ?? '🚨 طلب طارئ: نقل أطفال من حافلة متوقفة';
+                $message = $customMessage ?? 'يوجد حافلة متوقفة بالقرب منك وبها أطفال بحاجة لنقل فوري. هل تود قبول المهمة؟';
+                $screen = 'EMERGENCY_DISPATCH';
+                $entityType = 'trip_breakdown_dispatch';
+                $entityId = $data['dispatch_id'] ?? $entityId ?? '';
+                $action = 'open_emergency_dispatch';
+                break;
+
+            case self::TYPE_EMERGENCY_SUBSTITUTE_ACCEPTED_PARENT:
+                $title = $customTitle ?? '🔄 تم تعيين سائق بديل للرحلة';
+                $subDriverName = $data['substitute_driver_name'] ?? $driverName;
+                $message = $customMessage ?? "توقفت الحافلة بسبب عطل طارئ، وتم تكليف السائق البديل ({$subDriverName}) لاستكمال نقل الأبناء بسلام.";
+                $screen = 'TRIP_LIVE';
+                $entityType = 'trip';
+                $entityId = $tripId;
+                $action = 'open_trip';
+                break;
+
+            case self::TYPE_EMERGENCY_SUBSTITUTE_ACCEPTED_ORIGINAL:
+                $title = $customTitle ?? '✅ تم قبول مهمة الإنقاذ';
+                $subDriverName = $data['substitute_driver_name'] ?? $driverName;
+                $message = $customMessage ?? "وافق السائق البديل ({$subDriverName}) على استلام ونقل الطلاب العالقين.";
+                $screen = 'TRIP_DETAILS';
+                $entityType = 'trip';
+                $entityId = $tripId;
+                $action = 'open_trip';
+                break;
+
+            case self::TYPE_EMERGENCY_BREAKDOWN_PARENT_PICKUP:
+                $title = $customTitle ?? '⚠️ توقف الرحلة: يرجى استلام طفلك';
+                $locationText = $data['location_text'] ?? 'الموقع الحالي للأبناء';
+                $message = $customMessage ?? "تعطلت الحافلة وتعذر توفير سائق بديل حالياً. الأبناء في أمان، يرجى التوجه لموقعهم لاستلامهم: ({$locationText}).";
+                $screen = 'TRIP_LIVE';
+                $entityType = 'trip';
+                $entityId = $tripId;
+                $action = 'open_trip';
+                break;
+
+            case self::TYPE_EMERGENCY_DRIVER_CALL_PARENTS:
+                $title = $customTitle ?? '📞 تعذر توفير بديل - تواصل مع أولياء الأمور';
+                $message = $customMessage ?? 'تعذر العثور على سائق بديل متاح حالياً. يرجى التواصل مباشرة مع أولياء الأمور وإرشادهم لموقع الحافلة.';
+                $screen = 'TRIP_DETAILS';
+                $entityType = 'trip';
+                $entityId = $tripId;
+                $action = 'open_trip';
+                break;
+
+            case self::TYPE_EMERGENCY_REQUEST_CANCELLED_OTHER:
+                $title = $customTitle ?? 'ℹ️ تم قبول المهمة الطارئة من سائق آخر';
+                $message = $customMessage ?? 'شكراً لك، تم قبول مهمة نقل الأطفال العالقين من قِبل سائق آخر أسرع استجابة.';
+                $screen = 'TRIP_DETAILS';
+                $entityType = 'trip_breakdown_dispatch';
+                $entityId = $data['dispatch_id'] ?? $entityId ?? '';
                 $action = 'open';
                 break;
 
@@ -656,6 +729,49 @@ class NotificationFormatter
                 $screen = 'HOME';
                 $entityType = 'announcement';
                 $action = 'open';
+                break;
+
+            // =========================================================
+            // 🎫 8. الدعم الفني وتذاكر المشاكل
+            // =========================================================
+            case self::TYPE_SUPPORT_TICKET_CREATED:
+                $title = $customTitle ?? 'تذكرة دعم فني جديدة 🎫';
+                $message = $customMessage ?? 'تم فتح تذكرة دعم فني جديدة وتحتاج إلى مراجعة.';
+                $screen = 'SUPPORT_TICKETS';
+                $entityType = 'support_ticket';
+                $action = 'open_support_ticket';
+                break;
+
+            case self::TYPE_SUPPORT_TICKET_REPLY:
+                $title = $customTitle ?? 'رد جديد على تذكرتك 💬';
+                $message = $customMessage ?? 'تمت إضافة رد جديد على تذكرة الدعم الفني، يرجى المراجعة.';
+                $screen = 'SUPPORT_TICKETS';
+                $entityType = 'support_ticket';
+                $action = 'open_support_ticket';
+                break;
+
+            case self::TYPE_SUPPORT_TICKET_STATUS_CHANGED:
+                $title = $customTitle ?? 'تحديث حالة التذكرة 🔄';
+                $message = $customMessage ?? 'تم تحديث حالة تذكرة الدعم الفني الخاصة بك.';
+                $screen = 'SUPPORT_TICKETS';
+                $entityType = 'support_ticket';
+                $action = 'open_support_ticket';
+                break;
+
+            case self::TYPE_SUPPORT_TICKET_RESOLVED:
+                $title = $customTitle ?? 'تم حل التذكرة بنجاح ✅';
+                $message = $customMessage ?? 'قام المشرف بحل الإشكالية وتوثيق تفاصيل الحل.';
+                $screen = 'SUPPORT_TICKETS';
+                $entityType = 'support_ticket';
+                $action = 'open_support_ticket';
+                break;
+
+            case self::TYPE_SUPPORT_TICKET_CLOSED:
+                $title = $customTitle ?? 'تم إغلاق تذكرتك 🔒';
+                $message = $customMessage ?? 'تم إغلاق وتوثيق تذكرة الدعم الفني من قبل الإدارة.';
+                $screen = 'SUPPORT_TICKETS';
+                $entityType = 'support_ticket';
+                $action = 'open_support_ticket';
                 break;
         }
 

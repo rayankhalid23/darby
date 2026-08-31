@@ -319,7 +319,14 @@ class SingleDaySubscriptionFinancialLifecycleTest extends TestCase
         $this->actingAs($this->driverUser)
             ->putJson("/api/driver/requests/{$request->id}/status", ['status' => 'accepted']);
 
-        // إنشاء وبدء رحلة للسائق
+        // 📌 الخزينة المركزية صف مفرد دائم في قاعدة البيانات وقد يحمل أرصدة سابقة حقيقية،
+        // لذا نقيس الفرق قبل/بعد بدل القيم المطلقة حتى لا يرتبط الاختبار بحالة القاعدة.
+        $revenueBefore = (int) MasterEscrowVault::getVault()->platform_revenue_pool;
+        $escrowBefore  = (int) MasterEscrowVault::getVault()->parents_escrow_pool;
+        $driverBalanceBefore = (int) $this->driver->fresh()->balance;
+
+        // إنشاء وبدء رحلة للسائق مرتبطة فعلياً بالطفل صاحب الاشتراك
+        // (محطة الرحلة هي ما يربط التسوية المالية بالاشتراك الصحيح دون غيره)
         $trip = Trip::create([
             'driver_id'    => $this->driver->id,
             'trip_type'    => 'Morning',
@@ -329,24 +336,40 @@ class SingleDaySubscriptionFinancialLifecycleTest extends TestCase
             'scheduled_at' => now(),
         ]);
 
+        \App\Models\Shared\TripStop::create([
+            'trip_id'        => $trip->id,
+            'child_id'       => $this->child->id,
+            'stop_type'      => 'home',
+            'lat'            => 32.88,
+            'lng'            => 13.19,
+            'label'          => 'منزل الطفل',
+            'sequence_order' => 1,
+            'status'         => \App\Models\Shared\TripStop::STATUS_DELIVERED_HOME,
+        ]);
+
         // إنهاء الرحلة عبر TripLifecycleService
         $tripService = app(TripLifecycleService::class);
         $result = $tripService->completeTrip($trip->id);
 
         $this->assertEquals('success', $result['status']);
 
-        // التحقق من وصول صافي المبلغ (23.00 د.ل = 2300 قرش) إلى محفظة السائق
-        $this->assertEquals(2300, $this->driver->fresh()->balance);
+        // 💡 التسوية صارت تناسبية لكل رحلة: الاشتراك (25 د.ل) يغطي اتجاهين (trip_direction = both)
+        // أي رحلتين، وقد نُفّذت رحلة واحدة فقط — فتُصرف حصتها وحدها (12.50 د.ل) وتبقى حصة
+        // رحلة العودة محجوزة في الأمانات. سابقاً كان يُصرف المبلغ كاملاً على أول رحلة.
+        $this->assertEquals($driverBalanceBefore + 1150, (int) $this->driver->fresh()->balance);
 
-        // التحقق من إيداع عمولة المنصة (2.00 د.ل = 200 قرش) في مسبح إيرادات المنصة
+        // عمولة المنصة تناسبية أيضاً: 8% من 12.50 د.ل = 1.00 د.ل = 100 قرش
         $vault = MasterEscrowVault::getVault();
-        $this->assertEquals(200, $vault->platform_revenue_pool);
-        $this->assertEquals(0, $vault->parents_escrow_pool);
+        $this->assertEquals($revenueBefore + 100, (int) $vault->platform_revenue_pool);
+        // يخرج من مسبح الأمانات حصة رحلة واحدة فقط (1250 قرش) لا المبلغ كاملاً
+        $this->assertEquals($escrowBefore - 1250, (int) $vault->parents_escrow_pool);
 
-        // التحقق من تحديث حالة سجل مالية المنصة إلى completed
+        // الأمانة تبقى مفتوحة (held) حتى تُنفَّذ كل الرحلات المدفوعة
         $this->assertDatabaseHas('platform_finances', [
             'subscription_request_id' => $request->id,
-            'status'                  => 'completed',
+            'status'                  => 'held',
+            'settled_trips_count'     => 1,
+            'expected_trips_count'    => 2,
         ]);
     }
 
@@ -450,6 +473,11 @@ class SingleDaySubscriptionFinancialLifecycleTest extends TestCase
 
         $activeSub = ActiveSubscription::where('subscription_request_id', $request->id)->first();
 
+        // 📌 قياس الفرق بدل القيم المطلقة: الخزينة صف مفرد دائم قد يحمل أرصدة سابقة حقيقية.
+        $revenueBefore = (int) MasterEscrowVault::getVault()->platform_revenue_pool;
+        $escrowBefore  = (int) MasterEscrowVault::getVault()->parents_escrow_pool;
+        $driverBalanceBefore = (int) $this->driver->fresh()->balance;
+
         // بدء رحلة فعلية جارية اليوم للسائق (تحرك السائق بالفعل)
         Trip::create([
             'driver_id'    => $this->driver->id,
@@ -476,12 +504,13 @@ class SingleDaySubscriptionFinancialLifecycleTest extends TestCase
         $this->assertEquals(4700, $this->parent->fresh()->balance);
 
         // رصيد السائق يحتوي على صافي تعويض الوقود (276 قرش = 2.76 د.ل)
-        $this->assertEquals(276, $this->driver->fresh()->balance);
+        $this->assertEquals($driverBalanceBefore + 276, (int) $this->driver->fresh()->balance);
 
         // مسبح إيرادات المنصة يحتوي على عمولة التعويض (24 قرش = 0.24 د.ل)
         $vault = MasterEscrowVault::getVault();
-        $this->assertEquals(24, $vault->platform_revenue_pool);
-        $this->assertEquals(0, $vault->parents_escrow_pool);
+        $this->assertEquals($revenueBefore + 24, (int) $vault->platform_revenue_pool);
+        // مبلغ الاشتراك المحجوز (2500 قرش) يخرج بالكامل من الأمانات عند الإلغاء
+        $this->assertEquals($escrowBefore - 2500, (int) $vault->parents_escrow_pool);
 
         // سجل مالية المنصة يوثق التعويض والاسترجاع الجزئي
         $this->assertDatabaseHas('platform_finances', [

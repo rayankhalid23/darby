@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -89,7 +90,11 @@ class AdminProfileTest extends TestCase
         $response->assertJsonPath('data.user_id', $admin->user_id);
         $response->assertJsonPath('data.email', $admin->user->email);
         $response->assertJsonPath('data.role_id', $roleId);
-        $response->assertJsonPath('data.role_name', $roleId === 1 ? 'مدير النظام' : 'مشرف');
+        // الاسم المعروض للدور يُقرأ من جدول roles لا يُثبَّت نصياً:
+        // الأسماء تُعدَّل من لوحة الإدارة وتختلف بين البيئات، وتثبيتها هنا يجعل
+        // الاختبار يفشل لسبب لا علاقة له بصحة الـ API.
+        $expectedRoleName = DB::table('roles')->where('id', $roleId)->value('display_name');
+        $response->assertJsonPath('data.role_name', $expectedRoleName);
         $response->assertJsonPath('data.email_change_pending', false);
     }
 
@@ -435,7 +440,7 @@ class AdminProfileTest extends TestCase
         // عرض
         $this->actingAs($admin->user)->getJson('/api/admin/profile')
             ->assertStatus(200)
-            ->assertJsonPath('data.role_name', 'مدير النظام');
+            ->assertJsonPath('data.role_name', DB::table('roles')->where('id', 1)->value('display_name'));
 
         // تعديل الاسم والصورة معاً
         $this->actingAs($admin->user)->post('/api/admin/profile', [

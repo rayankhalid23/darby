@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use Tests\TestCase;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use App\Models\User;
 use App\Models\Parent\ParentModel;
 use App\Models\Parent\Address;
@@ -17,6 +18,12 @@ use Carbon\Carbon;
 
 class ComprehensiveUserLifecycleTest extends TestCase
 {
+    // ⚠️ كان هذا الملف بلا أي سمة عزل قاعدة بيانات: كل مستخدم/طفل/عنوان ينشئه
+    // كان يُكتب فعلياً ويبقى دائماً في قاعدة البيانات المتصلة (school_transport_db)
+    // بدل أن يُلغى تلقائياً بعد كل اختبار. هذا ما تسبب في تراكم ~190 مستخدماً
+    // وهمياً بعناوين @darby.test داخل قاعدة بياناتك الحقيقية.
+    use DatabaseTransactions;
+
     protected User $adminUser;
     protected User $parentUser;
     protected ParentModel $parentProfile;
@@ -73,7 +80,7 @@ class ComprehensiveUserLifecycleTest extends TestCase
         // إنشاء عنوان لولي الأمر
         $this->testAddress = Address::create([
             'parent_id' => $this->parentUser->id,
-            'label' => 'المنزل الرئيسي ' . uniqid(),
+            'label' => 'المنزل الرئيسي ' . rand(100000, 999999),
             'lat' => 32.8910,
             'lng' => 13.1760,
         ]);
@@ -244,7 +251,7 @@ class ComprehensiveUserLifecycleTest extends TestCase
         $resInvalidCoord->assertStatus(422);
 
         // 2. إضافة عنوان بنجاح
-        $uniqueLabel = 'منزل العائلة ' . uniqid();
+        $uniqueLabel = 'منزل العائلة ' . rand(100000, 999999);
         $resCreate = $this->actingAs($this->parentUser, 'sanctum')->postJson('/api/parent/addresses', [
             'label' => $uniqueLabel,
             'lat' => 32.8950,
@@ -272,7 +279,7 @@ class ComprehensiveUserLifecycleTest extends TestCase
             ->assertJsonStructure(['success', 'message', 'data']);
 
         // 5. تعديل العنوان
-        $updatedLabel = 'فيلا العائلة المعدلة ' . uniqid();
+        $updatedLabel = 'فيلا العائلة المعدلة ' . rand(100000, 999999);
         $resUpdate = $this->actingAs($this->parentUser, 'sanctum')->postJson("/api/parent/addresses/{$newAddressId}", [
             'label' => $updatedLabel,
             'lat' => 32.8960,

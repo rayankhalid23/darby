@@ -3,55 +3,47 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\Trip\TripTrackingService;
 use Illuminate\Http\Request;
-use Kreait\Firebase\Factory;
+use Illuminate\Http\JsonResponse;
 
 class DriverTrackingController extends Controller
 {
-    public function updateLocation(Request $request)
+    protected TripTrackingService $trackingService;
+
+    public function __construct(TripTrackingService $trackingService)
     {
-        // التحقق من البيانات الواردة من السائق
+        $this->trackingService = $trackingService;
+    }
+
+    /**
+     * نقطة نهاية قديمة (Legacy) لتحديث الموقع — أُبقيت للتوافق مع نسخ سابقة من التطبيق،
+     * لكنها الآن تفوّض المنطق بالكامل لنفس TripTrackingService المستخدم في المسار الرئيسي
+     * (POST /driver/trips/{tripId}/location) بدلاً من الكتابة المباشرة لـ Firestore فقط،
+     * حتى يتطابق السلوك بين المسارين: نفس تسجيل نقاط trip_tracking، نفس منطق الـ dedup،
+     * ونفس الاستشعار التلقائي لبدء الرحلة (Auto-Start).
+     */
+    public function updateLocation(Request $request): JsonResponse
+    {
         $request->validate([
-            'trip_id' => 'required',
-            'driver_lat' => 'required|numeric',
-            'driver_lng' => 'required|numeric',
-            'heading' => 'nullable|numeric',
-            'is_online' => 'required|boolean',
+            'trip_id'     => 'required|integer|exists:trips,id',
+            'driver_lat'  => 'required|numeric|between:-90,90',
+            'driver_lng'  => 'required|numeric|between:-180,180',
+            'heading'     => 'nullable|numeric|between:0,360',
+            'is_online'   => 'nullable|boolean',
         ]);
 
-        try {
-            // تهيئة اتصال الفايربيز باستخدام الملف الآمن الذي حددناه مسبقاً
-            $factory = (new Factory)->withServiceAccount(config('firebase.credentials.file'));
-            $firestore = $factory->createFirestore();
-            $database = $firestore->database();
+        $this->trackingService->updateDriverLocation(
+            (int) $request->trip_id,
+            (float) $request->driver_lat,
+            (float) $request->driver_lng,
+            0.0,
+            $request->heading !== null ? (float) $request->heading : null
+        );
 
-            $tripId = $request->trip_id;
-
-            // البيانات التي سيتم تحديثها لحظياً
-            $trackingData = [
-                'trip_id' => (int) $tripId,
-                'driver_lat' => (float) $request->driver_lat,
-                'driver_lng' => (float) $request->driver_lng,
-                'heading' => (float) ($request->heading ?? 0.0),
-                'is_online' => (bool) $request->is_online,
-                'last_updated' => now()->toIso8601String(),
-            ];
-
-            // كتابة أو تحديث البيانات داخل Collection اسمها trips_tracking والـ Document هو رقم الرحلة
-            $database->collection('trips_tracking')->document((string) $tripId)->set($trackingData);
-
-            return response()->json([
-                'status' => true,
-                'message' => 'Location updated successfully in Firebase',
-                'data' => $trackingData
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Failed to update location',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        return response()->json([
+            'status'  => true,
+            'message' => 'Location updated successfully',
+        ], 200);
     }
 }

@@ -83,7 +83,7 @@ class AdminAuditLogService
                 $admin = Admin::where('user_id', $user->id)->first();
                 $adminId   = $admin?->id ?? $user->id;
                 $adminName = $adminName ?? $user->full_name ?? ('مستخدم #' . $user->id);
-                $adminRole = $adminRole ?? (((int) ($user->role_id ?? 0) === 1) ? 'مدير النظام' : 'مشرف');
+                $adminRole = $adminRole ?? self::resolveRoleLabel($user->role_id ?? null);
             } else {
                 $adminId   = 1;
                 $adminName = $adminName ?? 'النظام الآلي';
@@ -93,14 +93,14 @@ class AdminAuditLogService
             if (!$adminName) {
                 $admin = Admin::with('user')->find($adminId);
                 $adminName = $admin?->user?->full_name ?? ('مشرف #' . $adminId);
-                $adminRole = $adminRole ?? (((int) ($admin?->user?->role_id ?? 0) === 1) ? 'مدير النظام' : 'مشرف');
+                $adminRole = $adminRole ?? self::resolveRoleLabel($admin?->user?->role_id ?? null);
             }
         }
 
         return AdminAuditLog::create([
             'admin_id'    => $adminId,
             'admin_name'  => $adminName,
-            'admin_role'  => $adminRole,
+            'admin_role'  => $adminRole ?? 'مشرف',
             'action'      => $action,
             'entity_type' => $entityType,
             'entity_id'   => $entityId,
@@ -110,6 +110,30 @@ class AdminAuditLogService
             'changes'     => $changes,
             'created_at'  => now(),
         ]);
+    }
+
+    /**
+     * الاسم المعروض للدور كما هو مسجّل في جدول roles.
+     *
+     * ⚠️ كان السجل يكتب 'مشرف' لكل الأدوار الإشرافية الستة (العمليات، الأسطول،
+     * الدعم، المالية، الجغرافيا...)، فيفقد سجل التدقيق أهم معلومة فيه: أي مشرف
+     * نفّذ الإجراء بالضبط. الآن يُسجَّل الاسم الحقيقي للدور.
+     */
+    protected static function resolveRoleLabel(?int $roleId): string
+    {
+        if ($roleId === null) {
+            return 'مشرف';
+        }
+
+        $displayName = \Illuminate\Support\Facades\DB::table('roles')
+            ->where('id', $roleId)
+            ->value('display_name');
+
+        if ($displayName) {
+            return (string) $displayName;
+        }
+
+        return ((int) $roleId === 1) ? 'مدير النظام' : 'مشرف';
     }
 
     /**

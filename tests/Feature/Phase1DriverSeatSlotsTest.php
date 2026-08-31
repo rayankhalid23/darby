@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\QueryException;
 use Tests\TestCase;
@@ -12,7 +12,10 @@ use App\Models\Driver\DriverSeatSlot;
 
 class Phase1DriverSeatSlotsTest extends TestCase
 {
-    use RefreshDatabase;
+    // ⚠️ لا تستخدم RefreshDatabase هنا: بيئة الاختبار متصلة بنفس قاعدة بيانات التطوير/الإنتاج
+    // (راجع phpunit.xml) وRefreshDatabase تنفّذ migrate:fresh فتمسح كل الجداول والبيانات.
+    // DatabaseTransactions تتراجع عن تغييرات كل اختبار بأمان دون حذف أي بيانات قائمة.
+    use DatabaseTransactions;
 
     public function test_driver_shifts_columns_exist(): void
     {

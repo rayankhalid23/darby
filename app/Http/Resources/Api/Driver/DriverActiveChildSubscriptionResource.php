@@ -28,11 +28,41 @@ class DriverActiveChildSubscriptionResource extends JsonResource
             $afterDiscount = max(0, $rawChildPrice - $discountAmt);
         }
 
+        // النسبة من pricing_settings لا مثبتة بـ 0.92، وإلا لم يتغير صافي السائق
+        // المعروض عند تعديل الإدارة لنسبة العمولة.
+        $netFactor = 1 - \App\Models\Shared\PricingSetting::commissionRateFraction();
+
         $driverNetPrice = (float) ($pivot?->driver_net_price ?? 0);
         if ($driverNetPrice <= 0 && $afterDiscount > 0) {
-            $driverNetPrice = round($afterDiscount * 0.92, 2);
+            $driverNetPrice = round($afterDiscount * $netFactor, 2);
         }
         $platformFee = max(0, round($afterDiscount - $driverNetPrice, 2));
+
+        // إجماليات على مستوى الطلب كله (كل الأطفال) — الحقول المسماة *_total
+        // كانت تعرض قيم طفل واحد فقط، فيظهر للسائق نصف مستحقه في طلب بطفلين.
+        $allChildren = $subscriptionRequest->relationLoaded('children')
+            ? $subscriptionRequest->children
+            : collect();
+
+        if ($allChildren->isNotEmpty()) {
+            $requestRawTotal      = (float) $allChildren->sum(fn($c) => (float) ($c->pivot->price_per_child ?? $c->pivot->trip_price ?? 0));
+            $requestDiscountTotal = (float) $allChildren->sum(fn($c) => (float) ($c->pivot->discount_amount ?? 0));
+            $requestAfterDiscount = (float) $allChildren->sum(fn($c) => (float) ($c->pivot->total_amount_after_discount ?? 0));
+            $requestNetTotal      = (float) $allChildren->sum(function ($c) use ($netFactor) {
+                $net = (float) ($c->pivot->driver_net_price ?? 0);
+                if ($net <= 0) {
+                    $net = round(((float) ($c->pivot->total_amount_after_discount ?? 0)) * $netFactor, 2);
+                }
+                return $net;
+            });
+            $requestChildrenCount = $allChildren->count();
+        } else {
+            $requestRawTotal      = $rawChildPrice;
+            $requestDiscountTotal = $discountAmt;
+            $requestAfterDiscount = $afterDiscount;
+            $requestNetTotal      = $driverNetPrice;
+            $requestChildrenCount = 1;
+        }
 
         $activeSubId = $this->resource['activeSubId'] ?? optional($subscriptionRequest->activeSubscriptions?->firstWhere('child_id', $child?->id))->id ?? $subscriptionRequest->id;
 
@@ -113,13 +143,15 @@ class DriverActiveChildSubscriptionResource extends JsonResource
             'status_text'             => $resolvedState['status_text'],
             'is_active'               => $resolvedState['is_active'],
             'notes'                   => $subscriptionRequest->notes ?? $subscriptionRequest->general_notes ?? null,
+            // 📌 تمييز مقصود: total_amount يخص الطفل المعروض في هذه الشاشة تحديداً،
+            // بينما الحقول المسماة *_total تخص طلب الاشتراك كاملاً بكل أطفاله.
             'total_amount'            => round($driverNetPrice, 2),
-            'driver_net_total'        => round($driverNetPrice, 2),
-            'original_total'          => round($rawChildPrice, 2),
-            'discount_total'          => round($discountAmt, 2),
-            'total_after_discount'    => round($afterDiscount, 2),
+            'driver_net_total'        => round($requestNetTotal, 2),
+            'original_total'          => round($requestRawTotal, 2),
+            'discount_total'          => round($requestDiscountTotal, 2),
+            'total_after_discount'    => round($requestAfterDiscount, 2),
             'currency'                => 'د.ل',
-            'children_count'          => 1,
+            'children_count'          => $requestChildrenCount,
 
             'parent' => [
                 'id'       => optional($subscriptionRequest->parent)->id,
@@ -131,6 +163,10 @@ class DriverActiveChildSubscriptionResource extends JsonResource
 
             // بيانات الطفل الفردي
             'child'                => $childDetails,
+
+            // مصفوفة children تُبقي الشكل موحّداً مع بقية نقاط الاشتراكات في الـ API،
+            // فيتعامل الفرونت مع اشتراك طفل واحد أو عدة أطفال بنفس الكود.
+            'children'             => [$childDetails],
 
             'created_at'           => $subscriptionRequest->created_at?->toIso8601String(),
             'created_at_formatted' => $subscriptionRequest->created_at?->format('Y-m-d H:i'),

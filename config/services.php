@@ -47,6 +47,7 @@ return [
     'driver_ai' => [
         'url'     => env('DRIVER_AI_URL', 'http://127.0.0.1:8000/api/v1/predict'),
         'timeout' => env('DRIVER_AI_TIMEOUT', 3),
+        'api_key' => env('DRIVER_AI_API_KEY'),
     ],
 
 ];

@@ -67,13 +67,15 @@ class SchoolService
         }
     
         // 2. التحقق من عدم تكرار الإحداثيات في حال تم إرسالها أو تغييرها
-        if (array_key_exists('latitude', $data) || array_key_exists('longitude', $data)) {
-            $lat = $data['latitude'] ?? $school->latitude;
-            $lng = $data['longitude'] ?? $school->longitude;
-    
+        // أعمدة الإحداثيات في جدول schools اسمها lat/lng لا latitude/longitude،
+        // فكان هذا الفحص لا يعمل إطلاقاً (والاستعلام به يسقط بخطأ عمود غير موجود).
+        if (array_key_exists('lat', $data) || array_key_exists('lng', $data)) {
+            $lat = $data['lat'] ?? $school->lat;
+            $lng = $data['lng'] ?? $school->lng;
+
             if ($lat !== null && $lng !== null) {
-                $coordsExist = School::where('latitude', $lat)
-                    ->where('longitude', $lng)
+                $coordsExist = School::where('lat', $lat)
+                    ->where('lng', $lng)
                     ->where('id', '!=', $school->id)
                     ->exists();
     

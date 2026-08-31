@@ -13,7 +13,13 @@ class UpdateSchoolRequest extends FormRequest
 
     public function rules(): array
     {
-        $schoolId = $this->route('school') ? $this->route('school')->id : null;
+        // الكنترولر لا يستخدم Route Model Binding (البارامتر $school بلا type-hint)،
+        // لذا route('school') يعود نصاً لا كائناً؛ قراءة ->id منه مباشرة كانت
+        // ترمي "Attempt to read property on string" وتُرجع 500 بدل التحقق الطبيعي.
+        $routeSchool = $this->route('school');
+        $schoolId = $routeSchool instanceof \App\Models\Parent\School
+            ? $routeSchool->id
+            : $routeSchool;
     
         return [
             'name'     => 'sometimes|required|string|max:150|unique:schools,name,' . $schoolId,

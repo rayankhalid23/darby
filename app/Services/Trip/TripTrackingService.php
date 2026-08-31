@@ -58,8 +58,16 @@ class TripTrackingService
                 'speed' => $speed,
                 'recorded_at' => Carbon::now()
             ]);
-            Cache::put($cacheKey, ['lat' => $lat, 'lng' => $lng], now()->addHours(6));
         }
+
+        // نحدّث موقع الكاش + الطابع الزمني في كل نبضة (وليس فقط عند تغيّر الموقع بأكثر من 15م)
+        // حتى يعكس is_online عند ولي الأمر آخر وقت اتصال فعلي من السائق، لا آخر نقطة محفوظة بقاعدة البيانات
+        Cache::put($cacheKey, [
+            'lat'        => $lat,
+            'lng'        => $lng,
+            'timestamp'  => now()->timestamp,
+            'updated_at' => now()->toIso8601String(),
+        ], now()->addHours(6));
 
         // 3. مزامنة الموقع اللحظي مع Firestore (trips_tracking/{tripId}) ليقرأها تطبيق ولي الأمر مباشرة
         $this->pushLocationToFirestore($tripId, $lat, $lng, $heading, $trip->status === 'in_progress');

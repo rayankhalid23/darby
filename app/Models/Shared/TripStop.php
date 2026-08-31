@@ -41,6 +41,7 @@ class TripStop extends Model
         'label',
         'sequence_order',
         'status',
+        'reason',
         'eta_minutes',
         'eta',
     ];

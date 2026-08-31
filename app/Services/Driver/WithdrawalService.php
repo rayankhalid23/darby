@@ -52,15 +52,23 @@ class WithdrawalService
             ]);
         }
 
-        $driver->wallet->withdraw($amount * 100);
+        // (int) round(...) إلزامي: المحفظة تتعامل بالقروش كأعداد صحيحة، و 91.55 * 100
+        // تساوي 9154.999... في الفاصلة العائمة فتُقتطع لقرش ناقص أو تُرفض من المحفظة.
+        $amountCents = (int) round($amount * 100);
 
-        return WithdrawalRequest::create([
-            'driver_id'                => $driverId,
-            'amount'                   => $amount,
-            'wallet_balance_at_request' => $balance,
-            'status'                   => 'pending',
-            'payment_method_details'   => $paymentDetails,
-        ]);
+        // السحب وإنشاء الطلب في معاملة واحدة: بدونها قد تُخصم المحفظة
+        // ثم يفشل إنشاء سجل الطلب فيضيع المبلغ بلا أثر يمكن تتبّعه أو استرجاعه.
+        return DB::transaction(function () use ($driver, $driverId, $amount, $amountCents, $balance, $paymentDetails) {
+            $driver->wallet->withdraw($amountCents);
+
+            return WithdrawalRequest::create([
+                'driver_id'                => $driverId,
+                'amount'                   => $amount,
+                'wallet_balance_at_request' => $balance,
+                'status'                   => 'pending',
+                'payment_method_details'   => $paymentDetails,
+            ]);
+        });
     }
 
     public function approveWithdrawal(int $withdrawalId, int $adminId): WithdrawalRequest
@@ -104,7 +112,8 @@ class WithdrawalService
             ->firstOrFail();
 
         $driver = Driver::findOrFail($request->driver_id);
-        $driver->deposit($request->amount * 100);
+        // amount مُعرَّف كـ decimal:2 فيصل كنص؛ التحويل الصريح يمنع أي انحراف بالقروش عند الإرجاع.
+        $driver->deposit((int) round((float) $request->amount * 100));
 
         $request->update([
             'status'           => 'rejected',

@@ -110,6 +110,10 @@ class DriverSubscriptionPricingDiscountLogicTest extends TestCase
             'is_trusted' => 1,
         ]);
 
+        // قيمة الاشتراك تُحجز في الأمانات لكل الأنواع (وليس اليومي فقط)،
+        // لذا يجب أن تكون محفظة ولي الأمر ممولة قبل إرسال الطلب أو قبوله.
+        $this->parent->deposit(500000);
+
         // مدرسة
         $this->school = School::create([
             'name'    => 'مدرسة المستقبل',
@@ -389,7 +393,9 @@ class DriverSubscriptionPricingDiscountLogicTest extends TestCase
         $response = $this->actingAs($this->driverUser)->getJson("/api/driver/active-subscriptions/{$activeSub->id}");
         $response->assertStatus(200);
         $response->assertJsonPath('status', true);
-        $response->assertJsonPath('data.total_amount', 331.2);
+        // total_amount يخص الطفل المعروض في هذه الشاشة (165.6 = 180 - 8٪)،
+        // أما driver_net_total فهو صافي الطلب كاملاً بطفليه (331.2).
+        $response->assertJsonPath('data.total_amount', 165.6);
         $response->assertJsonPath('data.driver_net_total', 331.2);
         $response->assertJsonPath('data.original_total', 400);
         $response->assertJsonPath('data.discount_total', 40);

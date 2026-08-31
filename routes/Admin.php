@@ -58,6 +58,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\Admin\AdminNotificationController::class, 'index']);
         Route::get('/unread-count', [\App\Http\Controllers\Api\Admin\AdminNotificationController::class, 'unreadCount']);
         Route::patch('/{id}/read', [\App\Http\Controllers\Api\Admin\AdminNotificationController::class, 'markAsRead']);
+        Route::post('/{id}/read', [\App\Http\Controllers\Api\Admin\AdminNotificationController::class, 'markAsRead']);
         Route::post('/read-all', [\App\Http\Controllers\Api\Admin\AdminNotificationController::class, 'markAllAsRead']);
         Route::delete('/{id}', [\App\Http\Controllers\Api\Admin\AdminNotificationController::class, 'destroy']);
     });
@@ -129,6 +130,27 @@ Route::middleware(['auth:sanctum'])->group(function () {
     });
 
     // =========================================================================
+    // 🛑 مسارات إدارة ومراجعة طلبات غياب السائقين
+    // =========================================================================
+    Route::prefix('driver-absences')->group(function () {
+        Route::get('/', [AdminDriverController::class, 'getAbsenceRequests'])
+            ->name('api.admin.driver-absences.index');
+        Route::get('/{id}', [AdminDriverController::class, 'showAbsenceRequest'])
+            ->name('api.admin.driver-absences.show');
+        Route::post('/{id}/approve', [AdminDriverController::class, 'approveAbsenceRequest'])
+            ->name('api.admin.driver-absences.approve');
+        Route::post('/{id}/reject', [AdminDriverController::class, 'rejectAbsenceRequest'])
+            ->name('api.admin.driver-absences.reject');
+    });
+
+    Route::prefix('drivers/absences')->group(function () {
+        Route::get('/', [AdminDriverController::class, 'getAbsenceRequests']);
+        Route::get('/{id}', [AdminDriverController::class, 'showAbsenceRequest']);
+        Route::post('/{id}/approve', [AdminDriverController::class, 'approveAbsenceRequest']);
+        Route::post('/{id}/reject', [AdminDriverController::class, 'rejectAbsenceRequest']);
+    });
+
+    // =========================================================================
     // 📜 مسارات سجل تدقيق إجراءات المشرفين والمدراء
     // =========================================================================
     Route::get('/admin-audit-logs', [AdminAuditLogController::class, 'index'])
@@ -143,7 +165,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/', [SchoolController::class, 'index']);
         Route::post('/', [SchoolController::class, 'store']);
         Route::get('/{id}', [SchoolController::class, 'show']);
-        Route::match(['put', 'patch'], '/{id}', [SchoolController::class, 'update']);
+        // POST مطلوب: هو الفعل الموثّق في FRONTEND_ADMIN_API_GUIDE للتعديل، وهو ما
+        // ترسله لوحة الإدارة فعلياً (اتساقاً مع بقية مسارات التعديل في المشروع).
+        // PUT/PATCH مُبقاة للتوافق مع أي عميل قديم.
+        Route::match(['post', 'put', 'patch'], '/{id}', [SchoolController::class, 'update']);
         Route::delete('/{id}', [SchoolController::class, 'destroy']);
     });
 
@@ -210,6 +235,21 @@ Route::middleware(['auth:sanctum'])->group(function () {
             ->middleware('permission:complaints.view');
         Route::post('/{id}/review', [\App\Http\Controllers\Api\Admin\ComplaintController::class, 'review'])
             ->middleware('permission:complaints.resolve');
+    });
+
+    // --- 🎫 مسارات الدعم الفني وتذاكر المشاكل للأدمن ---
+    Route::prefix('support-tickets')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Admin\SupportTicketController::class, 'index']);
+        Route::get('/operations', [\App\Http\Controllers\Api\Admin\SupportTicketController::class, 'operationsIndex']);
+        Route::get('/financial', [\App\Http\Controllers\Api\Admin\SupportTicketController::class, 'financialIndex']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\Admin\SupportTicketController::class, 'show']);
+        Route::post('/{id}/reply', [\App\Http\Controllers\Api\Admin\SupportTicketController::class, 'reply']);
+        Route::post('/{id}/status', [\App\Http\Controllers\Api\Admin\SupportTicketController::class, 'updateStatus']);
+        Route::post('/{id}/resolve', [\App\Http\Controllers\Api\Admin\SupportTicketController::class, 'updateStatus']);
+        Route::post('/{id}/apply-penalty', [\App\Http\Controllers\Api\Admin\SupportTicketController::class, 'applyPenalty']);
+        Route::post('/{id}/transfer-to-financial', [\App\Http\Controllers\Api\Admin\SupportTicketController::class, 'transferToFinancial']);
+        Route::post('/{id}/execute-settlement', [\App\Http\Controllers\Api\Admin\SupportTicketController::class, 'executeSettlement']);
+        Route::post('/{id}/close', [\App\Http\Controllers\Api\Admin\SupportTicketController::class, 'close']);
     });
 
     // --- 💰 مسارات الإدارة المالية الشاملة للأدمن ---

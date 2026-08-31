@@ -47,7 +47,7 @@ class TripStopService
             'expires_at' => $expiresAt
         ];
     }
-    public function skipChild(int $tripId, int $childId): void
+    public function skipChild(int $tripId, int $childId, ?string $reason = null): void
     {
         $trip = Trip::findOrFail($tripId);
 
@@ -61,7 +61,7 @@ class TripStopService
             throw new Exception('أمن النظام: لم يتم العثور على اشتراك فعال لهذا الطفل مع هذا السائق.');
         }
 
-        DB::transaction(function () use ($trip, $childId, $subscription) {
+        DB::transaction(function () use ($trip, $childId, $subscription, $reason) {
             // 2. التحقق مما إذا كان الطفل قد صعد الحافلة بالفعل في هذه الرحلة منعاً للتضارب
             $alreadyPickedUp = TripEvent::where('trip_id', $trip->id)
                 ->where('child_id', $childId)
@@ -86,8 +86,17 @@ class TripStopService
                     'location_lng'    => $subscription->pickup_lng ?? 0,
                     'scanned_at'      => Carbon::now(),
                     'trip_cost'       => 0, // تخطي المحطة وتأخر الطفل يعني تكلفة صفرية للرحلة
+                    'reason'          => $reason,
                 ]
             );
+
+            \App\Models\Shared\TripStop::where('trip_id', $trip->id)
+                ->where('child_id', $childId)
+                ->where('stop_type', 'home')
+                ->update([
+                    'status' => \App\Models\Shared\TripStop::STATUS_SKIPPED_UNRESPONSIVE,
+                    'reason' => $reason,
+                ]);
         });
 
         // 4. تصفير وتنظيف كاش الانتظار فوراً

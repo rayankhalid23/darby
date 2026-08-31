@@ -39,7 +39,6 @@ class TripTracking extends Model
      */
     public function trip(): BelongsTo
     {
-        // استخدام المسار الكامل للتأكد من عدم حدوث تداخل Namespaces
-        return $this->belongsTo(\App\Models\Trip::class, 'trip_id'); 
+        return $this->belongsTo(\App\Models\Shared\Trip::class, 'trip_id');
     }
 }

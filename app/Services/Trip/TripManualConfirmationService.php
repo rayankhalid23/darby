@@ -60,7 +60,9 @@ class TripManualConfirmationService
     }
 
     /**
-     * الرحلات السابقة التي لم تُنفَّذ/تُغلق بشكل صحيح (تاريخها فات وحالتها ليست مكتملة أو ملغاة).
+     * الرحلات السابقة التي لم تُنفَّذ/تُغلق بشكل صحيح (تاريخها فات وحالتها ليست مكتملة).
+     * ملاحظة: لا توجد حالياً حالة "cancelled" فعلية ضمن enum جدول trips (pending/in_progress/
+     * completed/suspended_breakdown فقط)، لذا استُبعدت من الفلتر لتفادي الإيحاء بميزة غير موجودة.
      */
     public function getIncompleteTrips(int $driverUserId)
     {
@@ -71,7 +73,7 @@ class TripManualConfirmationService
 
         return Trip::where('driver_id', $driver->id)
             ->where('trip_date', '<', now()->toDateString())
-            ->whereNotIn('status', ['completed', 'cancelled'])
+            ->where('status', '!=', 'completed')
             ->with('route:id,route_name')
             ->orderByDesc('trip_date')
             ->get()

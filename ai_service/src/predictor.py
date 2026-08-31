@@ -116,10 +116,17 @@ class Predictor:
         return cleaned
 
     def _scores(self, cleaned_texts: list[str]) -> list[dict]:
-        """درجات احتمالية تقريبية مشتقة من decision_function الخاصة بـ LinearSVC."""
-        margins = self.pipeline.decision_function(cleaned_texts)
+        """درجات احتمالية معايرة مستخرجة من النموذج."""
         classes = list(self.pipeline.classes_)
+        if hasattr(self.pipeline, "predict_proba"):
+            probs_matrix = self.pipeline.predict_proba(cleaned_texts)
+            results = []
+            for row in probs_matrix:
+                results.append(dict(zip(classes, [float(v) for v in row])))
+            return results
 
+        # Fallback للموديلات غير المعايرة
+        margins = self.pipeline.decision_function(cleaned_texts)
         results = []
         for row in margins:
             row = list(row) if hasattr(row, "__iter__") else [-float(row), float(row)]

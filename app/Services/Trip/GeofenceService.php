@@ -25,12 +25,18 @@ class GeofenceViolationException extends Exception
 /**
  * يفرض قيود الـ GPS على التأكيد اليدوي (بدون QR) فقط:
  * ≤100م للمنازل، ≤200م للمدارس — لمنع التأكيد الوهمي عن بُعد.
- * التأكيد عبر QR يتجاوز هذا الفحص بالكامل (سرعة مقابل ثقة الكود).
+ * التأكيد عبر QR يستخدم نطاقاً أوسع (QR_MAX_RADIUS_METERS) بدل تجاوز الفحص كلياً.
  */
 class GeofenceService
 {
     public const HOME_RADIUS_METERS   = 100;
     public const SCHOOL_RADIUS_METERS = 200;
+
+    /**
+     * نطاق أوسع للتأكيد عبر مسح QR: يمنح السائق مرونة حقيقية في الموقع
+     * دون أن يسمح بتأكيد صعود طفل من مدينة أخرى بمجرد امتلاك الكود.
+     */
+    public const QR_MAX_RADIUS_METERS = 1000;
 
     public function isWithinRadius(float $lat1, float $lng1, float $lat2, float $lng2, float $maxMeters): bool
     {
@@ -43,11 +49,25 @@ class GeofenceService
      */
     public function assertWithinRadius(float $driverLat, float $driverLng, TripStop $stop): void
     {
-        $maxMeters = $stop->stop_type === TripStop::TYPE_SCHOOL
+        $this->assertWithinCoordinates(
+            $driverLat,
+            $driverLng,
+            (float) $stop->lat,
+            (float) $stop->lng,
+            $stop->stop_type ?? TripStop::TYPE_HOME
+        );
+    }
+
+    /**
+     * @throws GeofenceViolationException إذا كان موقع السائق خارج النطاق المسموح للإحداثيات المحددة
+     */
+    public function assertWithinCoordinates(float $driverLat, float $driverLng, float $targetLat, float $targetLng, string $stopType = TripStop::TYPE_HOME): void
+    {
+        $maxMeters = $stopType === TripStop::TYPE_SCHOOL
             ? self::SCHOOL_RADIUS_METERS
             : self::HOME_RADIUS_METERS;
 
-        $distanceMeters = GeoEstimator::haversineKm($driverLat, $driverLng, (float) $stop->lat, (float) $stop->lng) * 1000;
+        $distanceMeters = GeoEstimator::haversineKm($driverLat, $driverLng, $targetLat, $targetLng) * 1000;
 
         if ($distanceMeters > $maxMeters) {
             throw new GeofenceViolationException(

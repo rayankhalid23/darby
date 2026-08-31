@@ -99,6 +99,10 @@ class NotificationTriggersTest extends TestCase
             'is_trusted' => 1,
         ]);
 
+        // قيمة الاشتراك تُفحص وتُحجز لكل الأنواع (وليس اليومي فقط)،
+        // لذا يجب أن تكون محفظة ولي الأمر ممولة قبل إرسال الطلب.
+        $this->parent->deposit(500000);
+
         $this->school = School::create([
             'name'    => 'مدرسة اختبار الإشعارات',
             'address' => 'شارع الاختبار',

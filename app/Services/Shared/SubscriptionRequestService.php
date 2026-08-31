@@ -13,6 +13,8 @@ use App\Models\User;
 use Illuminate\Database\QueryException;
 
 use App\Models\Shared\PricingSetting;
+use App\Models\Driver\DriverAbsence;
+use App\Models\Parent\Child;
 use Throwable;
 
 use Carbon\Carbon;
@@ -32,6 +34,11 @@ class SubscriptionRequestService
     }
     public function createRequest(array $data, $user): SubscriptionRequest
     {
+        // التحقق من عدم وجود تعارض مع اشتراكات نشطة سارية للأطفال ما لم يكن السائق غائباً
+        if (isset($data['children']) && is_array($data['children'])) {
+            $this->validateChildActiveSubscriptionConflicts($data['children']);
+        }
+
         $subscriptionRequest = DB::transaction(function () use ($data, $user) {
             $parentId = null;
 
@@ -83,13 +90,16 @@ class SubscriptionRequestService
 
                 // إجمالي سعر الطفل قبل التخفيض وسعر الرحلة
                 $childRawPrice = (float) ($child['price_per_child'] ?? $child['trip_price'] ?? 0);
-                $tripPrice     = (float) ($child['trip_price'] ?? $childRawPrice);
+                $rawTripPrice  = (float) ($child['trip_price'] ?? $childRawPrice);
 
                 // حساب قيمة التخفيض للطفل
                 $childDiscount = round(($childRawPrice * $discountPercent) / 100, 2);
                 
                 // السعر بعد التخفيض (أو السعر الأصلي كاملاً إن لم يكن هناك تخفيض)
                 $childTotalAfterDiscount = max(0, round($childRawPrice - $childDiscount, 2));
+
+                // سعر الرحلة الواحدة بعد التخفيض (حفظ سعر الرحلة بعد تطبيق الخصم)
+                $tripPriceAfterDiscount = max(0, round($rawTripPrice * (1 - ($discountPercent / 100)), 2));
 
                 // حساب عمولة المنصة وصافي أرباح السائق للطفل الواحد
                 $platformCommission = round(($childTotalAfterDiscount * $commissionRate) / 100, 2);
@@ -107,7 +117,7 @@ class SubscriptionRequestService
                     'end_date'                    => $child['end_date'] ?? $child['start_date'],
                     'working_days_count'          => $workingDays,
                     'distance_km'                 => $child['distance_km'] ?? 0,
-                    'trip_price'                  => $tripPrice,
+                    'trip_price'                  => $tripPriceAfterDiscount,
                     'price_per_child'             => $childRawPrice,
                     'discount_amount'             => $childDiscount,
                     'total_amount_after_discount' => $childTotalAfterDiscount,
@@ -117,9 +127,11 @@ class SubscriptionRequestService
                 ];
             }
 
+            // فحص الرصيد لكل أنواع الاشتراكات (لا اليومي فقط) ليتطابق مع الحجز عند القبول.
+            // ⚠️ بدون ذلك يستطيع ولي الأمر إرسال طلب شهري لا يملك قيمته، فيفشل الحجز لاحقاً
+            // في وجه السائق لحظة القبول برسالة لا علاقة له بها.
             $parentModel = ParentModel::with('wallet')->find($parentId);
-            $hasSingleDay = collect($data['children'])->contains('subscription_type', 'single_day');
-            if ($hasSingleDay) {
+            if ($totalOrderAmountAfterDiscount > 0) {
                 $this->validateAndDeductWalletBalance($parentModel, $totalOrderAmountAfterDiscount);
             }
 
@@ -185,6 +197,120 @@ class SubscriptionRequestService
         }
 
         return $workingDays;
+    }
+
+    /**
+     * التحقق من عدم وجود تعارض بين أيام الطلب الجديد وأي اشتراك نشط للأطفال،
+     * مع استثناء الأيام التي سجل فيها سائق الاشتراك النشط غيابه.
+     *
+     * @param array $childrenData
+     * @throws Exception
+     */
+    public function validateChildActiveSubscriptionConflicts(array $childrenData): void
+    {
+        foreach ($childrenData as $childItem) {
+            $childId = (int) ($childItem['child_id'] ?? 0);
+            if (!$childId) {
+                continue;
+            }
+
+            $reqStartDateStr = $childItem['start_date'] ?? null;
+            $reqEndDateStr   = $childItem['end_date'] ?? $reqStartDateStr;
+
+            if (!$reqStartDateStr) {
+                continue;
+            }
+
+            $reqStart = Carbon::parse($reqStartDateStr)->startOfDay();
+            $reqEnd   = Carbon::parse($reqEndDateStr)->startOfDay();
+
+            if ($reqStart->gt($reqEnd)) {
+                continue;
+            }
+
+            // تجميع كافة الأيام المطلوبة لهذا الطفل
+            $requestedDaysOfWeek = isset($childItem['days_of_week']) && is_array($childItem['days_of_week']) && count($childItem['days_of_week']) > 0
+                ? array_map('strtolower', $childItem['days_of_week'])
+                : null;
+
+            $requestedDates = [];
+            $cur = $reqStart->copy();
+            while ($cur->lte($reqEnd)) {
+                $dayName = strtolower($cur->englishDayOfWeek);
+                if ($requestedDaysOfWeek !== null) {
+                    if (in_array($dayName, $requestedDaysOfWeek)) {
+                        $requestedDates[] = $cur->toDateString();
+                    }
+                } else {
+                    if (!$cur->isFriday() && !$cur->isSaturday()) {
+                        $requestedDates[] = $cur->toDateString();
+                    } elseif ($reqStart->equalTo($reqEnd)) {
+                        $requestedDates[] = $cur->toDateString();
+                    }
+                }
+                $cur->addDay();
+            }
+
+            if (empty($requestedDates)) {
+                $requestedDates[] = $reqStart->toDateString();
+            }
+
+            // البحث عن أي اشتراكات نشطة سارية لهذا الطفل
+            $activeSubs = ActiveSubscription::where('child_id', $childId)
+                ->where('status', 'active')
+                ->with(['subscriptionRequest.children', 'driver.user', 'child'])
+                ->get();
+
+            foreach ($activeSubs as $activeSub) {
+                $subReq = $activeSub->subscriptionRequest;
+                if (!$subReq || in_array($subReq->status, [SubscriptionRequest::STATUS_CANCELLED, SubscriptionRequest::STATUS_REJECTED, 'completed'])) {
+                    continue;
+                }
+
+                $childPivot = $subReq->children?->firstWhere('id', $childId)?->pivot;
+                $activeStartDateStr = $childPivot?->start_date ?? $subReq->start_date;
+                $activeEndDateStr   = $childPivot?->end_date ?? $subReq->end_date ?? $activeStartDateStr;
+
+                if (!$activeStartDateStr) {
+                    continue;
+                }
+
+                $actStart = Carbon::parse($activeStartDateStr)->startOfDay();
+                $actEnd   = Carbon::parse($activeEndDateStr)->startOfDay();
+
+                // التحقق من وجود تداخل بين الأيام المطلوبة وفترة الاشتراك النشط
+                $conflictingDates = [];
+                $driverId = $activeSub->driver_id;
+
+                foreach ($requestedDates as $reqDateStr) {
+                    $reqDate = Carbon::parse($reqDateStr)->startOfDay();
+                    if ($reqDate->betweenIncluded($actStart, $actEnd)) {
+                        // اليوم يقع ضمن فترة الاشتراك النشط — نفحص هل السائق مسجل غياباً في هذا اليوم
+                        $isAbsent = DriverAbsence::where('driver_id', $driverId)
+                            ->whereDate('absence_date', $reqDateStr)
+                            ->exists();
+
+                        if (!$isAbsent) {
+                            $conflictingDates[] = $reqDateStr;
+                        }
+                    }
+                }
+
+                if (!empty($conflictingDates)) {
+                    $childName = $activeSub->child?->full_name 
+                        ?? Child::find($childId)?->full_name 
+                        ?? "الطفل (#{$childId})";
+                    $driverName = $activeSub->driver?->user?->full_name 
+                        ?? "السائق (#{$driverId})";
+                    $datesFormatted = implode(', ', array_unique($conflictingDates));
+
+                    throw new Exception(
+                        "لا يمكن إرسال طلب الاشتراك: الطفل [{$childName}] لديه اشتراك نشط بالفعل مع السائق [{$driverName}] خلال الأيام ({$datesFormatted})، والسائق غير مسجل كغائب في هذه الأيام. يُسمح بطلب اشتراك جديد فقط في الأيام التي يُسجل فيها السائق غيابه.",
+                        422
+                    );
+                }
+            }
+        }
     }
 
     
@@ -366,6 +492,19 @@ class SubscriptionRequestService
 
     private function handleAcceptance(SubscriptionRequest $req, ?ParentModel $parent): SubscriptionRequest
     {
+        // 0. إعادة التحقق من عدم تعارض أيام هذا الطلب مع أي اشتراك نشط أصبح موجوداً
+        //    لنفس الطفل بعد إنشاء هذا الطلب (مثال: طلب آخر تم قبوله للطفل نفسه في نفس
+        //    الفترة أثناء انتظار هذا الطلب). الفحص عند الإنشاء فقط لا يمنع هذا السباق.
+        $this->validateChildActiveSubscriptionConflicts(
+            $req->children->map(function ($child) {
+                return [
+                    'child_id'   => $child->id,
+                    'start_date' => $child->pivot->start_date,
+                    'end_date'   => $child->pivot->end_date,
+                ];
+            })->all()
+        );
+
         // 1. التحقق من وجود وحالة مركبة السائق وسعتها قبل أي تعديل
         $vehicle = \App\Models\Driver\Vehicle::where('driver_id', $req->driver_id)
             ->where('status', 'Active')
@@ -481,13 +620,11 @@ class SubscriptionRequestService
         // 6. تفعيل اشتراكات الأطفال لجدول active_subscriptions وتفريغ المقاعد
         $this->createActiveSubscriptions($req, $route);
 
-        // 6.2 حجز مبلغ الاشتراك اليومي في الأمانات إن وُجد
-        $hasSingleDay = $req->children->contains(function ($child) {
-            return ($child->pivot->subscription_type ?? '') === 'single_day';
-        }) || $req->subscription_type === 'single_day';
-
-        if ($hasSingleDay && (float) $req->total_amount_after_discount > 0) {
-            $this->holdSingleDayFundsOnAcceptance($req, $parent);
+        // 6.2 حجز مبلغ الاشتراك في الأمانات — لكل أنواع الاشتراكات وليس اليومي فقط.
+        // ⚠️ سابقاً كان الحجز محصوراً بـ single_day، فكانت الاشتراكات الشهرية (multi_day)
+        // بلا أي حركة مالية إطلاقاً: لا يُخصم من ولي الأمر ولا يُصرف للسائق مهما نفّذ من رحلات.
+        if ((float) $req->total_amount_after_discount > 0) {
+            $this->holdSubscriptionFundsOnAcceptance($req, $parent);
         }
 
         // 6.5 مزامنة المسار الرئيسي (Master Route) لكل فترة/اتجاه مطلوبة (route_stops)
@@ -563,9 +700,9 @@ class SubscriptionRequestService
     }
 
     /**
-     * حجز مبلغ الاشتراك اليومي ونقله للأمانات عند قبول السائق للطلب
+     * حجز مبلغ الاشتراك ونقله للأمانات عند قبول السائق للطلب (كل أنواع الاشتراكات).
      */
-    protected function holdSingleDayFundsOnAcceptance(SubscriptionRequest $req, ?ParentModel $parent): void
+    protected function holdSubscriptionFundsOnAcceptance(SubscriptionRequest $req, ?ParentModel $parent): void
     {
         if (!$parent) {
             $parent = ParentModel::find($req->parent_id) ?? ParentModel::where('user_id', $req->parent_id)->first();
@@ -602,6 +739,9 @@ class SubscriptionRequestService
             'platform_commission_rate'   => $commissionRate,
             'platform_commission_amount' => $commissionAmount,
             'driver_net_amount'          => $driverNetAmount,
+            'expected_trips_count'       => $this->resolveExpectedTripsCount($req),
+            'settled_trips_count'        => 0,
+            'settled_amount'             => 0,
             'status'                     => \App\Models\Shared\PlatformFinance::STATUS_HELD,
             'held_at'                    => now(),
         ]);
@@ -626,12 +766,50 @@ class SubscriptionRequestService
     }
 
     /**
+     * عدد الرحلات التي يغطيها الاشتراك = أيام العمل × عدد الرحلات في اليوم.
+     * يُستخدم لتوزيع الأمانة تناسبياً على الرحلات بدل صرفها كاملة على أول رحلة.
+     */
+    protected function resolveExpectedTripsCount(SubscriptionRequest $req): int
+    {
+        $total = 0;
+
+        foreach ($req->children as $child) {
+            $pivot        = $child->pivot;
+            $workingDays  = max(1, (int) ($pivot->working_days_count ?? 1));
+            $direction    = strtolower((string) ($pivot->trip_direction ?? 'both'));
+            $tripsPerDay  = in_array($direction, ['one_way_morning', 'one_way_evening', 'go', 'return'], true) ? 1 : 2;
+
+            $total = max($total, $workingDays * $tripsPerDay);
+        }
+
+        return max(1, $total);
+    }
+
+    /**
      * معالجة استرجاع المبالغ المحجوزة عند إلغاء الاشتراك وفق سياسة التعويض بعد تحرك السائق
+     *
+     * ⚠️ العملية بأكملها داخل معاملة واحدة إلزامياً: هي تخصم من مسبح الأمانات ثم تودع
+     * في محفظة ولي الأمر ومحفظة السائق وتحدّث السجل المالي. أي فشل في المنتصف بدون
+     * معاملة كان يعني خروج المال من الخزينة دون وصوله لأحد.
+     * (اثنان من مستدعيي هذه الدالة — الإلغاء التلقائي من الكرون وإلغاء ولي الأمر —
+     * لم يكونا يوفران أي معاملة.) معاملات Laravel المتداخلة آمنة عبر savepoints.
      */
     public function refundHeldFundsOnCancellation(int $requestId, string $cancelledBy, ?int $driverId = null): ?array
     {
+        return DB::transaction(function () use ($requestId, $cancelledBy, $driverId) {
+            return $this->performRefundHeldFundsOnCancellation($requestId, $cancelledBy, $driverId);
+        });
+    }
+
+    /**
+     * جسم عملية الاسترجاع — يُستدعى دائماً من داخل معاملة عبر الدالة العامة أعلاه.
+     */
+    protected function performRefundHeldFundsOnCancellation(int $requestId, string $cancelledBy, ?int $driverId = null): ?array
+    {
+        // القفل يمنع تنفيذ استرجاعين متزامنين لنفس الاشتراك (نقرة مزدوجة أو إعادة إرسال)
         $finance = \App\Models\Shared\PlatformFinance::where('subscription_request_id', $requestId)
             ->where('status', \App\Models\Shared\PlatformFinance::STATUS_HELD)
+            ->lockForUpdate()
             ->first();
 
         if (!$finance) {
@@ -657,9 +835,18 @@ class SubscriptionRequestService
         $totalDinar = (float) $finance->total_amount;
         $totalCents = (int) round($totalDinar * 100);
 
+        // احتساب رسوم طلبات تغيير الموقع المعتمدة غير المسواة
+        $activeSubIds = ActiveSubscription::where('subscription_request_id', $requestId)->pluck('id');
+        $approvedChanges = \App\Models\Shared\LocationChangeRequest::whereIn('active_subscription_id', $activeSubIds)
+            ->where('status', \App\Models\Shared\LocationChangeRequest::STATUS_APPROVED)
+            ->where('is_settled', false)
+            ->get();
+        $totalChangesFee = (float) $approvedChanges->sum('fee_amount');
+
         // إذا تحرك السائق الفعلي وكان الإلغاء من ولي الأمر:
         if ($hasDriverMoved && $cancelledBy === 'parent') {
-            $nominalCompDinar = min(\App\Models\Shared\PlatformFinance::NOMINAL_FUEL_COMPENSATION, $totalDinar);
+            $baseCompDinar = \App\Models\Shared\PlatformFinance::NOMINAL_FUEL_COMPENSATION;
+            $nominalCompDinar = min($baseCompDinar + $totalChangesFee, $totalDinar);
             $commissionRate = (float) ($finance->platform_commission_rate ?? 8.00);
             $commissionOnComp = round(($nominalCompDinar * $commissionRate) / 100, 2);
             $driverNetComp = max(0, round($nominalCompDinar - $commissionOnComp, 2));
@@ -690,8 +877,10 @@ class SubscriptionRequestService
                 'driver_net_amount'          => $driverNetComp,
                 'refunded_amount'            => $refundToParent,
                 'refunded_at'                => now(),
-                'notes'                      => 'تم إلغاء الرحلة بعد تحرك السائق. تم خصم تعويض وقود للسائق واقتطاع عمولة المنصة منه وإرجاع باقي المبلغ لولي الأمر.',
+                'notes'                      => 'تم إلغاء الرحلة بعد تحرك السائق. تم خصم تعويض وقود ورسوم تغيير المواقع للسائق واقتطاع عمولة المنصة منه وإرجاع باقي المبلغ لولي الأمر.',
             ]);
+
+            \App\Models\Shared\LocationChangeRequest::whereIn('id', $approvedChanges->pluck('id'))->update(['is_settled' => true]);
 
             try {
                 $ledger = app(\App\Services\Shared\FinancialLedgerService::class);
@@ -716,7 +905,7 @@ class SubscriptionRequestService
                         0,
                         (int) $driver->balance,
                         "COMP-DRIVER-{$requestId}",
-                        ['subscription_request_id' => $requestId]
+                        ['subscription_request_id' => $requestId, 'location_changes_fee' => $totalChangesFee]
                     );
                 }
                 if ($commissionCents > 0) {
@@ -735,14 +924,63 @@ class SubscriptionRequestService
             }
 
             return [
-                'refund_amount'     => $refundToParent,
-                'compensation_fee'  => $nominalCompDinar,
-                'driver_net_pay'    => $driverNetComp,
-                'platform_fee'      => $commissionOnComp,
-                'status'            => 'partially_refunded',
+                'refund_amount'          => $refundToParent,
+                'compensation_fee'       => $nominalCompDinar,
+                'driver_net_pay'         => $driverNetComp,
+                'platform_fee'           => $commissionOnComp,
+                'location_changes_count' => $approvedChanges->count(),
+                'location_changes_fees'  => $totalChangesFee,
+                'status'                 => 'partially_refunded',
+            ];
+        } elseif ($totalChangesFee > 0 && $cancelledBy === 'parent') {
+            // إلغاء من ولي الأمر قبل تحرك السائق ولكن مع وجود طلبات تغيير موقع معتمدة
+            $locationCompDinar = min($totalChangesFee, $totalDinar);
+            $commissionRate = (float) ($finance->platform_commission_rate ?? 8.00);
+            $commissionOnComp = round(($locationCompDinar * $commissionRate) / 100, 2);
+            $driverNetComp = max(0, round($locationCompDinar - $commissionOnComp, 2));
+            $refundToParent = max(0, round($totalDinar - $locationCompDinar, 2));
+
+            $refundCents = (int) round($refundToParent * 100);
+            $driverCompCents = (int) round($driverNetComp * 100);
+            $commissionCents = (int) round($commissionOnComp * 100);
+
+            $vault->decrement('parents_escrow_pool', $totalCents);
+
+            if ($refundCents > 0 && $parent) {
+                $parent->deposit($refundCents);
+            }
+
+            if ($driverCompCents > 0 && $driver) {
+                $driver->deposit($driverCompCents);
+            }
+
+            if ($commissionCents > 0) {
+                $vault->increment('platform_revenue_pool', $commissionCents);
+            }
+
+            $finance->update([
+                'status'                     => \App\Models\Shared\PlatformFinance::STATUS_PARTIALLY_REFUNDED,
+                'compensation_fee'           => $locationCompDinar,
+                'platform_commission_amount' => $commissionOnComp,
+                'driver_net_amount'          => $driverNetComp,
+                'refunded_amount'            => $refundToParent,
+                'refunded_at'                => now(),
+                'notes'                      => 'تم استرجاع المبلغ لولي الأمر مع خصم رسوم تغيير المواقع المعتمدة لصالح السائق والمنصة.',
+            ]);
+
+            \App\Models\Shared\LocationChangeRequest::whereIn('id', $approvedChanges->pluck('id'))->update(['is_settled' => true]);
+
+            return [
+                'refund_amount'          => $refundToParent,
+                'compensation_fee'       => $locationCompDinar,
+                'driver_net_pay'         => $driverNetComp,
+                'platform_fee'           => $commissionOnComp,
+                'location_changes_count' => $approvedChanges->count(),
+                'location_changes_fees'  => $totalChangesFee,
+                'status'                 => 'partially_refunded',
             ];
         } else {
-            // قبل تحرك السائق أو إذا كان الإلغاء من السائق أو تلقائياً -> استرجاع كامل 100% لولي الأمر
+            // قبل تحرك السائق وبدون رسوم إضافية، أو إذا كان الإلغاء من السائق أو تلقائياً -> استرجاع كامل 100% لولي الأمر
             $vault->decrement('parents_escrow_pool', $totalCents);
 
             if ($parent) {
@@ -803,13 +1041,20 @@ class SubscriptionRequestService
         $parentUserId = $req->parent?->user_id ?? $req->parent_id;
 
         foreach ($req->children as $child) {
-            $pickupLat  = $child->pivot->home_lat   ?? $req->pickup_lat   ?? null;
-            $pickupLng  = $child->pivot->home_lng   ?? $req->pickup_lng   ?? null;
-            $pickupLbl  = $child->pivot->home_label ?? $req->pickup_label ?? 'الموقع السكني';
+            // ⚠️ عنوان الطفل المسجّل هو المصدر الأوثق للإحداثيات: أعمدة home_lat/home_lng
+            // غير موجودة أصلاً في request_children، فكان pickup_lat يُخزَّن null دائماً،
+            // فتنتقل القيمة الفارغة إلى route_stops ثم trip_stops، وينتهي ولي الأمر
+            // برؤية موقع منزل بلا إحداثيات في شاشة الرحلات القادمة والتتبع.
+            $childAddress = $child->address ?? null;
+            $childSchool  = $child->school  ?? null;
 
-            $dropoffLat = $child->pivot->school_lat   ?? $req->school->lat       ?? $req->school->latitude  ?? $req->dropoff_lat ?? null;
-            $dropoffLng = $child->pivot->school_lng   ?? $req->school->lng       ?? $req->school->longitude ?? $req->dropoff_lng ?? null;
-            $dropoffLbl = $child->pivot->school_label ?? $req->school->name      ?? $req->dropoff_label     ?? 'المدرسة';
+            $pickupLat  = $child->pivot->home_lat   ?? $childAddress?->lat   ?? $req->pickup_lat   ?? null;
+            $pickupLng  = $child->pivot->home_lng   ?? $childAddress?->lng   ?? $req->pickup_lng   ?? null;
+            $pickupLbl  = $child->pivot->home_label ?? $childAddress?->label ?? $req->pickup_label ?? 'الموقع السكني';
+
+            $dropoffLat = $child->pivot->school_lat   ?? $childSchool?->lat  ?? $req->school->lat       ?? $req->school->latitude  ?? $req->dropoff_lat ?? null;
+            $dropoffLng = $child->pivot->school_lng   ?? $childSchool?->lng  ?? $req->school->lng       ?? $req->school->longitude ?? $req->dropoff_lng ?? null;
+            $dropoffLbl = $child->pivot->school_label ?? $childSchool?->name ?? $req->school->name      ?? $req->dropoff_label     ?? 'المدرسة';
 
             ActiveSubscription::create([
                 'subscription_request_id' => $req->id,
@@ -1590,5 +1835,21 @@ class SubscriptionRequestService
 
         return $chats;
     }
-    
+
+    /**
+     * جلب ملخص طلبات تغيير الموقع المعتمدة ورسومها لاشتراك معين
+     */
+    public function getLocationChangeSummary(int $subscriptionRequestId): array
+    {
+        $activeSubIds = ActiveSubscription::where('subscription_request_id', $subscriptionRequestId)->pluck('id');
+        $approvedChanges = \App\Models\Shared\LocationChangeRequest::whereIn('active_subscription_id', $activeSubIds)
+            ->where('status', \App\Models\Shared\LocationChangeRequest::STATUS_APPROVED)
+            ->get();
+
+        return [
+            'count'      => $approvedChanges->count(),
+            'total_fees' => (float) $approvedChanges->sum('fee_amount'),
+            'requests'   => $approvedChanges,
+        ];
+    }
 }

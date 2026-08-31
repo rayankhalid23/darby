@@ -16,4 +16,15 @@ class DriverReviewObserver
     {
         AnalyzeReviewWithAi::dispatch($review->id);
     }
+
+    /**
+     * عند تعديل تعليق التقييم، يُعاد جدولة التحليل الآلي في الخلفية لتحديث
+     * درجة الخطورة والإجراء الإداري إن تغيّر المحتوى.
+     */
+    public function updated(DriverReview $review): void
+    {
+        if ($review->wasChanged('comment')) {
+            AnalyzeReviewWithAi::dispatch($review->id);
+        }
+    }
 }

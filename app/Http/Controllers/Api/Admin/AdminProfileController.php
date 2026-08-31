@@ -37,16 +37,13 @@ class AdminProfileController extends Controller
             return null;
         }
 
-        $admin = Admin::with(['user', 'creator'])
+        // ⚠️ لا تُنشئ سجل مشرف تلقائياً هنا.
+        // كان الكود ينفّذ firstOrCreate لأي مستخدم بدور 1 أو 2 بلا سجل، فيكتب في
+        // قاعدة البيانات أثناء طلب قراءة (GET)، ويُخفي بيانات ناقصة بدل الإبلاغ عنها،
+        // وينهار بخطأ 500 عند غياب الأعمدة المطلوبة بدل إرجاع 404 واضح.
+        return Admin::with(['user', 'creator'])
             ->where('user_id', $user->id)
             ->first();
-
-        if (!$admin && in_array((int)($user->role_id ?? 0), [1, 2], true)) {
-            $admin = Admin::firstOrCreate(['user_id' => $user->id]);
-            $admin->load(['user', 'creator']);
-        }
-
-        return $admin;
     }
 
     /**

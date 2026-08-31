@@ -41,13 +41,13 @@ class SubscriptionRequestDetailsResource extends JsonResource
                     $raw = (float) ($pivot->price_per_child ?? $pivot->trip_price ?? 0);
                     $disc = (float) ($pivot->discount_amount ?? 0);
                     $afterDisc = (float) ($pivot->total_amount_after_discount ?? max(0, $raw - $disc));
-                    $net = round($afterDisc * 0.92, 2);
+                    $net = round($afterDisc * (1 - \App\Models\Shared\PricingSetting::commissionRateFraction()), 2);
                 }
                 return $net;
             });
         }
         if ($netTotalAmount <= 0) {
-            $netTotalAmount = round($totalAfterDiscount * 0.92, 2);
+            $netTotalAmount = round($totalAfterDiscount * (1 - \App\Models\Shared\PricingSetting::commissionRateFraction()), 2);
         }
 
         $resolvedState = $subReq instanceof \App\Models\Shared\SubscriptionRequest 
@@ -100,10 +100,10 @@ class SubscriptionRequestDetailsResource extends JsonResource
 
                 $driverNetPrice = (float) ($pivot->driver_net_price ?? 0);
                 if ($driverNetPrice <= 0 && $afterDiscount > 0) {
-                    $driverNetPrice = round($afterDiscount * 0.92, 2);
+                    $driverNetPrice = round($afterDiscount * (1 - \App\Models\Shared\PricingSetting::commissionRateFraction()), 2);
                 }
                 $platformFeeAmount  = max(0, round($afterDiscount - $driverNetPrice, 2));
-                $platformFeePercent = $afterDiscount > 0 ? round(($platformFeeAmount / $afterDiscount) * 100, 2) : 8.0;
+                $platformFeePercent = $afterDiscount > 0 ? round(($platformFeeAmount / $afterDiscount) * 100, 2) : round(\App\Models\Shared\PricingSetting::commissionRateFraction() * 100, 2);
 
                 return [
                     'id'        => $child->id,

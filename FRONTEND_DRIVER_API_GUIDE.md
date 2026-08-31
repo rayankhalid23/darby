@@ -55,13 +55,15 @@ Content-Type: application/json
 | | 31. بث وتحديث موقع الـ GPS المباشر | `POST` | `/api/driver/trips/{tripId}/location` |
 | | 32. مسح كود QR عند صعود/نزول الطفل | `POST` | `/api/driver/trips/{tripId}/verify-qr/{childId}` |
 | | 33. تخطي محطة طفل وتحديث المسار | `POST` | `/api/driver/trips/{tripId}/skip/{childId}` |
-| | 34. تسجيل غياب مجدول للسائق | `POST` | `/api/driver/trips/register-absence` |
+| | 34أ. عرض الرحلات القادمة لاختيار الغياب منها | `GET` | `/api/driver/trips/upcoming-for-absence` |
+| | 34. تسجيل غياب مجدول للسائق عن رحلات محددة | `POST` | `/api/driver/trips/register-absence` |
 | | 35. إنهاء وإغلاق الرحلة الحية | `POST` | `/api/driver/trips/{tripId}/complete` |
 | **المالية والسحب** | 36. عرض رصيد محفظة السائق | `GET` | `/api/driver/wallet/balance` |
 | | 37. عرض طلبات سحب الأرباح | `GET` | `/api/driver/withdrawals` |
 | | 38. تقديم طلب سحب أرباح جديد | `POST` | `/api/driver/withdrawals` |
 | | 39. عرض فواتير السائق | `GET` | `/api/driver/invoices` |
 | | 40. عرض تفاصيل فاتورة معينة | `GET` | `/api/driver/invoices/{id}` |
+| **لوحة التحكم والإحصائيات** | 41. عرض إحصائيات ولوحة تحكم السائق | `GET` | `/api/driver/statistics` |
 
 ---
 
@@ -417,23 +419,59 @@ Content-Type: application/json
 ```
 
 #### 5.5 تسجيل غياب مجدول للسائق (Driver Absence)
+
+**الخطوة 1: عرض الرحلات القادمة ليختار السائق منها**
+* **Method:** `GET`
+* **URL:** `/api/driver/trips/upcoming-for-absence`
+* **Success Response (200 OK):**
+```json
+{
+  "status": "success",
+  "message": "تم جلب رحلاتك القادمة بنجاح.",
+  "data": [
+    {
+      "id": 501,
+      "trip_type": "Morning",
+      "shift_slot": "morning_go",
+      "trip_date": "2026-09-02",
+      "scheduled_start_time": "07:00:00",
+      "status": "pending",
+      "route_name": "مسار الصباح حي الأندلس"
+    }
+  ]
+}
+```
+
+**الخطوة 2: تسجيل الغياب عن رحلة/رحلات محددة يختارها السائق**
 * **Method:** `POST`
 * **URL:** `/api/driver/trips/register-absence`
 * **Body (JSON):**
 ```json
 {
-  "dates": [
-    "2026-08-01",
-    "2026-08-02"
-  ],
+  "date": "2026-09-02",
+  "trip_ids": [501, 502],
   "reason": "ظرف صحي طارئ"
 }
 ```
+* **ملاحظة:** يُطبَّق الغياب فوراً دون انتظار موافقة إدارية. يُفصل السائق فوراً عن الرحلات
+  المحددة فقط (بقية رحلاته في نفس اليوم تبقى كما هي)، ويُرسَل إشعار فوري لجميع أولياء أمور
+  الأطفال الموجودين في تلك الرحلات تحديداً بأن سائق رحلة طفلهم غائب وأن النظام يعمل على
+  تدبير سائق بديل. مولّد الرحلات اليومية أيضاً لن يُنشئ لاحقاً رحلة جديدة لنفس المسار في نفس
+  اليوم بالسائق الغائب نفسه.
 * **Success Response (200 OK):**
 ```json
 {
   "status": "success",
-  "message": "تم تسجيل أيام غياب السائق وإعادة جدولة وتنبيه المشتركين"
+  "message": "تم تسجيل غيابك عن الرحلات المحددة فوراً، وفصلك عنها، وتنبيه أولياء أمور أطفالها.",
+  "data": {
+    "absence_id": 12,
+    "driver_id": 7,
+    "absence_date": "2026-09-02",
+    "reason": "ظرف صحي طارئ",
+    "status": "approved",
+    "trip_ids": [501, 502],
+    "trips": [ { "id": 501, "trip_type": "Morning", "shift_slot": "morning_go", "trip_date": "2026-09-02", "status": "pending", "scheduled_start_time": "07:00:00" } ]
+  }
 }
 ```
 
@@ -533,3 +571,130 @@ Content-Type: application/json
   ]
 }
 ```
+
+---
+
+### 📊 7. لوحة التحكم والإحصائيات الشاملة (Driver Statistics & Dashboard)
+
+#### 7.1 عرض إحصائيات السائق ولوحة التحكم
+تُرجع هذه النقطة كافة المؤشرات المالية، وحالة الركاب وسعة المركبة، ومعدلات التشغيل والالتزام بالرحلات، والويدجت والتنبيهات السريعة.
+
+* **Method:** `GET`
+* **URL:** `/api/driver/statistics` (أو المسار المرادف: `/api/driver/dashboard/stats`)
+* **Headers:**
+  ```http
+  Authorization: Bearer {sanctum_token}
+  Accept: application/json
+  ```
+* **Query Parameters (اختيارية):**
+  * `month` *(integer, 1-12)*: رقم الشهر المراد حساب أرباحه (افتراضياً: الشهر الحالي).
+  * `year` *(integer, YYYY)*: السنة المراد حساب أرباحها (افتراضياً: السنة الحالية).
+
+* **Success Response (200 OK):**
+```json
+{
+  "status": true,
+  "success": true,
+  "message": "تم جلب إحصائيات السائق ولوحة التحكم بنجاح.",
+  "data": {
+    "financial_stats": {
+      "net_earnings": {
+        "total": 4500.00,
+        "current_month": 1250.00,
+        "previous_month": 1100.00,
+        "growth_percentage": 13.64,
+        "growth_trend": "up"
+      },
+      "expected_active_earnings": 1800.00,
+      "pending_and_due": {
+        "wallet_balance": 650.00,
+        "escrow_pending_balance": 200.00,
+        "cash_dues_to_platform": 0.00,
+        "currency": "د.ل"
+      }
+    },
+    "subscription_and_passenger_stats": {
+      "active_students_count": 12,
+      "vehicle_capacity": {
+        "vehicle_model": "تويوتا كوستر Coaster",
+        "plate_number": "5-112233",
+        "total_capacity": 14,
+        "occupied_seats": 12,
+        "available_seats": 2,
+        "occupancy_rate": 85.71
+      },
+      "history": {
+        "completed_subscriptions_count": 28,
+        "cancelled_subscriptions_count": 2,
+        "total_historical_subscriptions": 42
+      }
+    },
+    "trip_operations_stats": {
+      "completed_trips": {
+        "total": 240,
+        "morning_trips": 120,
+        "evening_trips": 120,
+        "today_completed": 2
+      },
+      "punctuality_rate": 96.50,
+      "absences_and_breakdowns": {
+        "absence_days_count": 3,
+        "vehicle_breakdowns_count": 1,
+        "total_downtime_days": 4
+      }
+    },
+    "quick_widgets": {
+      "expiring_soon_subscriptions": {
+        "count": 2,
+        "days_threshold": 5,
+        "items": [
+          {
+            "subscription_id": 1,
+            "child_id": 1,
+            "child_name": "سند طه القموضي",
+            "school_name": "مدرسة الجيل الجديد الدولية",
+            "end_date": "2026-08-31",
+            "days_remaining": 2,
+            "direction": "two_way"
+          }
+        ]
+      },
+      "documents_status": {
+        "overall_indicator": "green",
+        "overall_status_label": "كافة الوثائق الرسمية سارية ومفعلة",
+        "license": {
+          "label": "رخصة القيادة",
+          "license_number": "DL-998877",
+          "expiry_date": "2028-12-31",
+          "days_remaining": 855,
+          "is_expired": false,
+          "indicator": "green",
+          "status_label": "سارية ومفعلة"
+        },
+        "insurance": {
+          "label": "تأمين المركبة",
+          "expiry_date": "2027-12-31",
+          "days_remaining": 489,
+          "is_expired": false,
+          "indicator": "green",
+          "status_label": "ساري ومفعل"
+        }
+      }
+    }
+  }
+}
+```
+
+* **شرح الحقول (Field Descriptions):**
+  * `financial_stats.net_earnings`: إجمالي الأرباح الصافية بعد خصم نسبة المنصة (12%)، مع تفصيل الشهر الحالي والشهر السابق ونسبة التغير واتجاه النمو (`up` / `down` / `neutral`).
+  * `financial_stats.expected_active_earnings`: مجموع قيمة الاشتراكات الفعّالة والجارية حالياً التي يستحقها السائق بنهاية فترة الاشتراك.
+  * `financial_stats.pending_and_due`: الرصيد المتاح حالياً في محفظة السائق، والمبالغ المعلقة في الضمان بانتظار الإفراج، وأي مستحقات نقدية للمنصة.
+  * `subscription_and_passenger_stats.active_students_count`: إجمالي عدد الأطفال الذين يتولى توصيلهم حالياً.
+  * `subscription_and_passenger_stats.vehicle_capacity`: السعة الكلية للمركبة، المقاعد المشغولة، المقاعد المتبقية المتاحة لقبول طلبات جديدة، ونسبة الإشغال.
+  * `subscription_and_passenger_stats.history`: إحصائيات تاريخية تشمل الاشتراكات المكتملة، والاشتراكات الملغاة، وإجمالي النشاط.
+  * `trip_operations_stats.completed_trips`: إجمالي الرحلات المنجزة بنجاح وتفصيلها (صباحي / مسائي / منجز اليوم).
+  * `trip_operations_stats.punctuality_rate`: معدل الالتزام بالمواعيد المحددة لبدء وإتمام الرحلات كنسبة مئوية.
+  * `trip_operations_stats.absences_and_breakdowns`: عدد أيام الإجازة/الغياب المسجلة للسائق وعدد بلاغات الأعطال.
+  * `quick_widgets.expiring_soon_subscriptions`: ويدجت يعرض عدد وقائمة الاشتراكات التي ستنتهي خلال 5 أيام قادمة لتنبيه السائق.
+  * `quick_widgets.documents_status`: مؤشر لوني لحالة رخصة القيادة ووثيقة التأمين (`green` = سارية، `yellow` = تنتهي قريباً، `red` = منتهية الصلاحية) مع حساب الأيام المتبقية.
+

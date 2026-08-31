@@ -14,6 +14,7 @@ from pathlib import Path
 
 import joblib
 import sklearn
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import accuracy_score, classification_report, f1_score
 from sklearn.model_selection import cross_val_score
@@ -43,7 +44,7 @@ def build_pipeline() -> Pipeline:
       - word 1-2 gram : يلتقط العبارات المفتاحية ("كاد يخبط"، "وقف يشتري").
       - char_wb 2-5   : يعالج اختلاف اللهجات والإملاء والتصريف في العربية،
                         وهو ما يرفع الدقة بوضوح على بيانات متعددة اللهجات.
-    LinearSVC مناسب للنصوص عالية الأبعاد والمتفرقة (sparse).
+    LinearSVC مناسب جداً للنصوص عالية الأبعاد والمتفرقة (sparse).
     """
     features = FeatureUnion([
         ("word", TfidfVectorizer(

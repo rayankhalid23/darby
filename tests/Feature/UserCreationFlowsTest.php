@@ -116,7 +116,7 @@ class UserCreationFlowsTest extends TestCase
         $response->assertStatus(201);
         $response->assertJsonPath('status', true);
         $response->assertJsonPath('data.full_name', 'خالد عبد السلام الورفلي');
-        $response->assertJsonPath('data.role_name', 'مشرف');
+        $response->assertJsonPath('data.role_name', DB::table('roles')->where('id', 2)->value('display_name'));
 
         // التحقق من قاعدة البيانات
         $user = User::where('email', $email)->first();

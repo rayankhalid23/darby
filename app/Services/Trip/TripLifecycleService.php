@@ -291,22 +291,135 @@ class TripLifecycleService
     }
 
     /**
-     * دالة إضافية: setDriverAbsence (تحديد السائق لأيام غيابه بالتواريخ وإشعار أولياء الأمور تلقائياً)
+     * يعرض على السائق قائمة رحلاته القادمة (لم تكتمل/تُلغَ بعد، ولم يُنزَع منها بغياب سابق)
+     * ليختار منها الرحلة أو الرحلات التي يريد تسجيل غيابه عنها عبر setDriverAbsence.
      */
-    public function setDriverAbsence(int $driverId, array $dates): void
+    public function getUpcomingTripsForAbsence(int $driverId, int $lookaheadDays = 14): \Illuminate\Support\Collection
     {
-        DB::transaction(function () use ($driverId, $dates) {
-            foreach ($dates as $date) {
+        $today = Carbon::today()->toDateString();
+        $lastDate = Carbon::today()->addDays($lookaheadDays)->toDateString();
+
+        return Trip::where('driver_id', $driverId)
+            ->whereBetween('trip_date', [$today, $lastDate])
+            ->whereNotIn('status', ['completed', 'cancelled', 'suspended_breakdown'])
+            ->with('route:id,route_name,shift_slot,route_type')
+            ->orderBy('trip_date')
+            ->orderBy('scheduled_start_time')
+            ->get()
+            ->map(function (Trip $trip) {
+                return [
+                    'id'                   => $trip->id,
+                    'trip_type'            => $trip->trip_type,
+                    'shift_slot'           => $trip->shift_slot,
+                    'trip_date'            => $trip->trip_date ? Carbon::parse($trip->trip_date)->toDateString() : null,
+                    'scheduled_start_time' => $trip->scheduled_start_time,
+                    'status'               => $trip->status,
+                    'route_name'           => $trip->route?->route_name,
+                ];
+            });
+    }
+
+    /**
+     * دالة setDriverAbsence: تسجيل طلب غياب السائق عن رحلات محددة أو تواريخ محددة
+     */
+    public function setDriverAbsence(int $driverId, array|string $dates, array $tripIds = [], ?string $reason = null): DriverAbsence|array
+    {
+        if (!empty($tripIds)) {
+            $targetDate = is_array($dates) ? Carbon::parse($dates[0])->toDateString() : Carbon::parse($dates)->toDateString();
+
+            return DB::transaction(function () use ($driverId, $targetDate, $tripIds, $reason) {
+                // يُطبَّق الغياب فوراً دون انتظار مراجعة إدارية: السائق اختار الرحلات
+                // بنفسه من قائمة رحلاته القادمة، والتحقق الأمني الكامل (ملكية الرحلة،
+                // مطابقة التاريخ، عدم وجود سائق بديل مكلَّف مسبقاً...) تم بالفعل ضمن
+                // DriverAbsenceRequest قبل الوصول لهذه الدالة.
+                $absence = DriverAbsence::create([
+                    'driver_id'    => $driverId,
+                    'absence_date' => $targetDate,
+                    'reason'       => $reason,
+                    'status'       => DriverAbsence::STATUS_APPROVED,
+                    'reviewed_at'  => now(),
+                ]);
+
+                $absence->trips()->sync($tripIds);
+
+                // نزع السائق فوراً من الرحلات المحددة فقط (وليس كامل يومه) حتى يستطيع
+                // النظام تدبير سائق بديل، ولمنع مولّد الرحلات اليومية من إعادة إسناده
+                // تلقائياً لهذه الرحلة بعينها فيما بعد.
+                $trips = Trip::whereIn('id', $tripIds)->get();
+                foreach ($trips as $trip) {
+                    $trip->update(['driver_id' => null, 'status' => 'pending']);
+                }
+
+                // إشعار السائق بتأكيد تسجيل الغياب
+                $driverUser = User::whereHas('driver', fn($q) => $q->where('id', $driverId))->first();
+                if ($driverUser) {
+                    $this->notificationService->sendToUser($driverUser, 'driver_absence_confirmed', [
+                        'title'   => '✅ تم تسجيل غيابك',
+                        'message' => "تم تسجيل غيابك عن الرحلات المحددة بتاريخ ({$targetDate}) وفصلك عنها فوراً، وجارٍ تدبير سائق بديل.",
+                        'entity_type' => 'driver_absence',
+                        'entity_id'   => (string) $absence->id,
+                    ]);
+                }
+
+                // إشعار جميع أولياء أمور الأطفال الموجودين في هذه الرحلات تحديداً (وليس كل مشتركي السائق)
+                try {
+                    $childIds = \App\Models\Shared\TripStop::whereIn('trip_id', $tripIds)
+                        ->whereNotNull('child_id')
+                        ->pluck('child_id')
+                        ->unique();
+
+                    if ($childIds->isEmpty()) {
+                        // لم تُبنَ محطات هذه الرحلة بعد (لم تدخل نافذة التوليد اليومي بعد)،
+                        // فنعتمد على أطفال الاشتراكات النشطة على نفس مسار هذه الرحلات.
+                        $routeIds = $trips->pluck('route_id')->filter()->unique();
+                        $childIds = ActiveSubscription::whereIn('route_id', $routeIds)
+                            ->where('status', 'active')
+                            ->pluck('child_id')
+                            ->unique();
+                    }
+
+                    $parentUserIds = \App\Models\Parent\Child::whereIn('id', $childIds)
+                        ->join('parents', 'children.parent_id', '=', 'parents.id')
+                        ->pluck('parents.user_id')
+                        ->unique();
+
+                    $usersToNotify = User::whereIn('id', $parentUserIds)->get();
+                    if ($usersToNotify->isNotEmpty()) {
+                        $this->notificationService->sendToUsers($usersToNotify, 'driver_absence', [
+                            'title'       => 'تنبيه: غياب سائق رحلة طفلكم',
+                            'message'     => "نفيدكم علماً بأن سائق رحلة طفلكم غداً/بتاريخ ({$targetDate}) قد سجّل غيابه. يعمل النظام حالياً على تدبير سائق بديل وسنوافيكم بالتفاصيل فور توفره.",
+                            'entity_type' => 'driver_absence',
+                            'entity_id'   => (string) $absence->id,
+                        ]);
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning("فشل إرسال إشعار غياب السائق لأولياء الأمور: " . $e->getMessage());
+                }
+
+                return $absence->load('trips');
+            });
+        }
+
+        // المسار القديم للتوافقية مع قائمة التواريخ
+        $datesArray = (array) $dates;
+        $createdAbsences = [];
+
+        DB::transaction(function () use ($driverId, $datesArray, $reason, &$createdAbsences) {
+            foreach ($datesArray as $date) {
                 $formattedDate = Carbon::parse($date)->toDateString();
 
                 if ($formattedDate < Carbon::today()->toDateString()) {
                     continue;
                 }
 
-                DriverAbsence::firstOrCreate([
-                    'driver_id' => $driverId,
-                    'absence_date' => $formattedDate
+                $absence = DriverAbsence::create([
+                    'driver_id'    => $driverId,
+                    'absence_date' => $formattedDate,
+                    'reason'       => $reason,
+                    'status'       => DriverAbsence::STATUS_APPROVED,
                 ]);
+
+                $createdAbsences[] = $absence;
             }
         });
 
@@ -320,12 +433,14 @@ class TripLifecycleService
         $usersToNotify = User::whereIn('id', $parentUserIds)->get();
 
         // إطلاق وإيداع الإشعارات في جدول notifications
-        $datesString = implode(', ', $dates);
+        $datesString = implode(', ', $datesArray);
         $this->notificationService->sendToUsers($usersToNotify, 'driver_absence', [
             'title'   => 'تنبيه: غياب السائق اليومي',
             'message' => "نفيدكم علماً بأن السائق حدد أيام غياب له في التواريخ التالية: ({$datesString})، ولن يتم تفعيل مسار الرحلة في هذه الأيام.",
             'entity_id' => $driverId . '_' . $datesString,
         ]);
+
+        return $createdAbsences;
     }
 
     /**
@@ -393,6 +508,15 @@ class TripLifecycleService
                 'completed_at' => Carbon::now(),
             ]);
 
+            // 1.5 إغلاق محطات المدارس المتبقية.
+            // ⚠️ كانت تبقى pending للأبد بعد اكتمال الرحلة، فيظل resolveNextStop يعيدها
+            // كـ"المحطة التالية" حتى بعد إنزال آخر طفل، وتبقى بيانات ميتة في trip_stops.
+            \App\Models\Shared\TripStop::where('trip_id', $trip->id)
+                ->where('stop_type', \App\Models\Shared\TripStop::TYPE_SCHOOL)
+                ->where('sequence_order', '>', 0)
+                ->whereIn('status', \App\Models\Shared\TripStop::NON_FINAL_STATUSES)
+                ->update(['status' => \App\Models\Shared\TripStop::STATUS_DROPPED_OFF_SCHOOL]);
+
             // 2. تصفير وتنظيف الـ Cache الخاص بهذه الرحلة تماماً للحفاظ على موارد الخادم
             $driverId = $trip->driver_id;
             Cache::forget("driver_last_loc_{$driverId}");
@@ -426,6 +550,9 @@ class TripLifecycleService
             // 4. تسوية الأمانات المالية وتحويل مستحقات السائق واقتطاع عمولة المنصة
             $this->settlePlatformFinancesForCompletedTrip($trip);
 
+            // 5. تسوية مستحقات السائق البديل إن كانت هذه الرحلة رحلة إنقاذ طارئة
+            $this->settleEmergencyBreakdownDispatchesForTrip($trip);
+
             return [
                 'status' => 'success',
                 'message' => 'تم إنهاء الرحلة وتصفير سجلات الكاش المؤقتة بنجاح.'
@@ -436,63 +563,269 @@ class TripLifecycleService
     /**
      * تسوية المستحقات المالية المحجوزة للرحلة المكتملة
      */
+    /**
+     * تحديد أرقام طلبات الاشتراك التي خدمتها هذه الرحلة تحديداً.
+     *
+     * ⚠️ بدون هذا الحصر كانت التسوية تشمل كل المبالغ المحجوزة للسائق مهما كان مصدرها،
+     * فيؤدي إكمال رحلة واحدة إلى صرف أموال اشتراكات أولياء أمور آخرين لم تُنفَّذ رحلاتهم بعد.
+     * الترتيب: أطفال محطات هذه الرحلة أولاً (الأدق)، ثم اشتراكات مسار الرحلة كبديل.
+     */
+    protected function resolveSettleableSubscriptionRequestIds(Trip $trip): \Illuminate\Support\Collection
+    {
+        $childIds = \App\Models\Shared\TripStop::where('trip_id', $trip->id)
+            ->whereNotNull('child_id')
+            ->pluck('child_id')
+            ->unique();
+
+        if ($childIds->isNotEmpty()) {
+            $ids = \App\Models\Shared\ActiveSubscription::where('driver_id', $trip->driver_id)
+                ->whereIn('child_id', $childIds)
+                ->pluck('subscription_request_id')
+                ->filter()
+                ->unique()
+                ->values();
+        } elseif ($trip->route_id) {
+            $ids = \App\Models\Shared\ActiveSubscription::where('route_id', $trip->route_id)
+                ->pluck('subscription_request_id')
+                ->filter()
+                ->unique()
+                ->values();
+        } else {
+            return collect();
+        }
+
+        // ⚠️ حصر إضافي إلزامي: لا يُصرف إلا من اشتراك تقع فترته فعلياً على تاريخ هذه الرحلة.
+        // بدونه كان ولي أمر لديه حجزان مع نفس السائق (اليوم وغداً) يتسبب في صرف أمانة
+        // حجز الغد كاملة عند إنهاء رحلة اليوم — أي دفع مقابل رحلة لم تُنفَّذ بعد،
+        // ويستحيل استرجاعها لو أُلغيت لاحقاً لأن الأمانة أُغلقت.
+        return $ids->filter(fn($id) => $this->subscriptionCoversTripDate((int) $id, $trip))->values();
+    }
+
+    /**
+     * هل تغطي فترة طلب الاشتراك تاريخ هذه الرحلة؟ (يُفحص على مستوى الطفل ثم الطلب).
+     */
+    protected function subscriptionCoversTripDate(int $subscriptionRequestId, Trip $trip): bool
+    {
+        $tripDate = $trip->trip_date
+            ? Carbon::parse($trip->trip_date)->toDateString()
+            : Carbon::today()->toDateString();
+
+        $covers = DB::table('request_children')
+            ->where('request_id', $subscriptionRequestId)
+            ->whereDate('start_date', '<=', $tripDate)
+            ->whereDate('end_date', '>=', $tripDate)
+            ->exists();
+
+        if ($covers) {
+            return true;
+        }
+
+        // توافقية: طلبات قديمة بلا تواريخ على مستوى الطفل — نرجع لتواريخ الطلب نفسه
+        $hasChildDates = DB::table('request_children')
+            ->where('request_id', $subscriptionRequestId)
+            ->whereNotNull('start_date')
+            ->exists();
+
+        if ($hasChildDates) {
+            return false;
+        }
+
+        $req = \App\Models\Shared\SubscriptionRequest::find($subscriptionRequestId);
+        if (!$req || !$req->start_date || !$req->end_date) {
+            return true;
+        }
+
+        return Carbon::parse($req->start_date)->toDateString() <= $tripDate
+            && Carbon::parse($req->end_date)->toDateString() >= $tripDate;
+    }
+
+    /**
+     * هل نُقل في هذه الرحلة طفل واحد على الأقل فعلياً؟
+     * (الغياب المسبق/المتأخر وتجاوز المحطة لا تُعدّ خدمة منفّذة).
+     */
+    protected function tripActuallyServedAnyChild(Trip $trip): bool
+    {
+        return \App\Models\Shared\TripStop::where('trip_id', $trip->id)
+            ->where('stop_type', \App\Models\Shared\TripStop::TYPE_HOME)
+            ->whereIn('status', [
+                \App\Models\Shared\TripStop::STATUS_DROPPED_OFF_SCHOOL,
+                \App\Models\Shared\TripStop::STATUS_DELIVERED_HOME,
+                \App\Models\Shared\TripStop::STATUS_DROPOFF_FAILED,
+                \App\Models\Shared\TripStop::STATUS_DIRECT_PARENT_HANDLING,
+            ])
+            ->exists();
+    }
+
+    /**
+     * تسوية حصة هذه الرحلة فقط من أمانة الاشتراك (وليس الاشتراك كاملاً).
+     *
+     * ⚠️ سابقاً كان إنهاء أول رحلة يصرف كامل مبلغ الاشتراك للسائق، فيتقاضى أجر شهر
+     * كامل مقابل يوم واحد، ويصبح استرجاع أي مبلغ لولي الأمر مستحيلاً لأن الأمانة أُغلقت.
+     * الآن تُصرف حصة رحلة واحدة = المبلغ ÷ عدد الرحلات المتوقعة، وتُغلق الأمانة فقط
+     * بعد تنفيذ كل الرحلات، مع منح الرحلة الأخيرة الباقي لتفادي ضياع كسور التقريب.
+     */
     public function settlePlatformFinancesForCompletedTrip(Trip $trip): int
     {
+        // ⚠️ لا تُصرف حصة رحلة لم تُنقل فيها أي طفل فعلياً (مثلاً كل الأطفال مسجل غيابهم
+        // مسبقاً). بدون هذا الفحص كان مجرد "إنهاء" رحلة فارغة يخصم حصة من أمانة ولي الأمر
+        // ويودعها للسائق، فيمكن استنزاف اشتراك كامل دون تنفيذ أي رحلة حقيقية.
+        if (!$this->tripActuallyServedAnyChild($trip)) {
+            \Illuminate\Support\Facades\Log::info(
+                "تخطّي التسوية المالية للرحلة ID {$trip->id}: لم يُنقل فيها أي طفل فعلياً."
+            );
+            return 0;
+        }
+
+        $subscriptionRequestIds = $this->resolveSettleableSubscriptionRequestIds($trip);
+
+        // لا نصرف شيئاً إذا تعذّر ربط الرحلة بأي اشتراك — الصمت أأمن من صرف أموال خاطئة.
+        if ($subscriptionRequestIds->isEmpty()) {
+            \Illuminate\Support\Facades\Log::warning(
+                "تخطّي التسوية المالية للرحلة ID {$trip->id}: لا يمكن تحديد الاشتراكات التي خدمتها هذه الرحلة."
+            );
+            return 0;
+        }
+
         $finances = \App\Models\Shared\PlatformFinance::where('driver_id', $trip->driver_id)
             ->where('status', \App\Models\Shared\PlatformFinance::STATUS_HELD)
+            ->whereIn('subscription_request_id', $subscriptionRequestIds)
             ->get();
 
         $settledCount = 0;
-        $vault = \App\Models\Shared\MasterEscrowVault::getVault();
         $driver = Driver::find($trip->driver_id);
         $ledger = app(\App\Services\Shared\FinancialLedgerService::class);
 
         foreach ($finances as $finance) {
-            $totalCents       = (int) round($finance->total_amount * 100);
-            $commissionCents  = (int) round($finance->platform_commission_amount * 100);
-            $driverNetCents   = (int) round($finance->driver_net_amount * 100);
+            // القيد الفريد (platform_finance_id, trip_id) هو الحارس النهائي ضد الصرف المزدوج:
+            // أي إعادة إرسال أو تسابق سيفشل هنا على مستوى قاعدة البيانات لا على مستوى الكود.
+            $alreadySettled = DB::table('platform_finance_trip_settlements')
+                ->where('platform_finance_id', $finance->id)
+                ->where('trip_id', $trip->id)
+                ->exists();
 
-            $vault->decrement('parents_escrow_pool', $totalCents);
-            $vault->increment('platform_revenue_pool', $commissionCents);
-
-            if ($driver) {
-                $driver->deposit($driverNetCents);
+            if ($alreadySettled) {
+                continue;
             }
 
-            $finance->update([
-                'trip_id'    => $trip->id,
-                'status'     => \App\Models\Shared\PlatformFinance::STATUS_COMPLETED,
-                'settled_at' => now(),
-            ]);
+            $expectedTrips = max(1, (int) ($finance->expected_trips_count ?? 1));
+            $settledTrips  = (int) ($finance->settled_trips_count ?? 0);
 
-            try {
-                $ledger->recordLedgerEntry(
-                    'parents_escrow_pool',
-                    "driver_wallet_{$trip->driver_id}",
-                    $driverNetCents,
-                    'driver_payout',
-                    0,
-                    (int) ($driver?->balance ?? 0),
-                    "PAYOUT-TRIP-{$trip->id}-{$finance->id}",
-                    ['platform_finance_id' => $finance->id, 'trip_id' => $trip->id]
-                );
-
-                $ledger->recordLedgerEntry(
-                    'parents_escrow_pool',
-                    'platform_revenue_pool',
-                    $commissionCents,
-                    'platform_commission',
-                    0,
-                    $commissionCents,
-                    "COMMISSION-TRIP-{$trip->id}-{$finance->id}"
-                );
-            } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning("فشل تسجيل حركات السجل المالي لاكتمال الرحلة ID {$trip->id}: " . $e->getMessage());
+            if ($settledTrips >= $expectedTrips) {
+                continue;
             }
+
+            $totalCents        = (int) round(((float) $finance->total_amount) * 100);
+            $alreadyPaidCents  = (int) round(((float) ($finance->settled_amount ?? 0)) * 100);
+            $remainingCents    = max(0, $totalCents - $alreadyPaidCents);
+            $isLastTrip        = ($settledTrips + 1) >= $expectedTrips;
+
+            // الرحلة الأخيرة تأخذ كل المتبقي حتى لا تضيع كسور القسمة داخل الخزينة
+            $shareCents = $isLastTrip
+                ? $remainingCents
+                : min($remainingCents, intdiv($totalCents, $expectedTrips));
+
+            if ($shareCents <= 0) {
+                continue;
+            }
+
+            $rate            = (float) ($finance->platform_commission_rate ?? 0);
+            $commissionCents = (int) round($shareCents * $rate / 100);
+            $driverNetCents  = max(0, $shareCents - $commissionCents);
+
+            DB::transaction(function () use (
+                $finance, $trip, $driver, $ledger, $shareCents,
+                $commissionCents, $driverNetCents, $settledTrips, $expectedTrips, $alreadyPaidCents
+            ) {
+                DB::table('platform_finance_trip_settlements')->insert([
+                    'platform_finance_id' => $finance->id,
+                    'trip_id'             => $trip->id,
+                    'gross_amount'        => round($shareCents / 100, 2),
+                    'commission_amount'   => round($commissionCents / 100, 2),
+                    'driver_net_amount'   => round($driverNetCents / 100, 2),
+                    'created_at'          => now(),
+                    'updated_at'          => now(),
+                ]);
+
+                $vault = \App\Models\Shared\MasterEscrowVault::getVault();
+                $vault->decrement('parents_escrow_pool', $shareCents);
+                $vault->increment('platform_revenue_pool', $commissionCents);
+
+                if ($driver) {
+                    $driver->deposit($driverNetCents);
+                }
+
+                $newSettledTrips  = $settledTrips + 1;
+                $newSettledAmount = round(($alreadyPaidCents + $shareCents) / 100, 2);
+                $isFullySettled   = $newSettledTrips >= $expectedTrips;
+
+                $finance->update([
+                    'trip_id'             => $trip->id,
+                    'settled_trips_count' => $newSettledTrips,
+                    'settled_amount'      => $newSettledAmount,
+                    'status'              => $isFullySettled
+                        ? \App\Models\Shared\PlatformFinance::STATUS_COMPLETED
+                        : \App\Models\Shared\PlatformFinance::STATUS_HELD,
+                    'settled_at'          => $isFullySettled ? now() : null,
+                ]);
+
+                try {
+                    $ledger->recordLedgerEntry(
+                        'parents_escrow_pool',
+                        "driver_wallet_{$trip->driver_id}",
+                        $driverNetCents,
+                        'driver_payout',
+                        0,
+                        (int) ($driver?->balance ?? 0),
+                        "PAYOUT-TRIP-{$trip->id}-{$finance->id}",
+                        [
+                            'platform_finance_id' => $finance->id,
+                            'trip_id'             => $trip->id,
+                            'trip_share_of'       => $expectedTrips,
+                        ]
+                    );
+
+                    $ledger->recordLedgerEntry(
+                        'parents_escrow_pool',
+                        'platform_revenue_pool',
+                        $commissionCents,
+                        'platform_commission',
+                        0,
+                        $commissionCents,
+                        "COMMISSION-TRIP-{$trip->id}-{$finance->id}"
+                    );
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning("فشل تسجيل حركات السجل المالي لاكتمال الرحلة ID {$trip->id}: " . $e->getMessage());
+                }
+            });
 
             $settledCount++;
         }
 
         return $settledCount;
+    }
+
+    /**
+     * تسوية المستحقات المالية للسائق البديل لطلبات الإنقاذ المرتبطة بهذه الرحلة
+     */
+    public function settleEmergencyBreakdownDispatchesForTrip(Trip $trip): void
+    {
+        try {
+            $dispatches = \App\Models\Shared\TripBreakdownDispatch::where(function ($q) use ($trip) {
+                $q->where('substitute_trip_id', $trip->id)
+                  ->orWhere(function ($sq) use ($trip) {
+                      $sq->where('substitute_driver_id', $trip->driver_id)
+                         ->where('status', \App\Models\Shared\TripBreakdownDispatch::STATUS_ACCEPTED);
+                  });
+            })
+            ->where('financial_settled', false)
+            ->get();
+
+            $emergencyService = app(EmergencyBreakdownService::class);
+            foreach ($dispatches as $dispatch) {
+                $emergencyService->settleBreakdownFinancialTransfer($dispatch);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("فشل تسوية المستحقات الطارئة للرحلة ID {$trip->id}: " . $e->getMessage());
+        }
     }
 }

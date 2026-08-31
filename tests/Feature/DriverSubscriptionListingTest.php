@@ -95,6 +95,7 @@ class DriverSubscriptionListingTest extends TestCase
         // 5. ط§ظ„ط·ظپظ„
         $this->child = Child::create([
             'parent_id' => $this->parent->id,
+            'school_id' => $this->school->id,
             'full_name' => 'ط³ط§ط±ط© ط£ط­ظ…ط¯',
             'birth_date'=> '2017-03-15',
             'gender'    => 'female',
@@ -106,13 +107,6 @@ class DriverSubscriptionListingTest extends TestCase
         $this->pendingRequest = SubscriptionRequest::create([
             'parent_id'         => $this->parent->id,
             'driver_id'         => $this->driver->id,
-            'school_id'         => $this->school->id,
-            'subscription_type' => 'multi_day',
-            'direction'         => 'both',
-            'timing'            => 'MORNING',
-            'start_date'        => now()->addDays(1)->format('Y-m-d'),
-            'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-            'days_count'        => 22,
             'total_price'       => 250.00,
             'pickup_time'       => '07:15:00',
             'dropoff_time'      => '14:30:00',
@@ -121,31 +115,31 @@ class DriverSubscriptionListingTest extends TestCase
             'children_count'    => 1,
         ]);
 
+        // تفاصيل الاشتراك صارت على مستوى الطفل بعد مهاجرة 2026_08_26_131258
+        // (كل طفل قد يختلف نوع اشتراكه وتوقيته وفترته عن إخوته).
         DB::table('request_children')->insert([
-            'request_id'         => $this->pendingRequest->id,
-            'child_id'           => $this->child->id,
-            'pickup_address_id'  => $addressId,
-            'dropoff_address_id' => $this->school->id,
-            'home_lat'           => 32.8810,
-            'home_lng'           => 13.1850,
-            'home_label'         => 'ط§ظ„ط¨ظٹطھ ط§ظ„ط±ط¦ظٹط³ظٹ',
-            'school_lat'         => 32.8870,
-            'school_lng'         => 13.1890,
-            'school_label'       => 'ظ…ط¯ط±ط³ط© ط§ظ„ظ†ظˆط±',
-            'price_per_child'    => 250.00,
+            'request_id'                  => $this->pendingRequest->id,
+            'child_id'                    => $this->child->id,
+            'subscription_type'           => 'multi_day',
+            'trip_direction'              => 'both',
+            'timing'                      => 'MORNING',
+            'start_date'                  => now()->addDays(1)->format('Y-m-d'),
+            'end_date'                    => now()->addMonths(1)->format('Y-m-d'),
+            'working_days_count'          => 22,
+            'distance_km'                 => 5.0,
+            'price_per_child'             => 250.00,
+            'trip_price'                  => 250.00,
+            'discount_amount'             => 0.00,
+            'total_amount_after_discount' => 250.00,
+            'driver_net_price'            => 230.00,
+            'created_at'                  => now(),
+            'updated_at'                  => now(),
         ]);
 
         // 7. ط·ظ„ط¨ ظ…ط±ظپظˆط¶
         $this->rejectedRequest = SubscriptionRequest::create([
             'parent_id'         => $this->parent->id,
             'driver_id'         => $this->driver->id,
-            'school_id'         => $this->school->id,
-            'subscription_type' => 'multi_day',
-            'direction'         => 'go',
-            'timing'            => 'EVENING',
-            'start_date'        => now()->addDays(1)->format('Y-m-d'),
-            'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-            'days_count'        => 22,
             'total_price'       => 150.00,
             'status'            => SubscriptionRequest::STATUS_REJECTED,
             'rejection_reason'  => 'ط®ط§ط±ط¬ ط§ظ„طھط؛ط·ظٹط©',

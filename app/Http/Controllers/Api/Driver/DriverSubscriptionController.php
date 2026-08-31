@@ -55,16 +55,23 @@ class DriverSubscriptionController extends Controller
             return $this->driverNotFoundResponse();
         }
 
+        // 'filter' هو الاسم الموثّق في FRONTEND_DRIVER_API_GUIDE (?filter=pending)؛
+        // نقبل 'status' أيضاً كاسم بديل لتوافق أي عميل قديم يرسله بهذا الاسم.
+        $statusFilter = $request->input('filter', $request->input('status'));
+
         $requests = SubscriptionRequest::query()
-            ->with(['parent.user', 'children.school', 'children.address'])
+            ->with(['parent.user', 'driver.user', 'children.school', 'children.address'])
             ->where('driver_id', $driver->id)
-            ->when($request->filled('status'), fn($q) => $q->where('status', $request->status))
+            ->when(filled($statusFilter), fn($q) => $q->where('status', $statusFilter))
             ->latest()
             ->paginate($request->get('per_page', 15));
 
         return DriverSubscriptionResource::collection($requests)->additional([
             'status'  => true,
             'success' => true,
+            // count جزء من العقد الموثّق في FRONTEND_DRIVER_API_GUIDE وتعتمد عليه الواجهة
+            // لعرض عدد الطلبات؛ غيابه كان يكسرها رغم أن البيانات تصل سليمة.
+            'count'   => $requests->total(),
             'message' => 'تم جلب طلبات الاشتراك بنجاح',
         ]);
     }
@@ -303,9 +310,13 @@ class DriverSubscriptionController extends Controller
             return $this->driverNotFoundResponse();
         }
 
+        // findOrFail يرمي ModelNotFoundException، وتُترجم افتراضياً إلى استجابة عامة
+        // بمفتاح 'status' بدل 'success' — يخالف عقد بقية نقاط هذا الكنترولر التي
+        // تستخدم 'success' دائماً. نلتقطها هنا لنُبقي الشكل موحداً على العميل.
         $subscriptionRequest = SubscriptionRequest::query()
             ->with([
                 'parent.user',
+                'driver.user',
                 'children' => function ($query) {
                     $query->withPivot([
                         'subscription_type',
@@ -314,10 +325,10 @@ class DriverSubscriptionController extends Controller
                         'start_date',
                         'end_date',
                         'working_days_count',
-                        'distance_km',                    
+                        'distance_km',
                         'price_per_child',
                         'trip_price',
-                        'discount_amount',            
+                        'discount_amount',
                         'total_amount_after_discount',
                         'driver_net_price'
                     ]);
@@ -326,7 +337,15 @@ class DriverSubscriptionController extends Controller
                 'children.address'
             ])
             ->where('driver_id', $driver->id)
-            ->findOrFail($id);
+            ->first();
+
+        if (!$subscriptionRequest) {
+            return response()->json([
+                'status'  => false,
+                'success' => false,
+                'message' => 'عذراً، طلب الاشتراك المطلوب غير موجود أو غير مخصص لك.',
+            ], 404);
+        }
 
         return (new DriverSubscriptionResource($subscriptionRequest))
             ->additional([
@@ -345,12 +364,17 @@ class DriverSubscriptionController extends Controller
 
         $subscriptionRequest = SubscriptionRequest::where('id', $id)
             ->where('driver_id', $driver->id)
-            ->with(['parent.user', 'school', 'children.school', 'children.address'])
+            ->with(['parent.user', 'children.school', 'children.address'])
             ->first();
 
         if (!$subscriptionRequest) {
             return response()->json(['success' => false, 'message' => 'الطلب غير موجود أو غير مخصص لك.'], 404);
         }
+
+        // مدرسة الطلب نفسه (SubscriptionRequest::school) أصبحت null دائماً — العمود
+        // school_id أُزيل من جدول requests وصار لكل طفل مدرسته الخاصة. نعرض مدرسة
+        // أول طفل كتمثيل معقول للرحلة الواحدة (حالة الوجهة المشتركة الأشيع).
+        $school = $subscriptionRequest->children->first()?->school;
 
         $tripDetails = [
             'request_id'   => $subscriptionRequest->id,
@@ -363,11 +387,11 @@ class DriverSubscriptionController extends Controller
                 'phone' => $subscriptionRequest->parent?->user?->phone_number ?? $subscriptionRequest->parent?->user?->phone ?? null,
             ],
             'school' => [
-                'id'        => $subscriptionRequest->school?->id        ?? null,
-                'name'      => $subscriptionRequest->school?->name      ?? 'غير محدد',
-                'address'   => $subscriptionRequest->school?->address   ?? null,
-                'latitude'  => (float) ($subscriptionRequest->school?->lat  ?? $subscriptionRequest->school?->latitude  ?? 0),
-                'longitude' => (float) ($subscriptionRequest->school?->lng ?? $subscriptionRequest->school?->longitude ?? 0),
+                'id'        => $school?->id        ?? null,
+                'name'      => $school?->name      ?? 'غير محدد',
+                'address'   => $school?->address   ?? null,
+                'latitude'  => (float) ($school?->lat  ?? $school?->latitude  ?? 0),
+                'longitude' => (float) ($school?->lng ?? $school?->longitude ?? 0),
             ],
             'children' => $subscriptionRequest->children->map(fn($child) => [
                 'id'           => $child->id,

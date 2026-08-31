@@ -31,8 +31,8 @@ class TripResource extends JsonResource
                 ];
             }),
 
-            'tracking_points' => $this->whenLoaded('trackingLogs', function() {
-                return $this->trackingLogs->map(function($point) {
+            'tracking_points' => $this->whenLoaded('tracking', function() {
+                return $this->tracking->map(function($point) {
                     return [
                         'lat' => (float) $point->latitude,
                         'lng' => (float) $point->longitude,

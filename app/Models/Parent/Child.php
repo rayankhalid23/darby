@@ -41,7 +41,11 @@ class Child extends Model
         parent::booted();
 
         static::creating(function ($child) {
-            $child->qr_code_token = 'CHLD-' . Str::upper(Str::random(6)) . '-' . time();
+            // يُولَّد فقط عند غيابه؛ الدهس غير المشروط كان يمنع استيراد/استعادة
+            // أي طفل بكوده الأصلي ويُبطل أي كود مطبوع مسبقاً.
+            if (empty($child->qr_code_token)) {
+                $child->qr_code_token = 'CHLD-' . Str::upper(Str::random(6)) . '-' . time();
+            }
         });
     }
     /**

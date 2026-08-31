@@ -37,33 +37,37 @@ class SubscriptionRequest extends Model
     const ACCEPTANCE_MODE_ALL        = 'all';
     const ACCEPTANCE_MODE_INDIVIDUAL = 'individual';
 
+    /**
+     * ⚠️ الأعمدة التالية أُزيلت من جدول requests في مهاجرة 2026_08_26_131258 وانتقلت
+     * إلى مستوى الطفل في جدول request_children (لأن كل طفل قد يكون له مدرسة وتوقيت
+     * وفترة اشتراك مختلفة عن أخيه):
+     *   school_id · subscription_type · direction · timing
+     *   start_date · end_date · days_count · distance_km · trip_price
+     *
+     * بقاؤها هنا كان يجعل كل عملية إنشاء طلب اشتراك تحاول الكتابة في أعمدة غير
+     * موجودة فتفشل بخطأ «Unknown column». اقرأها دائماً من pivot الطفل
+     * ($request->children->first()->pivot) لا من الطلب نفسه.
+     */
     protected $fillable = [
         'parent_id',
         'driver_id',
-        'school_id',
-        'subscription_type',
-        'direction',
-        'timing',
-        'start_date',
-        'end_date',
-        'days_count',
         'total_price',
         'discount_amount',
         'total_amount_after_discount',
         'max_waiting_time',
         'status',
-        'distance_km',
-        'trip_price',
         'rejection_reason',
         'notes',
         'children_count',
         'children_acceptance_mode',
+        'pickup_time',
+        'dropoff_time',
         'responded_at',
     ];
 
     protected $casts = [
-        'start_date'                  => 'date',
-        'end_date'                    => 'date',
+        // start_date / end_date لم يعودا أعمدة في هذا الجدول — تحويلهما هنا بلا معنى
+        // وقد يُوهم بوجودهما. تواريخ الاشتراك تُقرأ من pivot الطفل.
         'total_price'                 => 'decimal:2',
         'discount_amount'             => 'decimal:2',
         'total_amount_after_discount' => 'decimal:2',
@@ -101,6 +105,11 @@ class SubscriptionRequest extends Model
         return $this->belongsTo(Driver::class, 'driver_id');
     }
 
+    /**
+     * @deprecated عمود school_id أُزيل من جدول requests (مهاجرة 2026_08_26_131258).
+     * ترجع دائماً null الآن. مدرسة كل طفل تُقرأ من $child->school أو من pivot الطلب.
+     * أُبقيت مؤقتاً لأن عدة أماكن تستخدمها ضمن سلسلة ?? ولا تتأثر بعودة null.
+     */
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class, 'school_id');
@@ -289,6 +298,18 @@ class SubscriptionRequest extends Model
                     'status'      => 'completed',
                     'state_label' => 'منتهي',
                     'status_text' => 'اشتراك منتهي الصلاحية',
+                    'is_active'   => false,
+                ];
+            }
+
+            // فحص هل السائق مسجل غياباً اليوم
+            $driverId = $this->driver_id ?? $activeSub?->driver_id;
+            if ($driverId && \App\Models\Driver\DriverAbsence::where('driver_id', $driverId)->whereDate('absence_date', \Carbon\Carbon::today()->toDateString())->exists()) {
+                return [
+                    'state'       => 'driver_absent',
+                    'status'      => 'driver_absent',
+                    'state_label' => 'غياب السائق (متوقف مؤقتاً)',
+                    'status_text' => 'السائق مسجل كغائب اليوم',
                     'is_active'   => false,
                 ];
             }

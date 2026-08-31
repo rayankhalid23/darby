@@ -26,26 +26,34 @@ class AiClassifierService
 
     protected string $endpoint;
     protected int $timeoutSeconds;
+    protected ?string $apiKey;
     protected NotificationService $notificationService;
 
     public function __construct(NotificationService $notificationService)
     {
         $this->endpoint = config('services.driver_ai.url', 'http://127.0.0.1:8000/api/v1/predict');
         $this->timeoutSeconds = (int) config('services.driver_ai.timeout', 3);
+        $this->apiKey = config('services.driver_ai.api_key');
         $this->notificationService = $notificationService;
     }
 
     /**
      * يستدعي خدمة التصنيف الآلي عبر HTTP مع شبكة أمان كاملة: أي فشل (شبكة، مهلة،
-     * خطأ سيرفر، استجابة غير متوقعة) يؤول دائماً إلى نتيجة افتراضية آمنة (no_action)
-     * ولا يُسمح له بإسقاط التطبيق أو تعطيل العملية المستدعية.
+     * خطأ سيرفر، استجابة غير متوقعة) يؤول إلى نتيجة افتراضية آمنة (no_action).
      *
      * $context: حقول إضافية تُرسَل مع النص (مثال: ['driver_id' => 5]).
+     * $throwOnFailure: عند التفعيل (مثال في وظائف الطوابير)، يتم رمي الاستثناء للسماح
+     * بآلية إعادة المحاولة (Queue Retry) قبل اعتماد النتيجة الافتراضية.
      */
-    public function classify(string $text, array $context = []): array
+    public function classify(string $text, array $context = [], bool $throwOnFailure = false): array
     {
         try {
-            $response = Http::timeout($this->timeoutSeconds)->post(
+            $request = Http::timeout($this->timeoutSeconds);
+            if (!empty($this->apiKey)) {
+                $request = $request->withHeaders(['X-API-Key' => $this->apiKey]);
+            }
+
+            $response = $request->post(
                 $this->endpoint,
                 array_merge(['complaint_text' => $text], $context)
             );

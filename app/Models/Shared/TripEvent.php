@@ -19,6 +19,7 @@ class TripEvent extends Model
     'location_lng', // 👈 تأكد من وجوده هنا
     'scanned_at',
     'trip_cost',
+    'reason',
     ];
 
     public function trip()

@@ -608,10 +608,13 @@ class ComprehensiveSubscriptionLifecycleTest extends TestCase
         ]);
 
         // 1. ولي الأمر
+        // نقاط active-subscriptions تُفكِّك كل طفل كصف مستقل بقصد (كل طفل باشتراكه)،
+        // والحقل الأعلى `id` هو معرّف صف active_subscriptions الفعلي لهذا الطفل
+        // (لا معرّف الطفل ولا معرّف طلب الاشتراك — راجع ParentActiveChildSubscriptionResource).
         $parentRes = $this->actingAs($this->parentUser, 'sanctum')
             ->getJson('/api/parent/active-subscriptions?filter=active');
         $parentRes->assertStatus(200);
-        $this->assertContains($req->id, collect($parentRes->json('data'))->pluck('id')->toArray());
+        $this->assertContains($activeSub->id, collect($parentRes->json('data'))->pluck('id')->toArray());
 
         // تفاصيل الاشتراك النشط لولي الأمر
         $parentShow = $this->actingAs($this->parentUser, 'sanctum')
@@ -622,7 +625,7 @@ class ComprehensiveSubscriptionLifecycleTest extends TestCase
         $driverRes = $this->actingAs($this->driverUser, 'sanctum')
             ->getJson('/api/driver/active-subscriptions?filter=current_active');
         $driverRes->assertStatus(200);
-        $this->assertContains($req->id, collect($driverRes->json('data'))->pluck('id')->toArray());
+        $this->assertContains($activeSub->id, collect($driverRes->json('data'))->pluck('id')->toArray());
 
         // تفاصيل الاشتراك النشط للسائق
         $driverShow = $this->actingAs($this->driverUser, 'sanctum')

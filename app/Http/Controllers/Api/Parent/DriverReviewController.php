@@ -17,7 +17,7 @@ class DriverReviewController extends Controller
      */
     public function index(int $driverId): JsonResponse
     {
-        $reviews = DriverReview::with(['parent.user', 'driver.user'])
+        $reviews = DriverReview::with(['parent', 'driver.user'])
             ->where('driver_id', $driverId)
             ->latest()
             ->paginate(10);

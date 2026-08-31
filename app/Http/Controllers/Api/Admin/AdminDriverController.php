@@ -11,6 +11,7 @@ use App\Http\Resources\Api\Admin\AdminDriverListResource;
 use App\Http\Resources\Api\Admin\AdminPendingChangeResource; // الجديد الخاص بتنسيق شاشة التعديلات المعلقة
 use App\Services\Admin\AdminDriverService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Exception;
@@ -272,6 +273,130 @@ class AdminDriverController extends Controller
                 'status'  => false, 
                 'message' => 'تعذر معالجة طلب التعديل: ' . $e->getMessage()
             ], $statusCode);
+        }
+    }
+
+    /**
+     * 7. عرض قائمة طلبات غياب السائقين
+     * GET: /api/admin/driver-absences
+     */
+    public function getAbsenceRequests(Request $request): JsonResponse
+    {
+        try {
+            $filters = $request->only(['status', 'driver_id', 'date', 'search', 'per_page']);
+            $absences = $this->adminDriverService->getDriverAbsenceRequests($filters);
+
+            return response()->json([
+                'status'  => true,
+                'message' => 'تم جلب قائمة طلبات غياب السائقين بنجاح.',
+                'data'    => $absences->items(),
+                'meta'    => [
+                    'current_page' => $absences->currentPage(),
+                    'last_page'    => $absences->lastPage(),
+                    'per_page'     => $absences->perPage(),
+                    'total'        => $absences->total(),
+                ]
+            ], 200);
+        } catch (Exception $e) {
+            Log::error("Admin Get Absence Requests Error: " . $e->getMessage());
+            return response()->json(['status' => false, 'message' => 'حدث خطأ أثناء جلب طلبات الغياب.'], 500);
+        }
+    }
+
+    /**
+     * 8. عرض تفاصيل طلب غياب محدد
+     * GET: /api/admin/driver-absences/{id}
+     */
+    public function showAbsenceRequest(int $id): JsonResponse
+    {
+        try {
+            $absence = $this->adminDriverService->getDriverAbsenceDetails($id);
+
+            return response()->json([
+                'status'  => true,
+                'message' => 'تم جلب تفاصيل طلب الغياب بنجاح.',
+                'data'    => $absence
+            ], 200);
+        } catch (Exception $e) {
+            Log::error("Admin Show Absence Request Error: " . $e->getMessage());
+            return response()->json(['status' => false, 'message' => 'عذراً، طلب الغياب غير موجود.'], 404);
+        }
+    }
+
+    /**
+     * 9. موافقة الإدارة على طلب غياب السائق ونزعه فقط من الرحلات المحددة
+     * POST: /api/admin/driver-absences/{id}/approve
+     */
+    public function approveAbsenceRequest(Request $request, int $id): JsonResponse
+    {
+        try {
+            $userId = auth()->id();
+            $adminId = \Illuminate\Support\Facades\DB::table('admins')
+                ->where('user_id', $userId)
+                ->value('id') ?? 1;
+
+            $notes = $request->input('notes') ?? $request->input('admin_notes');
+            $absence = $this->adminDriverService->approveDriverAbsence($id, $notes, $adminId);
+
+            return response()->json([
+                'status'  => true,
+                'message' => 'تمت الموافقة على طلب الغياب ونزع السائق من الرحلات المحددة بنجاح.',
+                'data'    => [
+                    'absence_id'   => $absence->id,
+                    'driver_id'    => $absence->driver_id,
+                    'absence_date' => $absence->absence_date->toDateString(),
+                    'status'       => $absence->status,
+                    'admin_notes'  => $absence->admin_notes,
+                    'trips'        => $absence->trips->map(function ($trip) {
+                        return [
+                            'id'        => $trip->id,
+                            'driver_id' => $trip->driver_id,
+                            'status'    => $trip->status,
+                        ];
+                    }),
+                ]
+            ], 200);
+        } catch (Exception $e) {
+            Log::error("Admin Approve Absence Error: " . $e->getMessage());
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 400);
+        }
+    }
+
+    /**
+     * 10. رفض الإدارة لطلب غياب السائق
+     * POST: /api/admin/driver-absences/{id}/reject
+     */
+    public function rejectAbsenceRequest(Request $request, int $id): JsonResponse
+    {
+        $request->validate([
+            'reason' => 'required|string|max:1000',
+        ], [
+            'reason.required' => 'يرجى كتابة سبب رفض طلب الغياب.',
+        ]);
+
+        try {
+            $userId = auth()->id();
+            $adminId = \Illuminate\Support\Facades\DB::table('admins')
+                ->where('user_id', $userId)
+                ->value('id') ?? 1;
+
+            $reason = $request->input('reason');
+            $absence = $this->adminDriverService->rejectDriverAbsence($id, $reason, $adminId);
+
+            return response()->json([
+                'status'  => true,
+                'message' => 'تم رفض طلب الغياب وإبلاغ السائق بالسبب.',
+                'data'    => [
+                    'absence_id'   => $absence->id,
+                    'driver_id'    => $absence->driver_id,
+                    'absence_date' => $absence->absence_date->toDateString(),
+                    'status'       => $absence->status,
+                    'admin_notes'  => $absence->admin_notes,
+                ]
+            ], 200);
+        } catch (Exception $e) {
+            Log::error("Admin Reject Absence Error: " . $e->getMessage());
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 400);
         }
     }
 }

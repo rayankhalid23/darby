@@ -37,16 +37,37 @@ class DailyTripGenerationService
         $date = $date ?? Carbon::today();
         $dateString = $date->toDateString();
 
+        // يُستبعد هذا المسار من التوليد إن كان للسائق غياب معتمد يشمل هذا اليوم بالكامل
+        // (المسار القديم بدون تحديد رحلات)، أو غياب معتمد مرتبط تحديداً برحلة على هذا
+        // المسار بالذات (المسار الجديد القائم على اختيار رحلات محددة) — دون التأثير على
+        // بقية ورديات نفس السائق في نفس اليوم التي لم يطلب الغياب عنها.
         $isDriverAbsent = DriverAbsence::where('driver_id', $route->driver_id)
             ->whereDate('absence_date', $dateString)
+            ->where(function ($q) use ($route) {
+                $q->whereDoesntHave('trips')
+                  ->orWhereHas('trips', function ($tq) use ($route) {
+                      $tq->where('route_id', $route->id);
+                  });
+            })
             ->exists();
 
         if ($isDriverAbsent) {
             return null;
         }
 
-        $trip = Trip::where('driver_id', $route->driver_id)
-            ->where('route_id', $route->id)
+        // ⚠️ لا تُولَّد رحلة لتاريخ لا يغطيه أي اشتراك فعّال على هذا المسار.
+        // بدون هذا الفحص كانت الرحلات تُولَّد إلى ما لا نهاية بعد انتهاء الاشتراك
+        // (المسار يبقى Active ولا توجد وظيفة تُعطّله)، فتتضخم الجداول والتقارير
+        // برحلات لا يقابلها أي التزام مالي أو تعاقدي.
+        if (!$this->routeHasCoverageOn($route, $dateString)) {
+            return null;
+        }
+
+        // البحث بمعرّف المسار والتاريخ والنوع فقط (وليس معرّف السائق)، لأن الرحلة قد تكون
+        // بلا سائق مُسنَد حالياً (driver_id = null) نتيجة فصل السائق عنها بعد تسجيل غيابه؛
+        // الاعتماد على driver_id هنا كان يجعل هذا الفحص يفشل في إيجادها فيُعاد إنشاؤها من
+        // جديد بنفس السائق الغائب، فيُلغي أثر الغياب فعلياً.
+        $trip = Trip::where('route_id', $route->id)
             ->where('trip_date', $dateString)
             ->where('trip_type', $route->route_type)
             ->first();
@@ -95,8 +116,9 @@ class DailyTripGenerationService
         $skipped = 0;
 
         foreach ($routes as $route) {
-            $alreadyExists = Trip::where('driver_id', $route->driver_id)
-                ->where('route_id', $route->id)
+            // بمعرّف المسار والتاريخ فقط، بغض النظر عن driver_id الحالي للرحلة (قد تكون
+            // بلا سائق مُسنَد بعد فصل سائق غائب عنها) — لتفادي إعادة إنشاء رحلة مكرّرة.
+            $alreadyExists = Trip::where('route_id', $route->id)
                 ->where('trip_date', $today->toDateString())
                 ->exists();
 
@@ -107,6 +129,11 @@ class DailyTripGenerationService
 
             $startDateTime = Carbon::parse($today->toDateString() . ' ' . $route->start_time);
             $windowStart = $startDateTime->copy()->subMinutes(30);
+
+            if (!$this->routeHasCoverageOn($route, $today->toDateString())) {
+                $skipped++;
+                continue;
+            }
 
             if ($now->greaterThanOrEqualTo($windowStart) && $now->lessThanOrEqualTo($startDateTime)) {
                 $trip = $this->generateForRoute($route, $today);
@@ -121,6 +148,41 @@ class DailyTripGenerationService
             'generated' => $generated,
             'skipped'   => $skipped,
         ];
+    }
+
+    /**
+     * هل يوجد اشتراك فعّال على هذا المسار تغطي فترته التاريخ المطلوب؟
+     */
+    private function routeHasCoverageOn(Route $route, string $dateString): bool
+    {
+        $subscriptionRequestIds = \App\Models\Shared\ActiveSubscription::where('route_id', $route->id)
+            ->where('status', '!=', 'cancelled')
+            ->pluck('subscription_request_id')
+            ->filter()
+            ->unique();
+
+        if ($subscriptionRequestIds->isEmpty()) {
+            // مسار بلا اشتراكات مرتبطة — نتركه للسلوك القديم بدل حجب رحلات مشروعة
+            return true;
+        }
+
+        $covers = \Illuminate\Support\Facades\DB::table('request_children')
+            ->whereIn('request_id', $subscriptionRequestIds)
+            ->whereDate('start_date', '<=', $dateString)
+            ->whereDate('end_date', '>=', $dateString)
+            ->exists();
+
+        if ($covers) {
+            return true;
+        }
+
+        // توافقية: اشتراكات قديمة بلا تواريخ على مستوى الطفل
+        $hasAnyChildDates = \Illuminate\Support\Facades\DB::table('request_children')
+            ->whereIn('request_id', $subscriptionRequestIds)
+            ->whereNotNull('start_date')
+            ->exists();
+
+        return !$hasAnyChildDates;
     }
 
     private function buildTripStops(Trip $trip, Route $route, string $dateString): void
@@ -151,7 +213,16 @@ class DailyTripGenerationService
             ? Child::whereIn('id', $keptChildIds)->pluck('school_id')->unique()->all()
             : [];
 
-        // المرحلة 2: بناء المحطات بنفس الترتيب الأصلي، مع إعادة ترقيم المحطات المتبقية فقط
+        // المرحلة 1.5: جلب أي طلبات تغيير موقع معتمدة لتاريخ اليوم لتطبيقها على محطات الرحلة
+        $approvedLocationChanges = \App\Models\Shared\LocationChangeRequest::where('driver_id', $route->driver_id)
+            ->where('status', \App\Models\Shared\LocationChangeRequest::STATUS_APPROVED)
+            ->whereDate('change_date', $dateString)
+            ->get()
+            ->keyBy(function ($item) {
+                return $item->child_id . '_' . $item->point_type;
+            });
+
+        // المرحلة 2: بناء المحطات بنفس الترتيب الأصلي، مع تطبيق أي تغيير موقع مؤقت لليوم وإعادة ترقيم المحطات المتبقية فقط
         $sequence = 1;
 
         foreach ($routeStops as $stop) {
@@ -160,15 +231,23 @@ class DailyTripGenerationService
                 ? in_array($stop->child_id, $keptChildIds)
                 : in_array($stop->school_id, $keptSchoolIds);
 
+            $pointType = $isHome ? 'pickup' : 'dropoff';
+            $changeKey = ($stop->child_id ?? 0) . '_' . $pointType;
+            $locChange = $approvedLocationChanges->get($changeKey);
+
+            $lat   = $locChange ? $locChange->new_lat : $stop->lat;
+            $lng   = $locChange ? $locChange->new_lng : $stop->lng;
+            $label = $locChange ? $locChange->new_label : $stop->label;
+
             TripStop::create([
                 'trip_id'        => $trip->id,
                 'route_stop_id'  => $stop->id,
                 'stop_type'      => $stop->stop_type,
                 'child_id'       => $stop->child_id,
                 'school_id'      => $stop->school_id,
-                'lat'            => $stop->lat,
-                'lng'            => $stop->lng,
-                'label'          => $stop->label,
+                'lat'            => $lat,
+                'lng'            => $lng,
+                'label'          => $label,
                 'sequence_order' => $isKept ? $sequence : 0,
                 'status'         => $isKept ? TripStop::STATUS_PENDING : TripStop::STATUS_ABSENT_PRE,
             ]);

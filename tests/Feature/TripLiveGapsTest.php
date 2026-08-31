@@ -136,20 +136,11 @@ class TripLiveGapsTest extends TestCase
 
         $subscriptionRequest = \App\Models\Shared\SubscriptionRequest::create([
             'parent_id' => $this->child->parent_id, 'driver_id' => $this->driver->id, 'school_id' => $this->school->id,
-            'subscription_type' => 'multi_day', 'direction' => 'go', 'timing' => 'MORNING',
-            'start_date' => now()->format('Y-m-d'), 'end_date' => now()->addMonths(1)->format('Y-m-d'),
-            'days_count' => 22, 'total_price' => 100, 'status' => 'accepted', 'children_count' => 1,
         ]);
-        $contract = \App\Models\Shared\Contract::create([
-            'subscription_request_id' => $subscriptionRequest->id,
-            'parent_id' => $parentRecord->user_id, 'driver_id' => $this->driverUser->id,
-            'contract_number' => 'DRBY-GAP-' . rand(100000, 999999), 'subscription_type' => 'multi_day',
-            'direction' => 'go', 'timing' => 'MORNING', 'pickup_time' => '07:00:00', 'dropoff_time' => '14:00:00',
-            'max_waiting_time' => 15, 'start_date' => now()->format('Y-m-d'), 'end_date' => now()->addMonths(1)->format('Y-m-d'),
-            'days_count' => 22, 'total_price' => 100, 'clauses' => [], 'status' => 'active', 'signed_at' => now(),
-        ]);
+        // جدول contracts حُذف (مهاجرة 2026_08_24_000001) وصار الاشتراك النشط
+        // يرتبط بطلب الاشتراك مباشرة عبر subscription_request_id.
         $sub = \App\Models\Shared\ActiveSubscription::create([
-            'contract_id' => $contract->id, 'status' => 'active', 'child_id' => $this->child->id,
+            'subscription_request_id' => $subscriptionRequest->id, 'status' => 'active', 'child_id' => $this->child->id,
             'driver_id' => $this->driver->id, 'route_id' => $this->route->id, 'parent_id' => $parentRecord->user_id,
             'pickup_lat' => 32.881, 'pickup_lng' => 13.191, 'pickup_label' => 'ط§ظ„ظ…ظ†ط²ظ„', 'pickup_time' => '07:00:00',
             'dropoff_lat' => 32.90, 'dropoff_lng' => 13.20, 'dropoff_label' => 'ط§ظ„ظ…ط¯ط±ط³ط©', 'dropoff_time' => '14:00:00',
@@ -163,7 +154,13 @@ class TripLiveGapsTest extends TestCase
         $show->assertJsonPath('data.children.0.status', 'pending');
         $show->assertJsonPath('data.children.0.pickup_status', 'pending');
 
-        // طھط£ظƒظٹط¯ ط§ظ„طµط¹ظˆط¯ ط¹ط¨ط± QR (ظٹطھط¬ط§ظˆط² ظپط­طµ ط§ظ„ظ…ظˆظ‚ط¹)
+        // لا يجوز تسجيل أي حالة لطفل قبل بدء الرحلة فعلياً
+        $this->actingAs($this->driverUser)->postJson(
+            "/api/v1/driver/trips/{$tripId}/start",
+            ['latitude' => 32.881, 'longitude' => 13.191]
+        )->assertStatus(200);
+
+        // طھط£ظƒظٹط¯ ط§ظ„طµط¹ظˆط¯ ط¹ط¨ط± QR (ظ†ط·ط§ظ‚ ظ…ظˆط³ط¹)
         $this->actingAs($this->driverUser)->postJson(
             "/api/v1/driver/trips/{$tripId}/verify-qr/{$sub->id}",
             ['qr_code_token' => $this->child->qr_code_token]

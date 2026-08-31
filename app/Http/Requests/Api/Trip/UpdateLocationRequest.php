@@ -17,6 +17,17 @@ class UpdateLocationRequest extends FormRequest
     }
 
     /**
+     * توحيد الأسماء البديلة (lat/lng) القادمة من بعض إصدارات التطبيق مع latitude/longitude قبل الفحص.
+     */
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'latitude'  => $this->input('latitude', $this->input('lat')),
+            'longitude' => $this->input('longitude', $this->input('lng')),
+        ]);
+    }
+
+    /**
      * شروط التحقق الشاملة والدقيقة لبيانات الـ GPS.
      */
     public function rules(): array
@@ -26,6 +37,7 @@ class UpdateLocationRequest extends FormRequest
             'longitude'   => 'required|numeric|between:-180,180',
             'speed'       => 'nullable|numeric|min:0',
             'accuracy'    => 'nullable|numeric|min:0',
+            'heading'     => 'nullable|numeric|between:0,360',
             'recorded_at' => 'nullable|date',
         ];
     }
@@ -50,6 +62,10 @@ class UpdateLocationRequest extends FormRequest
             'speed.numeric'       => 'يجب أن تكون قيمة السرعة عبارة عن رقم صحيح أو عشري.',
             'speed.min'           => 'لا يمكن أن تكون قيمة سرعة المركبة بالسالب.',
             
+            // --- اتجاه المركبة (Heading) ---
+            'heading.numeric'     => 'يجب أن تكون قيمة اتجاه المركبة (Heading) رقماً.',
+            'heading.between'     => 'اتجاه المركبة يجب أن يكون بين 0 و 360 درجة.',
+
             // --- دقة الإشارة (Accuracy) ---
             'accuracy.numeric'    => 'يجب أن تكون قيمة دقة إشارة الجي بي إس (Accuracy) عبارة عن رقم.',
             'accuracy.min'        => 'لا يمكن أن تكون قيمة دقة الإشارة الجغرافية بالسالب.',

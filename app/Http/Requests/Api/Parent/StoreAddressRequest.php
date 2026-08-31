@@ -25,7 +25,10 @@ class StoreAddressRequest extends FormRequest
                 'string',
                 'min:2',
                 'max:100',
-                'regex:/^[\p{Arabic}\s]+$/u',
+                // نسمح بالأرقام والشرطة والشرطة المائلة إلى جانب الحروف العربية:
+                // مسميات العناوين الواقعية تتضمن أرقاماً مثل «شقة 5» و«مبنى 12-ب»،
+                // وكان تقييدها بالحروف العربية وحدها يرفض عناوين مشروعة تماماً.
+                'regex:/^[\p{Arabic}\p{N}\s\-\/]+$/u',
                 Rule::unique('addresses', 'label')->where(function ($query) use ($parentId) {
                     return $query->where('parent_id', $parentId)->whereNull('deleted_at');
                 })
@@ -58,7 +61,7 @@ class StoreAddressRequest extends FormRequest
             'label.string'   => 'مسمى العنوان يجب أن يكون نصاً.',
             'label.min'      => 'مسمى العنوان يجب ألا يقل عن حرفين.',
             'label.max'      => 'مسمى العنوان يجب ألا يتجاوز 100 حرف.',
-            'label.regex'    => 'مسمى العنوان يجب أن يكون باللغة العربية فقط.',
+            'label.regex'    => 'مسمى العنوان يجب أن يكون بالعربية (ويمكن أن يتضمن أرقاماً).',
             'label.unique'   => 'اسم العنوان مسجل لديك مسبقاً.',
 
             // خط العرض (Lat)

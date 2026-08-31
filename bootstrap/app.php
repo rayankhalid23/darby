@@ -121,6 +121,24 @@ return Application::configure(basePath: dirname(__DIR__))
                     return response()->json($response, 404);
                 }
 
+                // [الحالة 4-ب]: فعل HTTP غير مدعوم لهذا المسار (POST على مسار PUT مثلاً)
+                // بدون هذه الحالة كان الخطأ يسقط في شبكة الأمان ويعود 500، فيبدو
+                // خطأ خادم بينما هو خطأ في الطلب نفسه — يُضيّع وقت التشخيص ويُخفي
+                // عدم تطابق حقيقي بين المسارات والتوثيق.
+                if ($e instanceof \Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException) {
+                    $response = [
+                        'status'     => false,
+                        'error_code' => 'METHOD_NOT_ALLOWED',
+                        'message'    => 'طريقة الطلب المستخدمة غير مدعومة لهذا المسار.'
+                    ];
+
+                    if (config('app.debug')) {
+                        $response['debug_message'] = $e->getMessage();
+                    }
+
+                    return response()->json($response, 405);
+                }
+
                 // [الحالة 5]: شبكة الأمان المطلقة للأخطاء غير المتوقعة (Server Error)
                 $serverErrorResponse = [
                     'status'     => false,

@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -101,7 +102,7 @@ class AdminSupervisorManagementTest extends TestCase
         $response->assertJsonPath('data.email', $email);
         $response->assertJsonPath('data.is_active', true);
         $response->assertJsonPath('data.role_id', 2);
-        $response->assertJsonPath('data.role_name', 'مشرف');
+        $response->assertJsonPath('data.role_name', DB::table('roles')->where('id', 2)->value('display_name'));
 
         // التحقق من الحفظ الفعلي في قاعدة البيانات بالدورين الصحيحين
         $this->assertDatabaseHas('users', [
@@ -280,7 +281,7 @@ class AdminSupervisorManagementTest extends TestCase
         $response->assertJsonPath('data.user_id', $supervisor->user_id);
         $response->assertJsonPath('data.full_name', 'صالح أحمد البرعصي');
         $response->assertJsonPath('data.email', $supervisor->user->email);
-        $response->assertJsonPath('data.role_name', 'مشرف');
+        $response->assertJsonPath('data.role_name', DB::table('roles')->where('id', 2)->value('display_name'));
         $response->assertJsonPath('data.created_by', $this->adminUser->id);
         $response->assertJsonPath('data.creator_name', $this->adminUser->full_name);
     }
@@ -709,11 +710,14 @@ class AdminSupervisorManagementTest extends TestCase
 
         $response->assertStatus(200);
         $response->assertJsonPath('status', true);
-        $response->assertJsonPath('message', 'تم حذف المشرف (مشرف سيتم حذفه) نهائياً بنجاح.');
+        $response->assertJsonPath('message', 'تم حذف المشرف (مشرف سيتم حذفه) بنجاح.');
 
-        // السجلات محذوفة فعلياً من الجدولين
+        // سجل المشرف يُحذف فعلياً (جدول admins بلا عمود deleted_at)،
+        // بينما حساب المستخدم يُحذف حذفاً ناعماً حفاظاً على سجل التدقيق وعلى
+        // المراجع مثل created_by لمشرفين آخرين. في الحالتين لا يظهر الحساب في
+        // أي واجهة عرض ولا يمكنه تسجيل الدخول.
         $this->assertDatabaseMissing('admins', ['id' => $supervisor->id]);
-        $this->assertDatabaseMissing('users', ['id' => $userId]);
+        $this->assertSoftDeleted('users', ['id' => $userId]);
     }
 
     public function test_deleted_supervisor_disappears_from_list_and_show(): void

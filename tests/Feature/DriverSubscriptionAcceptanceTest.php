@@ -137,13 +137,6 @@ class DriverSubscriptionAcceptanceTest extends TestCase
         $this->subscriptionRequest = SubscriptionRequest::create([
             'parent_id'         => $this->parent->id,
             'driver_id'         => $this->driver->id,
-            'school_id'         => $this->school->id,
-            'subscription_type' => 'multi_day',
-            'direction'         => 'both',
-            'timing'            => 'MORNING',
-            'start_date'        => now()->addDays(1)->format('Y-m-d'),
-            'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-            'days_count'        => 22,
             'total_price'       => 200.00,
             'pickup_time'       => '07:00:00',
             'dropoff_time'      => '14:00:00',
@@ -153,18 +146,25 @@ class DriverSubscriptionAcceptanceTest extends TestCase
         ]);
 
         // ---- 8. ربط الطفل بالطلب في جدول request_children ----
+        // تفاصيل الاشتراك (النوع/الاتجاه/التوقيت/الفترة) صارت على مستوى الطفل
+        // بعد مهاجرة 2026_08_26_131258 ولم تعد أعمدة في جدول requests.
         DB::table('request_children')->insert([
-            'request_id'         => $this->subscriptionRequest->id,
-            'child_id'           => $this->child->id,
-            'pickup_address_id'  => $addressId,
-            'dropoff_address_id' => $this->school->id,
-            'home_lat'           => 32.88,
-            'home_lng'           => 13.19,
-            'home_label'         => 'المنزل',
-            'school_lat'         => 32.90,
-            'school_lng'         => 13.20,
-            'school_label'       => 'المدرسة',
-            'price_per_child'    => 200.00,
+            'request_id'                  => $this->subscriptionRequest->id,
+            'child_id'                    => $this->child->id,
+            'subscription_type'           => 'multi_day',
+            'trip_direction'              => 'both',
+            'timing'                      => 'MORNING',
+            'start_date'                  => now()->addDay()->format('Y-m-d'),
+            'end_date'                    => now()->addMonth()->format('Y-m-d'),
+            'working_days_count'          => 22,
+            'distance_km'                 => 4.0,
+            'price_per_child'             => 200.00,
+            'trip_price'                  => 200.00,
+            'discount_amount'             => 0.00,
+            'total_amount_after_discount' => 200.00,
+            'driver_net_price'            => 184.00,
+            'created_at'                  => now(),
+            'updated_at'                  => now(),
         ]);
     }
 
@@ -280,16 +280,30 @@ class DriverSubscriptionAcceptanceTest extends TestCase
         $newReq = SubscriptionRequest::create([
             'parent_id'         => $this->parent->id,
             'driver_id'         => $this->driver->id,
-            'school_id'         => $this->school->id,
-            'subscription_type' => 'multi_day',
-            'direction'         => 'both',
-            'timing'            => 'MORNING',
-            'start_date'        => now()->addDays(1)->format('Y-m-d'),
-            'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-            'days_count'        => 22,
             'total_price'       => 200.00,
             'status'            => SubscriptionRequest::STATUS_PENDING,
             'children_count'    => 1,
+        ]);
+
+        // ⚠️ لا بد من صف request_children هنا: فحص التعارض الزمني يعتمد على فترة
+        // اشتراك الطفل (pivot.start_date/end_date). بدونه يفترض النظام "اليوم فقط"
+        // فلا يتقاطع مع حجز الاشتراك القائم (غد → الشهر القادم) ويمر القبول خطأً.
+        DB::table('request_children')->insert([
+            'request_id'                  => $newReq->id,
+            'child_id'                    => $this->child->id,
+            'subscription_type'           => 'multi_day',
+            'trip_direction'              => 'both',
+            'timing'                      => 'MORNING',
+            'start_date'                  => now()->addDays(1)->format('Y-m-d'),
+            'end_date'                    => now()->addMonth()->format('Y-m-d'),
+            'working_days_count'          => 22,
+            'price_per_child'             => 200.00,
+            'trip_price'                  => 200.00,
+            'discount_amount'             => 0.00,
+            'total_amount_after_discount' => 200.00,
+            'driver_net_price'            => 184.00,
+            'created_at'                  => now(),
+            'updated_at'                  => now(),
         ]);
 
         // محاولة قبول طلب جديد يتطلب مقعداً يفشل بسبب تجاوز السعة

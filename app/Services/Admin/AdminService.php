@@ -354,11 +354,21 @@ class AdminService
             $this->forgetEmailChange($user->id);
             Cache::forget("admin_email_change_status_{$user->id}");
 
-            // 4. تعيين تاريخ الوقت الحالي في deleted_at (Soft Delete)
+            // 4. حذف ملف الصورة الشخصية من التخزين قبل حذف الحساب.
+            // بدونه تبقى صور المشرفين المحذوفين متراكمة في القرص بلا أي مرجع
+            // يمكن الوصول إليها عبر رابطها المباشر — نفس المنطق المطبق في updateAdmin.
+            if ($user->avatar_url) {
+                $avatarPath = str_replace('storage/', '', $user->avatar_url);
+                if (Storage::disk('public')->exists($avatarPath)) {
+                    Storage::disk('public')->delete($avatarPath);
+                }
+            }
+
+            // 5. تعيين تاريخ الوقت الحالي في deleted_at (Soft Delete)
             $user->delete();
         }
 
-        // 5. حذف سجل المشرف (Soft Delete)
+        // 6. حذف سجل المشرف (Soft Delete)
         $admin->delete();
 
         Log::info("Admin ID {$admin->id} soft-deleted by user {$performedByUserId}");

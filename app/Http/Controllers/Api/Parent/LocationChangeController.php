@@ -48,6 +48,34 @@ class LocationChangeController extends Controller
         ], 200);
     }
 
+    /**
+     * معاينة تغيير الموقع قبل الإرسال: معلومات الرحلة وسعرها، المسافة، شريحة الرسوم
+     * والمبلغ المطلوب — دون إنشاء أي طلب. ولي الأمر يوافق ثم يستدعي store.
+     */
+    public function preview(StoreLocationChangeRequestRequest $request): JsonResponse
+    {
+        try {
+            $quote = $this->service->quoteChange(
+                $request->user()->id,
+                (int) $request->input('active_subscription_id'),
+                $request->input('point_type'),
+                $request->filled('address_id') ? (int) $request->input('address_id') : null,
+                $request->filled('lat') ? (float) $request->input('lat') : null,
+                $request->filled('lng') ? (float) $request->input('lng') : null,
+                $request->input('label'),
+                $request->input('change_date')
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'تم حساب تفاصيل تغيير الموقع بنجاح. راجع السعر والرسوم ثم أكّد الطلب.',
+                'data'    => $quote['payload'],
+            ], 200);
+        } catch (Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+    }
+
     public function store(StoreLocationChangeRequestRequest $request): JsonResponse
     {
         try {
@@ -55,10 +83,11 @@ class LocationChangeController extends Controller
                 $request->user()->id,
                 (int) $request->input('active_subscription_id'),
                 $request->input('point_type'),
-                $request->input('address_id') ? (int) $request->input('address_id') : null,
-                $request->has('lat') ? (float) $request->input('lat') : null,
-                $request->has('lng') ? (float) $request->input('lng') : null,
-                $request->input('label')
+                $request->filled('address_id') ? (int) $request->input('address_id') : null,
+                $request->filled('lat') ? (float) $request->input('lat') : null,
+                $request->filled('lng') ? (float) $request->input('lng') : null,
+                $request->input('label'),
+                $request->input('change_date')
             );
 
             return response()->json([

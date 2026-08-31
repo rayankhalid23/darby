@@ -21,6 +21,10 @@ class ParentActiveChildSubscriptionResource extends JsonResource
 
         $activeSubId = $this->resource['activeSubId'] ?? optional($subscriptionRequest->activeSubscriptions?->firstWhere('child_id', $child?->id))->id ?? $subscriptionRequest->id;
 
+        // النسبة من pricing_settings لا مثبتة: كانت 0.92/8.0 هنا تعني أن صافي
+        // السائق والعمولة المعروضين لولي الأمر لا يتغيران أبداً مهما عدّلت الإدارة.
+        $commissionFraction = \App\Models\Shared\PricingSetting::commissionRateFraction();
+
         $childDetails = [
             'id'                      => $child->id,
             'child_id'                => $child->id,
@@ -46,9 +50,9 @@ class ParentActiveChildSubscriptionResource extends JsonResource
                 'discount_percentage'         => (float) ($pivot?->price_per_child > 0 ? round((($pivot->discount_amount ?? 0) / $pivot->price_per_child) * 100, 2) : 0),
                 'discount_amount'             => (float) ($pivot?->discount_amount ?? 0),
                 'total_amount_after_discount' => (float) ($pivot?->total_amount_after_discount ?? $pivot?->price_per_child ?? $subscriptionRequest->total_amount_after_discount ?? $subscriptionRequest->total_price ?? 0),
-                'platform_commission_rate'    => 8.0,
-                'platform_commission_amount'  => (float) max(0, round(($pivot?->total_amount_after_discount ?? $pivot?->price_per_child ?? 0) - ($pivot?->driver_net_price ?? (($pivot?->total_amount_after_discount ?? $pivot?->price_per_child ?? 0) * 0.92)), 2)),
-                'driver_net_price'            => (float) ($pivot?->driver_net_price ?? round(($pivot?->total_amount_after_discount ?? $pivot?->price_per_child ?? 0) * 0.92, 2)),
+                'platform_commission_rate'    => round($commissionFraction * 100, 2),
+                'platform_commission_amount'  => (float) max(0, round(($pivot?->total_amount_after_discount ?? $pivot?->price_per_child ?? 0) - ($pivot?->driver_net_price ?? (($pivot?->total_amount_after_discount ?? $pivot?->price_per_child ?? 0) * (1 - $commissionFraction))), 2)),
+                'driver_net_price'            => (float) ($pivot?->driver_net_price ?? round(($pivot?->total_amount_after_discount ?? $pivot?->price_per_child ?? 0) * (1 - $commissionFraction), 2)),
                 'total_price'                 => (float) ($pivot?->total_amount_after_discount ?? $pivot?->price_per_child ?? $subscriptionRequest->total_amount_after_discount ?? $subscriptionRequest->total_price ?? 0),
             ],
             'Home' => [

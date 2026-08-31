@@ -20,9 +20,11 @@ class DriverSubscriptionResource extends JsonResource
         $totalDiscount = (float) ($this->discount_amount ?? 0);
         $totalAfterDiscount = (float) ($this->total_amount_after_discount ?? max(0, $totalRawPrice - $totalDiscount));
         
+        $commissionFraction = \App\Models\Shared\PricingSetting::commissionRateFraction();
+
         $netTotalAmount = 0;
         if ($this->relationLoaded('children') && $this->children) {
-            $netTotalAmount = (float) $this->children->sum(function ($child) {
+            $netTotalAmount = (float) $this->children->sum(function ($child) use ($commissionFraction) {
                 $pivot = $child->pivot ?? null;
                 if (!$pivot) return 0;
                 $net = (float) ($pivot->driver_net_price ?? 0);
@@ -30,17 +32,34 @@ class DriverSubscriptionResource extends JsonResource
                     $raw = (float) ($pivot->price_per_child ?? $pivot->trip_price ?? 0);
                     $disc = (float) ($pivot->discount_amount ?? 0);
                     $afterDisc = (float) ($pivot->total_amount_after_discount ?? max(0, $raw - $disc));
-                    $net = round($afterDisc * 0.92, 2);
+                    $net = round($afterDisc * (1 - $commissionFraction), 2);
                 }
                 return $net;
             });
         } else {
-            $netTotalAmount = round($totalAfterDiscount * 0.92, 2);
+            // النسبة تُقرأ من pricing_settings لا تُثبَّت هنا: تثبيت 0.92 كان يعني
+            // أن صافي السائق المعروض لا يتغير لو عدّلت الإدارة نسبة العمولة.
+            $netTotalAmount = round(
+                $totalAfterDiscount * (1 - \App\Models\Shared\PricingSetting::commissionRateFraction()),
+                2
+            );
         }
 
-        $resolvedState = $this->resource instanceof \App\Models\Shared\SubscriptionRequest 
-            ? $this->resource->resolveState() 
+        $resolvedState = $this->resource instanceof \App\Models\Shared\SubscriptionRequest
+            ? $this->resource->resolveState()
             : ['state' => 'active', 'status' => 'active', 'state_label' => 'ساري ومفعل', 'status_text' => 'اشتراك نشط وساري', 'is_active' => true];
+
+        // ملخّص على مستوى الطلب لعرضه في قوائم السائق: أبكر تاريخ بدء بين الأطفال
+        // وأكبر عدد أيام عمل، حتى يظهر شيء منطقي حتى لو اختلفت فترات الأطفال.
+        $firstPivot = $this->relationLoaded('children') && $this->children
+            ? $this->children->first()?->pivot
+            : null;
+        $summaryStartDate = $this->relationLoaded('children') && $this->children
+            ? $this->children->pluck('pivot.start_date')->filter()->sort()->first()
+            : ($firstPivot->start_date ?? null);
+        $summaryWorkingDays = $this->relationLoaded('children') && $this->children
+            ? (int) $this->children->max('pivot.working_days_count')
+            : (int) ($firstPivot->working_days_count ?? 0);
 
         return [
             'id'                      => $this->id,
@@ -48,14 +67,17 @@ class DriverSubscriptionResource extends JsonResource
             'subscription_request_id' => $this->id,
             'state'                   => $resolvedState['state'],
             'state_label'             => $resolvedState['state_label'],
-            'status'                  => [
-                'value' => $resolvedState['status'],
-                'label' => $resolvedState['state_label'],
-            ],
+            // status نص خالص (مثل 'pending') وفق العقد الموثّق في FRONTEND_DRIVER_API_GUIDE؛
+            // التفاصيل الموسّعة متاحة عبر state/state_label/status_text بلا الحاجة لكائن متداخل.
+            'status'                  => $resolvedState['status'],
             'status_value'            => $resolvedState['status'],
             'status_text'             => $resolvedState['status_text'],
             'is_active'               => $resolvedState['is_active'],
-            'notes'                   => $this->notes ?? $this->general_notes ?? null, 
+            'notes'                   => $this->notes ?? $this->general_notes ?? null,
+            // ملخص على مستوى الطلب كله (كل الأطفال) — راجع أيضاً subscription_period
+            // داخل كل طفل بمصفوفة children لتفاصيله الدقيقة الفردية.
+            'start_date'              => $summaryStartDate,
+            'working_days_count'      => $summaryWorkingDays,
             'total_amount'            => round($netTotalAmount, 2), // صافي مستحقات السائق للطلب
             'driver_net_total'       => round($netTotalAmount, 2),
             'original_total'         => round($totalRawPrice, 2),
@@ -72,6 +94,16 @@ class DriverSubscriptionResource extends JsonResource
                 'avatar'   => $parentUser->avatar_url ?? null,
             ],
 
+            'driver' => (function () {
+                $driverUser = optional(optional($this->driver)->user);
+                return [
+                    'id'     => optional($this->driver)->id,
+                    'name'   => $driverUser->full_name ?? $driverUser->name ?? 'غير محدد',
+                    'phone'  => $driverUser->phone_number ?? $driverUser->phone ?? null,
+                    'avatar' => $driverUser->avatar_url ?? null,
+                ];
+            })(),
+
             'children' => $this->whenLoaded('children', function () {
                 return $this->children->map(function ($child) {
                     $pivot   = $child->pivot ?? null;
@@ -87,19 +119,29 @@ class DriverSubscriptionResource extends JsonResource
                     }
                     $discountPercent = $rawChildPrice > 0 ? round(($discountAmt / $rawChildPrice) * 100, 2) : 0.0;
 
+                    // النسبة من pricing_settings لا مثبتة، كي يتبع صافي السائق المعروض
+                    // أي تعديل تجريه الإدارة على نسبة العمولة.
+                    $commissionFraction = \App\Models\Shared\PricingSetting::commissionRateFraction();
                     $driverNetPrice = (float) ($pivot->driver_net_price ?? 0);
                     if ($driverNetPrice <= 0 && $afterDiscount > 0) {
-                        $driverNetPrice = round($afterDiscount * 0.92, 2);
+                        $driverNetPrice = round($afterDiscount * (1 - $commissionFraction), 2);
                     }
                     $platformFeeAmount  = max(0, round($afterDiscount - $driverNetPrice, 2));
-                    $platformFeePercent = $afterDiscount > 0 ? round(($platformFeeAmount / $afterDiscount) * 100, 2) : 8.0;
+                    $platformFeePercent = $afterDiscount > 0
+                        ? round(($platformFeeAmount / $afterDiscount) * 100, 2)
+                        : round($commissionFraction * 100, 2);
+
+                    $activeSubId = optional($this->activeSubscriptions?->firstWhere('child_id', $child->id))->id;
 
                     return [
                         'id'                      => $child->id,
                         'child_id'                => $child->id,
                         'subscription_id'         => $this->id,
                         'subscription_request_id' => $this->id,
-                        'active_subscription_id'  => optional($this->activeSubscriptions?->firstWhere('child_id', $child->id))->id ?? $this->id,
+                        'active_subscription_id'  => $activeSubId ?? $this->id,
+                        // كائن متداخل يطابق شكل نقاط الاشتراك النشط الأخرى في الـ API
+                        // (id هو معرّف صف active_subscriptions الفعلي لهذا الطفل، لا الطلب).
+                        'subscription'            => ['id' => $activeSubId],
                         'name'                    => $child->full_name ?? $child->name,
                         'gender'                  => $child->gender,
                         'age'                     => $child->age,

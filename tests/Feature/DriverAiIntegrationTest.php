@@ -142,9 +142,9 @@ class DriverAiIntegrationTest extends TestCase
         $this->assertNotNull($complaint->fresh()->resolved_at);
         $this->assertEquals(0.93, (float) $complaint->fresh()->ai_confidence);
 
-        Notification::assertSentTo($this->adminUser, CustomDatabaseNotification::class);
+        $this->assertDatabaseHas('notifications', ['notifiable_id' => $this->adminUser->id]);
         // السائق نفسه يُخطَر أيضاً بإيقاف حسابه (كان مفقوداً سابقاً وتم إصلاحه)
-        Notification::assertSentTo($this->driverUser, CustomDatabaseNotification::class);
+        $this->assertDatabaseHas('notifications', ['notifiable_id' => $this->driverUser->id]);
     }
 
     // =========================================================
@@ -173,8 +173,8 @@ class DriverAiIntegrationTest extends TestCase
         // الشكوى تبقى معلّقة لمراجعة الأدمن، لم تُغلق تلقائياً
         $this->assertEquals('pending', $complaint->fresh()->status);
 
-        Notification::assertSentTo($this->driverUser, CustomDatabaseNotification::class);
-        Notification::assertNotSentTo($this->adminUser, CustomDatabaseNotification::class);
+        $this->assertDatabaseHas('notifications', ['notifiable_id' => $this->driverUser->id]);
+        $this->assertDatabaseMissing('notifications', ['notifiable_id' => $this->adminUser->id]);
     }
 
     // =========================================================
@@ -261,5 +261,93 @@ class DriverAiIntegrationTest extends TestCase
         $complaint = $this->createComplaint('شكوى أثناء استجابة خطأ من الخادم.');
 
         $this->assertEquals('no_action', $complaint->fresh()->ai_action);
+    }
+
+    // =========================================================
+    // 6) مراجعات وتعليقات السائقين (DriverReview Analysis)
+    // =========================================================
+    public function test_driver_review_creation_analyzes_comment_and_flags_high_severity_to_admins(): void
+    {
+        $this->fakeAiResponse([
+            'label'          => 'driver_alert',
+            'confidence'     => 0.88,
+            'action'         => 'notify_driver',
+            'severity'       => 2,
+            'message_ar'     => 'إرسال تنبيه للسائق ومتابعة السلوك.',
+            'low_confidence' => false,
+        ]);
+        Notification::fake();
+
+        $review = \App\Models\Shared\DriverReview::create([
+            'parent_id' => $this->parentUser->id,
+            'driver_id' => $this->driver->id,
+            'rating'    => 2,
+            'comment'   => 'السائق كان مسرعاً ولم يلتزم بالسرعة المحددة.',
+            'status'    => 'active',
+        ]);
+
+        $this->assertDatabaseHas('driver_reviews', [
+            'id'          => $review->id,
+            'ai_action'   => 'notify_driver',
+            'ai_severity' => 2,
+        ]);
+
+        // إشعار الإدارة بمراجعة مثيرة للقلق (severity >= 2)
+        $this->assertDatabaseHas('notifications', [
+            'notifiable_id' => $this->adminUser->id,
+            'type'          => 'App\\Notifications\\SystemNotification',
+        ]);
+    }
+
+    public function test_driver_review_comment_update_reanalyzes_comment(): void
+    {
+        Http::fake([
+            self::AI_URL => Http::sequence()
+                ->push([
+                    'label'          => 'normal',
+                    'confidence'     => 0.95,
+                    'action'         => 'no_action',
+                    'severity'       => 0,
+                    'message_ar'     => 'لا يوجد إجراء مطلوب، ملاحظة عادية.',
+                    'low_confidence' => false,
+                ], 200)
+                ->push([
+                    'label'          => 'deactivate',
+                    'confidence'     => 0.96,
+                    'action'         => 'suspend_driver',
+                    'severity'       => 3,
+                    'message_ar'     => 'مخالفة جسيمة: إيقاف السائق وتحويل الحالة للإدارة.',
+                    'low_confidence' => false,
+                ], 200),
+        ]);
+
+        $review = \App\Models\Shared\DriverReview::create([
+            'parent_id' => $this->parentUser->id,
+            'driver_id' => $this->driver->id,
+            'rating'    => 5,
+            'comment'   => 'سائق ممتاز شكراً جزيلاً.',
+            'status'    => 'active',
+        ]);
+
+        $this->assertEquals('no_action', $review->fresh()->ai_action);
+
+        $review->update([
+            'comment' => 'تعديل: السائق شتم الطفل وطرده من الحافلة.',
+        ]);
+
+        $this->assertEquals('suspend_driver', $review->fresh()->ai_action);
+        $this->assertEquals(3, $review->fresh()->ai_severity);
+    }
+
+    public function test_ai_classifier_sends_api_key_header_when_configured(): void
+    {
+        config(['services.driver_ai.api_key' => 'secret-test-key-123']);
+        $this->fakeAiResponse();
+
+        $complaint = $this->createComplaint('شكوى للتحقق من التوثيق.');
+
+        Http::assertSent(function ($request) {
+            return $request->hasHeader('X-API-Key', 'secret-test-key-123');
+        });
     }
 }

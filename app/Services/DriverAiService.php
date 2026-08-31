@@ -51,9 +51,9 @@ class DriverAiService
      * نقطة الدخول الرئيسية للشكاوى: يحلّل شكوى موجودة، يحفظ نتيجة التحليل عليها،
      * ثم يطبّق الإجراء الإداري المناسب بناءً على القرار المستلم.
      */
-    public function analyzeComplaint(Complaint $complaint): array
+    public function analyzeComplaint(Complaint $complaint, bool $throwOnFailure = false): array
     {
-        $result = $this->classifier->classify($complaint->description, ['driver_id' => $complaint->driver_id]);
+        $result = $this->classifier->classify($complaint->description, ['driver_id' => $complaint->driver_id], $throwOnFailure);
 
         $complaint->forceFill([
             'ai_action'           => $result['action'] ?? self::ACTION_NONE,
@@ -193,14 +193,14 @@ class DriverAiService
      * سائقاً تلقائياً أبداً مهما كانت النتيجة — فقط تحفظ التصنيف وتُنبّه الإدارة
      * إن كانت الخطورة مرتفعة (severity >= 2) لمراجعة يدوية.
      */
-    public function analyzeReview(DriverReview $review): array
+    public function analyzeReview(DriverReview $review, bool $throwOnFailure = false): array
     {
         $text = trim((string) $review->comment);
         if ($text === '') {
             return [];
         }
 
-        $result = $this->classifier->classify($text, ['driver_id' => $review->driver_id]);
+        $result = $this->classifier->classify($text, ['driver_id' => $review->driver_id], $throwOnFailure);
 
         $review->forceFill([
             'ai_action'           => $result['action'] ?? self::ACTION_NONE,

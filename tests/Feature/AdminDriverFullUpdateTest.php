@@ -36,12 +36,15 @@ class AdminDriverFullUpdateTest extends TestCase
         ]);
         Admin::create(['user_id' => $this->adminUser->id, 'created_by' => $this->adminUser->id]);
 
+        // role_id = 5 (مشرف شؤون السائقين والأسطول) هو صاحب صلاحية drivers.edit_data.
+        // مشرف العمليات (role 2) يملك drivers.view فقط، فرفضه لتعديل بيانات السائق
+        // سلوك صحيح للنظام لا خلل فيه.
         $this->supervisorUser = User::create([
             'full_name'     => 'مشرف اختبار التعديل الشامل',
             'email'         => 'supervisor.fullupdate.' . uniqid() . '@darby.test',
             'phone_number'  => '09' . rand(10000000, 99999999),
             'password_hash' => Hash::make('password123'),
-            'role_id'       => 2,
+            'role_id'       => 5,
             'is_active'     => 1,
         ]);
         Admin::create(['user_id' => $this->supervisorUser->id, 'created_by' => $this->adminUser->id]);

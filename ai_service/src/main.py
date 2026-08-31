@@ -21,10 +21,26 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from fastapi import FastAPI, HTTPException  # noqa: E402
+import os
+from fastapi import Depends, FastAPI, HTTPException, Security, status  # noqa: E402
+from fastapi.security import APIKeyHeader  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
 from src.predictor import ModelNotFoundError, get_predictor, predict as run_predict  # noqa: E402
+
+API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+def verify_api_key(api_key: str | None = Security(API_KEY_HEADER)) -> None:
+    """تحقق اختياري من مفتاح الـ API — يُفعّل فقط إذا تم ضبط AI_SERVICE_API_KEY في البيئة."""
+    expected_key = os.getenv("AI_SERVICE_API_KEY")
+    if expected_key:
+        if not api_key or api_key != expected_key:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="رمز الدخول غير صالح أو مفقود (Invalid or missing API Key)",
+            )
+
 
 app = FastAPI(
     title="Driver Complaint AI Classifier",
@@ -58,7 +74,7 @@ def health() -> dict:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@app.post("/api/v1/predict", response_model=PredictResponse)
+@app.post("/api/v1/predict", response_model=PredictResponse, dependencies=[Depends(verify_api_key)])
 def predict_endpoint(payload: PredictRequest) -> dict:
     """يستقبل نص شكوى ويرجّع قرار النموذج الكامل. driver_id يُستقبل للسياق/التسجيل المستقبلي."""
     try:

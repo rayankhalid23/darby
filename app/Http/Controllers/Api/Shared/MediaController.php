@@ -31,7 +31,10 @@ class MediaController extends Controller
         'avatars',
     ];
 
-    private const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'svg'];
+    // pdf مطلوب: وثائق السائق الرسمية (تأمين، فحص فني...) تقبل الآن PDF أيضاً
+    // (راجع CompleteProfileRequest/UpdateLegalDocumentsRequest)، وكان غيابها هنا
+    // يعني أن أي وثيقة تُرفع بصيغة PDF تُرفض عند عرضها بـ 404 رغم قبولها عند الرفع.
+    private const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'svg', 'pdf'];
 
     public function show(string $path): Response
     {
@@ -65,6 +68,9 @@ class MediaController extends Controller
             'Access-Control-Allow-Origin'  => '*',
             'Access-Control-Allow-Methods' => 'GET, HEAD, OPTIONS',
             'Access-Control-Allow-Headers' => '*',
+            // inline لا attachment: نريد أن تُعرض الوثيقة داخل التطبيق/المتصفح مباشرة
+            // (مهم خصوصاً لملفات PDF) بدل إجبار المستخدم على تنزيلها لفتحها.
+            'Content-Disposition'          => 'inline; filename="' . addslashes($filename) . '"',
         ];
 
         return response($disk->get($storedPath), 200, $headers);

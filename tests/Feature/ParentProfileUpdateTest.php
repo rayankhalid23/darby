@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use Tests\TestCase;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use App\Models\User;
 use App\Models\Parent\ParentModel;
 use Illuminate\Http\UploadedFile;
@@ -13,6 +14,10 @@ use Illuminate\Support\Facades\URL;
 
 class ParentProfileUpdateTest extends TestCase
 {
+    // ⚠️ نفس الثغرة: بلا هذه السمة كانت بيانات كل اختبار تُكتب فعلياً وتبقى
+    // دائماً في قاعدة البيانات المتصلة بدل أن تُلغى تلقائياً بعد الاختبار.
+    use DatabaseTransactions;
+
     protected User $parentUser;
     protected ParentModel $parentProfile;
 

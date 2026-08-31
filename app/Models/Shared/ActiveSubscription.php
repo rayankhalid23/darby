@@ -94,6 +94,17 @@ class ActiveSubscription extends Model
         }
 
         $status = strtolower($this->status ?? 'active');
+
+        if ($status === 'active' && $this->driver_id && \App\Models\Driver\DriverAbsence::where('driver_id', $this->driver_id)->whereDate('absence_date', \Carbon\Carbon::today()->toDateString())->exists()) {
+            return [
+                'state'       => 'driver_absent',
+                'status'      => 'driver_absent',
+                'state_label' => 'غياب السائق (متوقف مؤقتاً)',
+                'status_text' => 'السائق مسجل كغائب اليوم',
+                'is_active'   => false,
+            ];
+        }
+
         return [
             'state'       => $status,
             'status'      => $status,

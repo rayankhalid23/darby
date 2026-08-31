@@ -8,6 +8,8 @@ use App\Http\Controllers\Api\Driver\AddressController;
 use App\Http\Controllers\Api\Driver\ZoneController; 
 use App\Http\Controllers\API\Trip\DriverTripController;
 use App\Http\Controllers\Api\DriverTrackingController;
+use App\Http\Controllers\Api\Driver\SupportTicketController;
+use App\Http\Controllers\Api\Driver\DriverStatisticsController;
 
 // أو إذا كان داخل مجلد فرعي:
  use App\Http\Controllers\API\Driver\DriverProfileController;
@@ -55,6 +57,16 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::post('register-absence', [DriverTripController::class, 'registerAbsence']);
 
+    // --- 🔔 موديول إشعارات السائق (Notifications Module) ---
+    Route::prefix('notifications')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Shared\NotificationController::class, 'index']);
+        Route::get('/unread-count', [\App\Http\Controllers\Api\Shared\NotificationController::class, 'unreadCount']);
+        Route::post('/{id}/read', [\App\Http\Controllers\Api\Shared\NotificationController::class, 'markAsRead']);
+        Route::patch('/{id}/read', [\App\Http\Controllers\Api\Shared\NotificationController::class, 'markAsRead']);
+        Route::post('/read-all', [\App\Http\Controllers\Api\Shared\NotificationController::class, 'markAllAsRead']);
+        Route::delete('/{id}', [\App\Http\Controllers\Api\Shared\NotificationController::class, 'destroy']);
+    });
+
     // موديول العناوين (Addresses Module)
     Route::prefix('addresses')->group(function () {
         
@@ -69,6 +81,7 @@ Route::middleware('auth:sanctum')->group(function () {
     
     Route::prefix('trips')->group(function () {
         Route::get('today', [DriverTripController::class, 'todayTrips']);
+        Route::get('upcoming-for-absence', [DriverTripController::class, 'upcomingTripsForAbsence']);
         Route::get('history', [DriverTripController::class, 'history']);
         Route::get('history/{tripId}', [DriverTripController::class, 'historyDetails']);
         Route::get('{tripId}', [DriverTripController::class, 'show']);
@@ -87,6 +100,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('{tripId}/report-breakdown', [DriverTripController::class, 'reportBreakdown']);
         Route::post('{tripId}/resume', [DriverTripController::class, 'resumeTrip']);
         Route::post('{tripId}/complete', [DriverTripController::class, 'complete']);
+    });
+
+    // 🚨 إدارة طوارئ تعطل الحافلات واستبدال السائقين
+    Route::prefix('emergency-dispatches')->group(function () {
+        Route::get('available', [DriverTripController::class, 'getAvailableBreakdownDispatches']);
+        Route::get('{dispatchId}', [DriverTripController::class, 'getBreakdownDispatchDetails']);
+        Route::post('{dispatchId}/accept', [DriverTripController::class, 'acceptBreakdownDispatch']);
+        Route::post('{dispatchId}/reject', [DriverTripController::class, 'rejectBreakdownDispatch']);
     });
 
     // عرض بيانات الملف الشخصي للسائق وعلاقاته
@@ -165,6 +186,16 @@ Route::get('zones', [ZoneController::class, 'index'])
         Route::get('/', [App\Http\Controllers\Api\Shared\InvoiceController::class, 'index']);
         Route::get('/{id}', [App\Http\Controllers\Api\Shared\InvoiceController::class, 'show']);
     });
+
+    // مسارات الدعم الفني للسائق
+    Route::prefix('support-tickets')->group(function () {
+        Route::get('/financial-history', [SupportTicketController::class, 'financialHistory']);
+        Route::get('/parent-trips', [SupportTicketController::class, 'parentTrips']);
+        Route::get('/', [SupportTicketController::class, 'index']);
+        Route::post('/', [SupportTicketController::class, 'store']);
+        Route::get('/{id}', [SupportTicketController::class, 'show']);
+        Route::post('/{id}/reply', [SupportTicketController::class, 'reply']);
+    });
     // --- مسارات إدارة مركبات السائق ---
     Route::prefix('vehicles')->group(function () {
         Route::get('/', [DriverProfileController::class, 'indexVehicles'])->name('api.driver.vehicles.index');
@@ -242,5 +273,11 @@ Route::get('zones', [ZoneController::class, 'index'])
         Route::get('/trips/{tripId}/children', [App\Http\Controllers\Api\Driver\TripManualConfirmationController::class, 'tripChildren']);
         Route::post('/', [App\Http\Controllers\Api\Driver\TripManualConfirmationController::class, 'store']);
     });
+
+    // -------------------------------------------------------------
+    // 📊 لوحة التحكم والإحصائيات الشاملة للسائق (Statistics & Dashboard)
+    // -------------------------------------------------------------
+    Route::get('statistics', [DriverStatisticsController::class, 'index'])->name('api.driver.statistics');
+    Route::get('dashboard/stats', [DriverStatisticsController::class, 'index'])->name('api.driver.dashboard.stats');
 
 });

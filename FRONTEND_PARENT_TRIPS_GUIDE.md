@@ -37,7 +37,8 @@ Content-Type: application/json
 
 * **Method:** `GET`
 * **URL:** `http://localhost:8000/api/parent/trips/active`
-* **Input (Query/Body):** لا يوجد (None)
+* **Query Parameters (اختياري):**
+  - `date` (string, صيغة `YYYY-MM-DD` مثال: `2026-08-30`) - لتمرير التاريخ المحلي من فلاتر وتجنب تباين التوقيت، وفي حال عدم إرساله يتم اعتماد تاريخ اليوم تلقائياً.
 
 #### 🟢 Response النجاح (200 OK):
 ```json
@@ -132,7 +133,8 @@ Content-Type: application/json
 
 * **Method:** `GET`
 * **URL:** `http://localhost:8000/api/parent/trips/upcoming`
-* **Input (Query/Body):** لا يوجد (None)
+* **Query Parameters (اختياري):**
+  - `date` (string, صيغة `YYYY-MM-DD` مثال: `2026-08-30`) - لتمرير التاريخ المحلي من فلاتر وتجنب تباين التوقيت، وفي حال عدم إرساله يتم اعتماد تاريخ اليوم تلقائياً.
 
 #### 🟢 Response النجاح (200 OK):
 ```json
@@ -140,33 +142,57 @@ Content-Type: application/json
   "status": "success",
   "data": [
     {
-      "trip_id": 45,
-      "trip_type": "Afternoon",
-      "title": "رحلة العودة للمنزل",
-      "scheduled_for": "اليوم ظهراً",
+      "trip_id": 204,
+      "trip_type": "afternoon",
+      "title": "رحلة العودة من المدرسة",
+      "scheduled_for": "2026-08-30 01:30 PM",
+      "total_children": 2,
       "driver": {
-        "name": "عبد السلام المصراتي"
-      },
-      "destination": {
-        "type": "school",
-        "name": "مدرسة الجيل الجديد الدولية"
+        "name": "محمود علي"
       },
       "children": [
         {
           "child_id": 12,
-          "child_name": "سند طه القمودي",
-          "school_name": "مدرسة الجيل الجديد الدولية"
+          "child_name": "أحمد محمد",
+          "school_name": "مدرسة المستقبل الواعد",
+          "child_photo": "http://localhost:8000/assets/images/default-child.png",
+          "cost_per_child": "9.00",
+          "home_location": {
+            "title": "المنزل - حي الأندلس",
+            "lat": 32.875200,
+            "lng": 13.165400
+          },
+          "school_location": {
+            "id": 5,
+            "name": "مدرسة المستقبل الواعد",
+            "address": "طرابلس - حي الأندلس",
+            "lat": 32.887000,
+            "lng": 13.189000
+          }
         },
         {
           "child_id": 15,
-          "child_name": "محمد علي",
-          "school_name": "مدرسة الجيل الجديد الدولية"
+          "child_name": "سارة محمد",
+          "school_name": "مدرسة النخبة الدولية",
+          "child_photo": "http://localhost:8000/assets/images/default-child.png",
+          "cost_per_child": "5.40",
+          "home_location": {
+            "title": "المنزل - حي الأندلس",
+            "lat": 32.875200,
+            "lng": 13.165400
+          },
+          "school_location": {
+            "id": 6,
+            "name": "مدرسة النخبة الدولية",
+            "address": "طرابلس - طريق الشط",
+            "lat": 32.895000,
+            "lng": 13.195000
+          }
         }
       ],
-      "total_children": 2,
       "pricing": {
-        "total_trip_cost": "30.00",
-        "cost_per_child": "15.00",
+        "total_trip_cost": "14.40",
+        "cost_per_child": "7.20",
         "currency": "LYD"
       }
     }
@@ -177,13 +203,14 @@ Content-Type: application/json
 ---
 
 ### 4️⃣ أرشيف وسجل الرحلات السابقة (Trip History Log)
-تستخدم لشاشة سجل وتاريخ الرحلات مجمعة على مستوى الرحلة الواحدة مع دعم الـ Pagination (صفحات النتائج).
+تستخدم لشاشة سجل وتاريخ الرحلات مجمعة على مستوى الرحلة الواحدة مع دعم الـ Pagination (صفحات النتائج) والفلترة بالتاريخ.
 
 * **Method:** `GET`
 * **URL:** `http://localhost:8000/api/parent/trips/history`
 * **Query Parameters (اختياري):**
   - `page` (int) - رقم الصفحة (الافتراضي: 1)
   - `per_page` (int) - عدد العناصر بالصفحة (الافتراضي: 15)
+  - `date` (string, صيغة `YYYY-MM-DD`) - فلترة السجل بتاريخ محدد (اختياري)
 
 #### 🟢 Response النجاح (200 OK):
 ```json
@@ -195,34 +222,182 @@ Content-Type: application/json
     "total": 2,
     "data": [
       {
-        "trip_id": 24,
+        "trip_id": 2,
         "trip_type": "Morning",
-        "trip_date": "2026-08-01",
+        "trip_date": "2026-08-28",
+        "status": "in_progress",
         "driver": {
-          "name": "عبد السلام المصراتي"
+          "id": 1,
+          "name": "عبد السلام يوسف المصراتي",
+          "phone": "0921000001",
+          "photo": "https://domain.com/assets/images/default-driver.png"
         },
+        "total_children": 2,
         "action_type": "picked_up",
-        "scanned_at": "2026-08-01 07:12:30",
+        "scanned_at": "2026-08-28 13:21:02",
         "children": [
           {
-            "child_id": 12,
-            "child_name": "سند طه القمودي",
+            "child_id": 1,
+            "child_name": "سند طه القموضي",
+            "child_photo": "https://domain.com/assets/images/default-child.png",
             "school_name": "مدرسة الجيل الجديد الدولية",
-            "trip_cost": "15.00"
+            "trip_cost": "3.60",
+            "cost_per_child": "3.60",
+            "status": "boarded",
+            "pickup_time": "07:00 AM",
+            "dropoff_time": "02:00 PM",
+            "home_location": {
+              "title": "المنزل الرئيسي - حي الأندلس خلف مركز المقارحة",
+              "address": "المنزل الرئيسي - حي الأندلس خلف مركز المقارحة",
+              "lat": 32.8925,
+              "lng": 13.1752
+            },
+            "school_location": {
+              "id": 1,
+              "name": "مدرسة الجيل الجديد الدولية",
+              "address": "حي الأندلس - بالقرب من جامع الأندلس الكبير",
+              "lat": 32.892,
+              "lng": 13.168
+            }
           },
           {
-            "child_id": 15,
-            "child_name": "محمد علي",
+            "child_id": 2,
+            "child_name": "مروة طه القموضي",
+            "child_photo": "https://domain.com/assets/images/default-child.png",
             "school_name": "مدرسة الجيل الجديد الدولية",
-            "trip_cost": "15.00"
+            "trip_cost": "6.14",
+            "cost_per_child": "6.14",
+            "status": "completed",
+            "pickup_time": "07:00 AM",
+            "dropoff_time": "01:45 PM",
+            "home_location": {
+              "title": "المنزل الرئيسي - حي الأندلس خلف مركز المقارحة",
+              "address": "المنزل الرئيسي - حي الأندلس خلف مركز المقارحة",
+              "lat": 32.8925,
+              "lng": 13.1752
+            },
+            "school_location": {
+              "id": 1,
+              "name": "مدرسة الجيل الجديد الدولية",
+              "address": "حي الأندلس - بالقرب من جامع الأندلس الكبير",
+              "lat": 32.892,
+              "lng": 13.168
+            }
           }
         ],
         "pricing": {
-          "total_trip_cost": "30.00",
+          "total_trip_cost": "9.74",
+          "cost_per_child": "4.87",
           "currency": "LYD"
         }
       }
     ]
+  }
+}
+```
+
+---
+
+### 4️⃣.1️⃣ تفاصيل رحلة معينة (Get Trip Details)
+تستخدم لعرض تفاصيل شاملة لرحلة معينة مع بيانات السائق والمركبة وموقع مدرسة ومنزل كل طفل.
+
+* **Method:** `GET`
+* **URL:** `http://localhost:8000/api/parent/trips/{tripId}`
+* **Path Parameters:**
+  - `tripId` (int, مطلوب) - مثال: `2`
+* **Input (Query/Body):** لا يوجد (None)
+
+#### 🟢 Response النجاح (200 OK):
+```json
+{
+  "status": "success",
+  "data": {
+    "trip_id": 2,
+    "trip_type": "Morning",
+    "direction": "to_school",
+    "status": "in_progress",
+    "driver": {
+      "id": 1,
+      "name": "عبد السلام يوسف المصراتي",
+      "phone": "0921000001",
+      "photo": "https://domain.com/assets/images/default-driver.png"
+    },
+    "vehicle": {
+      "info": "تويوتا كوستر Coaster (5-112233)"
+    },
+    "children": [
+      {
+        "child_id": 1,
+        "child_name": "سند طه القموضي",
+        "child_photo": "https://domain.com/assets/images/default-child.png",
+        "child_status": "boarded",
+        "school_name": "مدرسة الجيل الجديد الدولية",
+        "direction": "to_school",
+        "home_location": {
+          "title": "المنزل الرئيسي - حي الأندلس خلف مركز المقارحة",
+          "address": "المنزل الرئيسي - حي الأندلس خلف مركز المقارحة",
+          "lat": 32.8925,
+          "lng": 13.1752
+        },
+        "school_location": {
+          "id": 1,
+          "name": "مدرسة الجيل الجديد الدولية",
+          "address": "حي الأندلس - بالقرب من جامع الأندلس الكبير",
+          "lat": 32.892,
+          "lng": 13.168
+        },
+        "destination": {
+          "name": "مدرسة الجيل الجديد الدولية",
+          "type": "school",
+          "lat": 32.892,
+          "lng": 13.168
+        }
+      },
+      {
+        "child_id": 2,
+        "child_name": "مروة طه القموضي",
+        "child_photo": "https://domain.com/assets/images/default-child.png",
+        "child_status": "waiting",
+        "school_name": "مدرسة الجيل الجديد الدولية",
+        "direction": "to_school",
+        "home_location": {
+          "title": "المنزل الرئيسي - حي الأندلس خلف مركز المقارحة",
+          "address": "المنزل الرئيسي - حي الأندلس خلف مركز المقارحة",
+          "lat": 32.8925,
+          "lng": 13.1752
+        },
+        "school_location": {
+          "id": 1,
+          "name": "مدرسة الجيل الجديد الدولية",
+          "address": "حي الأندلس - بالقرب من جامع الأندلس الكبير",
+          "lat": 32.892,
+          "lng": 13.168
+        },
+        "destination": {
+          "name": "مدرسة الجيل الجديد الدولية",
+          "type": "school",
+          "lat": 32.892,
+          "lng": 13.168
+        }
+      }
+    ],
+    "destination": {
+      "name": "مدرسة الجيل الجديد الدولية",
+      "type": "school",
+      "lat": 32.892,
+      "lng": 13.168
+    },
+    "destinations": [
+      {
+        "name": "مدرسة الجيل الجديد الدولية",
+        "type": "school",
+        "lat": 32.892,
+        "lng": 13.168
+      }
+    ],
+    "is_multi_school": false,
+    "started_at": "2026-08-28T13:21:02+02:00",
+    "finished_at": null
   }
 }
 ```

@@ -1,0 +1,121 @@
+{
+    "status": "success",
+    "data": {
+        "trip_id": 566,
+        "trip_type": "Morning",
+        "route_name": "مسار حي الأندلس - المدارس المركزية",
+        "status": "in_progress",
+        "suspension_reason": null,
+        "trip_date": "2026-08-31",
+        "recommended_departure": "07:05",
+        "estimated_duration": 45,
+        "vehicle": {
+            "plate": "5-12345",
+            "capacity": 14
+        },
+        "statistics": {
+            "children": 2,
+            "schools": 2
+        },
+        "schools": [
+            {
+                "school_id": 1135,
+                "name": "مدرسة طرابلس المركز النموذجية",
+                "latitude": 32.89542,
+                "longitude": 13.18567,
+                "lat": 32.89542,
+                "lng": 13.18567,
+                "address": "شارع الجمهورية، طرابلس",
+                "children_count": 1
+            },
+            {
+                "school_id": 1136,
+                "name": "مدرسة قرطبة الحديثة",
+                "latitude": 32.86431,
+                "longitude": 13.17892,
+                "lat": 32.86431,
+                "lng": 13.17892,
+                "address": "حي دمشق، طرابلس",
+                "children_count": 1
+            }
+        ],
+        "children": [
+            {
+                "trip_child_id": 852,
+                "child_id": 1336,
+                "name": "سارة محمد",
+                "photo": "https://jolly-snake-84.loca.lt/assets/images/default-child.png",
+                "latitude": 32.87123,
+                "longitude": 13.15678,
+                "lat": 32.87123,
+                "lng": 13.15678,
+                "school": "مدرسة طرابلس المركز النموذجية",
+                "school_name": "مدرسة طرابلس المركز النموذجية",
+                "school_latitude": 32.89542,
+                "school_longitude": 13.18567,
+                "pickup_address": "حي الأندلس - بالقرب من جامع الشريف",
+                "dropoff_address": "مدرسة طرابلس المركز النموذجية",
+                "status": "pending",
+                "pickup_status": "pending",
+                "dropoff_status": "pending",
+                "eta": null,
+                "sequence_order": 1,
+                "home_location": {
+                    "title": "حي الأندلس - بالقرب من جامع الشريف",
+                    "address": "حي الأندلس - بالقرب من جامع الشريف",
+                    "latitude": 32.87123,
+                    "longitude": 13.15678,
+                    "lat": 32.87123,
+                    "lng": 13.15678
+                },
+                "school_location": {
+                    "id": 1135,
+                    "name": "مدرسة طرابلس المركز النموذجية",
+                    "address": "شارع الجمهورية، طرابلس",
+                    "latitude": 32.89542,
+                    "longitude": 13.18567,
+                    "lat": 32.89542,
+                    "lng": 13.18567
+                }
+            },
+            {
+                "trip_child_id": 853,
+                "child_id": 1337,
+                "name": "علي محمد",
+                "photo": "https://jolly-snake-84.loca.lt/assets/images/default-child.png",
+                "latitude": 32.86234,
+                "longitude": 13.14125,
+                "lat": 32.86234,
+                "lng": 13.14125,
+                "school": "مدرسة قرطبة الحديثة",
+                "school_name": "مدرسة قرطبة الحديثة",
+                "school_latitude": 32.86431,
+                "school_longitude": 13.17892,
+                "pickup_address": "غوط الشعال - شارع الغربي",
+                "dropoff_address": "مدرسة قرطبة الحديثة",
+                "status": "pending",
+                "pickup_status": "pending",
+                "dropoff_status": "pending",
+                "eta": null,
+                "sequence_order": 2,
+                "home_location": {
+                    "title": "غوط الشعال - شارع الغربي",
+                    "address": "غوط الشعال - شارع الغربي",
+                    "latitude": 32.86234,
+                    "longitude": 13.14125,
+                    "lat": 32.86234,
+                    "lng": 13.14125
+                },
+                "school_location": {
+                    "id": 1136,
+                    "name": "مدرسة قرطبة الحديثة",
+                    "address": "حي دمشق، طرابلس",
+                    "latitude": 32.86431,
+                    "longitude": 13.17892,
+                    "lat": 32.86431,
+                    "lng": 13.17892
+                }
+            }
+        ]
+    }
+}

@@ -35,7 +35,7 @@ class StoreAdminRequest extends FormRequest
                 function ($attribute, $value, $fail) {
                     $words = explode(' ', trim(preg_replace('/\s+/', ' ', $value)));
                     if (count($words) < 3) {
-                        $fail('الاسم يجب أن يكون ثلاثياً على الأقل.');
+                        $fail('الاسم الثلاثي مطلوب: يجب ألا يقل الاسم عن ثلاث كلمات.');
                     }
                 }
             ],
@@ -74,7 +74,7 @@ class StoreAdminRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'full_name.required' => 'حقل الاسم مطلوب.',
+            'full_name.required' => 'الاسم الكامل مطلوب.',
 'full_name.regex'    => 'الاسم يجب أن يكون باللغة العربية فقط وبدون رموز أو أرقام.',
 'full_name.unique'   => 'الاسم مُسجّل مسبقاً.',
 

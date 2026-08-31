@@ -12,6 +12,7 @@ use App\Services\Trip\TripTrackingService;
 use App\Services\Trip\TripStopService;
 use App\Services\Trip\RouteRecommendationService;
 use App\Services\Notification\NotificationService;
+use App\Http\Requests\Api\Trip\DriverAbsenceRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -30,6 +31,7 @@ class DriverTripController extends Controller
     protected \App\Services\Trip\DailyTripGenerationService $dailyTripGenerationService;
     protected \App\Services\Trip\GeofenceService $geofenceService;
     protected NotificationService $notificationService;
+    protected \App\Services\Trip\EmergencyBreakdownService $emergencyBreakdownService;
 
     public function __construct(
         TripLifecycleService $lifecycleService,
@@ -38,7 +40,8 @@ class DriverTripController extends Controller
         RouteRecommendationService $recommendationService,
         \App\Services\Trip\DailyTripGenerationService $dailyTripGenerationService,
         \App\Services\Trip\GeofenceService $geofenceService,
-        NotificationService $notificationService
+        NotificationService $notificationService,
+        \App\Services\Trip\EmergencyBreakdownService $emergencyBreakdownService
     ) {
         $this->lifecycleService = $lifecycleService;
         $this->trackingService = $trackingService;
@@ -47,13 +50,42 @@ class DriverTripController extends Controller
         $this->dailyTripGenerationService = $dailyTripGenerationService;
         $this->geofenceService = $geofenceService;
         $this->notificationService = $notificationService;
+        $this->emergencyBreakdownService = $emergencyBreakdownService;
+    }
+
+    /**
+     * أقصى عدد أيام مستقبلية يُسمح بمعاينة (وتوليد) رحلاتها مسبقاً.
+     */
+    private const MAX_LOOKAHEAD_DAYS = 14;
+
+    private function resolveRequestedDate(?string $requestedDate): string
+    {
+        $today = Carbon::now(config('app.timezone', 'Africa/Tripoli'))->startOfDay();
+
+        if ($requestedDate && preg_match('/^\d{4}-\d{2}-\d{2}$/', $requestedDate)) {
+            try {
+                $parsed = Carbon::parse($requestedDate)->startOfDay();
+
+                // ⚠️ هذه المعاملة تُنشئ رحلات فعلياً في قاعدة البيانات، لذا يجب ألا تقبل
+                // تاريخاً ماضياً (تلفيق رحلات تاريخية) ولا تاريخاً بعيداً (تضخيم الجدول).
+                if ($parsed->lt($today) || $parsed->gt($today->copy()->addDays(self::MAX_LOOKAHEAD_DAYS))) {
+                    return $today->toDateString();
+                }
+
+                return $parsed->toDateString();
+            } catch (\Throwable) {
+                // fallback
+            }
+        }
+
+        return $today->toDateString();
     }
 
     /**
      * 1️⃣ GET /api/driver/trips/today
-     * جلب رحلات اليوم الخاصة بالسائق
+     * جلب رحلات اليوم الخاصة بالسائق مع دعم تمرير ?date=YYYY-MM-DD
      */
-    public function todayTrips(): JsonResponse
+    public function todayTrips(Request $request): JsonResponse
     {
         try {
             $user = Auth::user();
@@ -63,7 +95,8 @@ class DriverTripController extends Controller
                 return response()->json(['status' => 'error', 'message' => 'بيانات السائق غير مقترنة بالحساب.'], 403);
             }
 
-            $today = Carbon::today()->toDateString();
+            $targetDateString = $this->resolveRequestedDate($request->query('date'));
+            $targetDate = Carbon::parse($targetDateString);
 
             // جلب رحلات اليوم من جدول Trips أو إنشائها تلقائياً بناءً على المسارات النشطة
             $activeRoutes = RouteModel::where('driver_id', $driver->id)
@@ -73,7 +106,7 @@ class DriverTripController extends Controller
             $trips = [];
 
             foreach ($activeRoutes as $route) {
-                $trip = $this->dailyTripGenerationService->generateForRoute($route);
+                $trip = $this->dailyTripGenerationService->generateForRoute($route, $targetDate);
 
                 if (!$trip || strtolower($trip->status) === 'cancelled') {
                     continue;
@@ -83,11 +116,15 @@ class DriverTripController extends Controller
 
                 $formattedStatus = strtolower($trip->status);
 
+                $tripFormattedDate = $trip->trip_date ? Carbon::parse($trip->trip_date)->format('Y-m-d') : $targetDateString;
+
                 $trips[] = [
                     'trip_id'               => (int) $trip->id,
                     'route_id'              => (int) $route->id,
                     'route_name'            => $route->route_name,
                     'trip_type'             => $route->route_type,
+                    'trip_date'             => $tripFormattedDate,
+                    'date'                  => $tripFormattedDate,
                     'status'                => $formattedStatus,
                     'children_count'        => $metrics['children_count'],
                     'schools_count'         => $metrics['schools_count'],
@@ -99,6 +136,7 @@ class DriverTripController extends Controller
 
             return response()->json([
                 'status' => 'success',
+                'date'   => $targetDateString,
                 'data'   => $trips
             ], 200);
 
@@ -187,7 +225,7 @@ class DriverTripController extends Controller
                     }
                 })
                 ->where('status', '!=', 'cancelled')
-                ->with(['child.school', 'school'])
+                ->with(['child.school', 'child.address', 'school'])
                 ->get();
 
             if ($subs->isEmpty()) {
@@ -199,14 +237,14 @@ class DriverTripController extends Controller
 
                 if ($childIdsFromStopsOrEvents->isNotEmpty()) {
                     $subs = ActiveSubscription::whereIn('child_id', $childIdsFromStopsOrEvents)
-                        ->with(['child.school', 'school'])
+                        ->with(['child.school', 'child.address', 'school'])
                         ->get();
                 }
 
                 if ($subs->isEmpty()) {
                     $subs = ActiveSubscription::where('driver_id', $driver->id)
                         ->where('status', '!=', 'cancelled')
-                        ->with(['child.school', 'school'])
+                        ->with(['child.school', 'child.address', 'school'])
                         ->get();
                 }
             }
@@ -232,13 +270,25 @@ class DriverTripController extends Controller
                 }
             }
 
-            $schoolsGrouped = $subs->groupBy('school_id')->map(function ($group) {
+            $schoolsGrouped = $subs->groupBy(function ($subItem) {
+                return $subItem->school_id ?? $subItem->child?->school_id ?? 0;
+            })->map(function ($group) {
                 $first = $group->first();
-                $sName = optional($first->school)->name ?? optional($first->child?->school)->name ?? 'المدرسة';
+                $childSchool = $first->school ?? $first->child?->school ?? \App\Models\Parent\School::find($first->school_id ?? $first->child?->school_id);
+                $sName = $childSchool?->name ?? 'المدرسة';
+                $sId = $childSchool?->id ?? (int)$first->school_id;
+                $schoolLat = $childSchool?->lat ?? $first->dropoff_lat ?? 32.890000;
+                $schoolLng = $childSchool?->lng ?? $first->dropoff_lng ?? 13.180000;
+
                 return [
-                    'school_id'      => (int) $first->school_id,
+                    'school_id'      => (int) $sId,
                     'name'           => $sName,
-                    'children_count' => $group->count(),
+                    'latitude'       => (float) $schoolLat,
+                    'longitude'      => (float) $schoolLng,
+                    'lat'            => (float) $schoolLat,
+                    'lng'            => (float) $schoolLng,
+                    'address'        => $childSchool?->address ?? null,
+                    'children_count' => $group->unique('child_id')->count(),
                 ];
             })->values();
 
@@ -249,34 +299,78 @@ class DriverTripController extends Controller
                 ->get()
                 ->keyBy('child_id');
 
-            $children = $subs->map(function ($sub) use ($events, $stopsByChild) {
+            $children = $subs->unique('child_id')->map(function ($sub) use ($events, $stopsByChild, $driver) {
+                $childObj = $sub->child;
                 $stop = $stopsByChild->get($sub->child_id);
                 $statusFields = $stop
                     ? $this->tripStopStatusFields($stop)
                     : $this->legacyStatusFromEvents($sub->child_id, $events);
 
-                $childSchoolName = optional($sub->school)->name 
-                    ?? optional($sub->child?->school)->name 
-                    ?? optional(\App\Models\Parent\School::find($sub->school_id ?? $sub->child?->school_id))->name 
-                    ?? 'المدرسة';
+                // مدرسة وموقع الطفل
+                $childSchool = $sub->school ?? $childObj?->school ?? \App\Models\Parent\School::find($sub->school_id ?? $childObj?->school_id);
+                $schoolLat = $childSchool?->lat ?? $sub->dropoff_lat ?? 32.890000;
+                $schoolLng = $childSchool?->lng ?? $sub->dropoff_lng ?? 13.180000;
+                $schoolLocation = [
+                    'id'        => $childSchool?->id ? (int) $childSchool->id : null,
+                    'name'      => $childSchool?->name ?? 'المدرسة',
+                    'address'   => $childSchool?->address ?? null,
+                    'latitude'  => (float) $schoolLat,
+                    'longitude' => (float) $schoolLng,
+                    'lat'       => (float) $schoolLat,
+                    'lng'       => (float) $schoolLng,
+                ];
+
+                // منزل وسكن الطفل
+                $childAddress = $childObj?->address;
+                $homeLat = $stop?->lat ?? $childAddress?->lat ?? $sub->pickup_lat ?? $childObj?->latitude ?? 32.875210;
+                $homeLng = $stop?->lng ?? $childAddress?->lng ?? $sub->pickup_lng ?? $childObj?->longitude ?? 13.165420;
+                $homeTitle = $stop?->label ?? $childAddress?->label ?? $sub->pickup_label ?? 'المنزل الرئيسي';
+                $homeLocation = [
+                    'title'     => $homeTitle,
+                    'address'   => $childAddress?->label ?? $sub->pickup_label ?? $homeTitle,
+                    'latitude'  => (float) $homeLat,
+                    'longitude' => (float) $homeLng,
+                    'lat'       => (float) $homeLat,
+                    'lng'       => (float) $homeLng,
+                ];
+
+                $rawPhoto = $childObj?->photo_url ?? null;
+                $photoUrl = $rawPhoto ? (str_starts_with($rawPhoto, 'http') ? $rawPhoto : \Illuminate\Support\Facades\Storage::url($rawPhoto)) : asset('assets/images/default-child.png');
 
                 return [
                     'trip_child_id'   => (int) $sub->id,
                     'child_id'        => (int) $sub->child_id,
-                    'name'            => $sub->child->full_name ?? $sub->child->name ?? 'طفل',
-                    'school'          => $childSchoolName,
-                    'school_name'     => $childSchoolName,
-                    'pickup_address'  => $sub->pickup_label ?? 'الحي السكني',
-                    'dropoff_address' => $childSchoolName,
+                    'name'            => $childObj?->full_name ?? $childObj?->name ?? 'طفل',
+                    'photo'           => $photoUrl,
+                    'latitude'        => (float) $homeLat,
+                    'longitude'       => (float) $homeLng,
+                    'lat'             => (float) $homeLat,
+                    'lng'             => (float) $homeLng,
+                    'school'          => $schoolLocation['name'],
+                    'school_name'     => $schoolLocation['name'],
+                    'school_latitude' => (float) $schoolLat,
+                    'school_longitude'=> (float) $schoolLng,
+                    'pickup_address'  => $homeLocation['title'],
+                    'dropoff_address' => $schoolLocation['name'],
                     'status'          => $statusFields['status'],
                     'pickup_status'   => $statusFields['pickup_status'],
                     'dropoff_status'  => $statusFields['dropoff_status'],
                     'eta'             => $statusFields['eta'],
                     'sequence_order'  => $statusFields['sequence_order'],
+                    'home_location'   => $homeLocation,
+                    'school_location' => $schoolLocation,
                 ];
             })->values();
 
-            $routeName = $route?->formatted_route_name ?? RouteModel::generateGenericRouteName(null, 'both', $trip->trip_type);
+            // ⚠️ يجب أن يطابق ما يعرضه todayTrips و history لنفس الرحلة تماماً،
+            // وإلا رأى السائق ثلاثة أسماء مختلفة للمسار الواحد في ثلاث شاشات.
+            $routeName = $route?->route_name
+                ?? $route?->formatted_route_name
+                ?? RouteModel::generateGenericRouteName(null, 'both', $trip->trip_type);
+
+            $metrics = $route
+                ? $this->recommendationService->calculateRouteMetrics($route)
+                : ['estimated_duration' => (int) ($route?->estimated_duration ?? 45), 'recommended_departure' => '07:00'];
 
             return response()->json([
                 'status' => 'success',
@@ -287,8 +381,8 @@ class DriverTripController extends Controller
                     'status'                => strtolower($trip->status),
                     'suspension_reason'     => $trip->suspension_reason,
                     'trip_date'             => $trip->trip_date ? Carbon::parse($trip->trip_date)->format('Y-m-d') : Carbon::today()->format('Y-m-d'),
-                    'recommended_departure' => '07:00',
-                    'estimated_duration'   => (int) ($route?->estimated_duration ?? 45),
+                    'recommended_departure' => $metrics['recommended_departure'],
+                    'estimated_duration'   => (int) $metrics['estimated_duration'],
                     'vehicle' => [
                         'plate'    => $driver->vehicle?->plate_number ?? '5-12345',
                         'capacity' => (int) ($driver->vehicle?->capacity_manual ?? 14),
@@ -324,6 +418,67 @@ class DriverTripController extends Controller
 
             if ($targetTripId) {
                 $trip = Trip::where('id', $targetTripId)->where('driver_id', $driverId)->firstOrFail();
+
+                // ⚠️ فحص الغياب كان موجوداً في المسار القديم (بدون tripId) فقط، بينما التطبيق
+                // يستخدم هذا المسار — فكان السائق الغائب رسمياً يبدأ رحلته بشكل طبيعي.
+                $tripDate = $trip->trip_date
+                    ? Carbon::parse($trip->trip_date)->toDateString()
+                    : Carbon::today()->toDateString();
+
+                $isAbsent = \App\Models\Driver\DriverAbsence::where('driver_id', $driverId)
+                    ->whereDate('absence_date', $tripDate)
+                    ->where(function ($q) use ($trip) {
+                        $q->whereDoesntHave('trips')
+                          ->orWhereHas('trips', fn($tq) => $tq->where('trips.id', $trip->id));
+                    })
+                    ->exists();
+
+                if ($isAbsent) {
+                    return response()->json([
+                        'status'     => 'error',
+                        'error_code' => 'DRIVER_ABSENT',
+                        'message'    => 'لا يمكن بدء الرحلة؛ أنت مسجل كغائب في هذا اليوم.',
+                    ], 422);
+                }
+
+                // ⚠️ بدون هذا الفحص كان بالإمكان إعادة فتح رحلة مكتملة وإنهاؤها مجدداً،
+                // فتتكرر مسارات التسوية المالية وتفقد سجلات الرحلات معناها.
+                if (in_array(strtolower((string) $trip->status), ['completed', 'cancelled'], true)) {
+                    return response()->json([
+                        'status'     => 'error',
+                        'error_code' => 'TRIP_NOT_STARTABLE',
+                        'message'    => 'هذه الرحلة منتهية أو ملغاة ولا يمكن بدؤها من جديد.',
+                    ], 409);
+                }
+
+                if (strtolower((string) $trip->status) === 'in_progress') {
+                    return response()->json([
+                        'status'  => 'success',
+                        'message' => 'الرحلة جارية بالفعل.',
+                        'data'    => [
+                            'trip_id'    => (int) $trip->id,
+                            'status'     => 'in_progress',
+                            'started_at' => $trip->actual_start_time
+                                ? Carbon::parse($trip->actual_start_time)->format('H:i')
+                                : Carbon::now()->format('H:i'),
+                        ],
+                    ], 200);
+                }
+
+                // (10) رحلة بلا أي طفل فعلي (الجميع غائبون مسبقاً) لا معنى لتشغيلها
+                $actionableStops = \App\Models\Shared\TripStop::where('trip_id', $trip->id)
+                    ->where('stop_type', \App\Models\Shared\TripStop::TYPE_HOME)
+                    ->where('sequence_order', '>', 0)
+                    ->count();
+
+                if ($actionableStops === 0) {
+                    return response()->json([
+                        'status'     => 'error',
+                        'error_code' => 'NO_ACTIVE_CHILDREN',
+                        'message'    => 'لا يوجد أي طفل مطلوب نقله في هذه الرحلة (الجميع مسجل غيابهم)، لا حاجة لتشغيلها.',
+                    ], 422);
+                }
+
                 $trip->status = 'in_progress';
                 $trip->actual_start_time = now();
                 $trip->started_at = now();
@@ -450,16 +605,37 @@ class DriverTripController extends Controller
      * 5️⃣ POST /api/driver/trips/{tripId}/location
      * تحديث موقع GPS
      */
-    public function updateLocation(Request $request, $tripId): JsonResponse
+    public function updateLocation(\App\Http\Requests\Api\Trip\UpdateLocationRequest $request, $tripId): JsonResponse
     {
-        $driverId = Auth::user()->driver->id;
-        $lat = $request->latitude ?? $request->lat;
-        $lng = $request->longitude ?? $request->lng;
-        $speed = $request->speed ?? 0;
-        $heading = $request->heading;
+        // ⚠️ بدون هذا الفحص كان أي سائق يستطيع دفع إحداثيات إلى رحلة سائق آخر،
+        // فيغيّر موقع الضحية الحي ويحقن نقاط تتبع وهمية يراها أولياء أمور تلك الرحلة.
+        $driver = Auth::user()?->driver;
 
-        $this->trackingService->updateDriverLocation($tripId, $lat, $lng, $speed, $heading !== null ? (float) $heading : null);
-        return response()->json(['status' => 'success'], 200);
+        if (!$driver) {
+            return response()->json([
+                'status'     => 'error',
+                'error_code' => 'DRIVER_NOT_FOUND',
+                'message'    => 'بيانات السائق غير مقترنة بالحساب.',
+            ], 403);
+        }
+
+        $ownsTrip = Trip::where('id', $tripId)->where('driver_id', $driver->id)->exists();
+
+        if (!$ownsTrip) {
+            return response()->json([
+                'status'     => 'error',
+                'error_code' => 'TRIP_NOT_FOUND',
+                'message'    => 'الرحلة غير موجودة أو غير مسندة لك.',
+            ], 404);
+        }
+
+        $lat = (float) $request->validated('latitude');
+        $lng = (float) $request->validated('longitude');
+        $speed = (float) ($request->validated('speed') ?? 0);
+        $heading = $request->validated('heading');
+
+        $result = $this->trackingService->updateDriverLocation($tripId, $lat, $lng, $speed, $heading !== null ? (float) $heading : null);
+        return response()->json(['status' => 'success'] + $result, 200);
     }
 
     /**
@@ -511,26 +687,77 @@ class DriverTripController extends Controller
     }
 
     /**
-     * POST /api/v1/driver/register-absence
-     * تسجيل غياب السائق نفسه في تواريخ محددة — لن تُولَّد رحلات على مساراته في هذه الأيام
+     * GET /api/driver/trips/upcoming-for-absence
+     * يعرض للسائق رحلاته القادمة ليختار منها عند تسجيل طلب غياب.
      */
-    public function registerAbsence(Request $request): JsonResponse
+    public function upcomingTripsForAbsence(Request $request): JsonResponse
     {
-        $request->validate([
-            'dates'   => 'required|array|min:1',
-            'dates.*' => 'required|date|after_or_equal:today',
-        ]);
-
         try {
             $user = Auth::user();
             $driverId = $user->driver->id;
 
-            $this->lifecycleService->setDriverAbsence($driverId, $request->dates);
+            $trips = $this->lifecycleService->getUpcomingTripsForAbsence($driverId);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'تم جلب رحلاتك القادمة بنجاح.',
+                'data'    => $trips,
+            ], 200);
+        } catch (Throwable $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 400);
+        }
+    }
+
+    /**
+     * POST /api/v1/driver/register-absence
+     * أو POST /api/driver/trips/register-absence
+     * تسجيل طلب غياب السائق عن رحلات محددة والسبب والتاريخ
+     */
+    public function registerAbsence(DriverAbsenceRequest $request): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            $driverId = $user->driver->id;
+
+            $tripIds = $request->input('trip_ids');
+            $date = $request->input('date');
+            $reason = $request->input('reason');
+            $dates = $request->input('dates');
+
+            if (!empty($tripIds)) {
+                $absence = $this->lifecycleService->setDriverAbsence($driverId, $date, $tripIds, $reason);
+
+                return response()->json([
+                    'status'  => 'success',
+                    'message' => 'تم تسجيل غيابك عن الرحلات المحددة فوراً، وفصلك عنها، وتنبيه أولياء أمور أطفالها.',
+                    'data'    => [
+                        'absence_id'   => $absence->id,
+                        'driver_id'    => $driverId,
+                        'absence_date' => $absence->absence_date->toDateString(),
+                        'reason'       => $absence->reason,
+                        'status'       => $absence->status,
+                        'trip_ids'     => $tripIds,
+                        'trips'        => $absence->trips->map(function ($trip) {
+                            return [
+                                'id'                   => $trip->id,
+                                'trip_type'            => $trip->trip_type,
+                                'shift_slot'           => $trip->shift_slot,
+                                'trip_date'            => $trip->trip_date ? Carbon::parse($trip->trip_date)->toDateString() : null,
+                                'status'               => $trip->status,
+                                'scheduled_start_time' => $trip->scheduled_start_time,
+                            ];
+                        }),
+                    ],
+                ], 200);
+            }
+
+            // Legacy path for dates array
+            $this->lifecycleService->setDriverAbsence($driverId, $dates, [], $reason);
 
             return response()->json([
                 'status'  => 'success',
                 'message' => 'تم تسجيل غيابك في التواريخ المحددة، ولن يتم توليد رحلات لمساراتك في هذه الأيام.',
-                'data'    => ['dates' => $request->dates],
+                'data'    => ['dates' => $dates],
             ], 200);
         } catch (Throwable $e) {
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 400);
@@ -539,9 +766,9 @@ class DriverTripController extends Controller
 
     /**
      * POST /api/v1/driver/trips/{tripId}/report-breakdown
-     * الإبلاغ عن عطل يوقف الرحلة الجارية مؤقتاً ويُخطر أولياء الأمور المتبقين
+     * الإبلاغ عن عطل يوقف الرحلة الجارية وبدء البحث الفوري عن سائقين بدلاء
      */
-    public function reportBreakdown(Request $request, $tripId): JsonResponse
+    public function reportBreakdown(\App\Http\Requests\Api\Trip\ReportBreakdownRequest $request, $tripId): JsonResponse
     {
         try {
             $user = Auth::user();
@@ -556,43 +783,117 @@ class DriverTripController extends Controller
                 ], 422);
             }
 
-            $trip->status = 'suspended_breakdown';
-            $trip->suspension_reason = $request->input('reason');
-            $trip->save();
+            $breakdownLat = $request->input('latitude') ?? $request->input('lat');
+            $breakdownLng = $request->input('longitude') ?? $request->input('lng');
+            $reason = $request->input('reason');
 
-            try {
-                $pendingChildIds = \App\Models\Shared\TripStop::where('trip_id', $trip->id)
-                    ->where('stop_type', 'home')
-                    ->whereIn('status', \App\Models\Shared\TripStop::NON_FINAL_STATUSES)
-                    ->pluck('child_id');
-
-                if ($pendingChildIds->isNotEmpty()) {
-                    $parentUserIds = \App\Models\Parent\Child::whereIn('children.id', $pendingChildIds)
-                        ->join('parents', 'children.parent_id', '=', 'parents.id')
-                        ->pluck('parents.user_id')
-                        ->unique();
-
-                    $users = \App\Models\User::whereIn('id', $parentUserIds)->get();
-                    if ($users->isNotEmpty()) {
-                        $this->notificationService->sendToUsers($users, 'trip_suspended', [
-                            'title'   => '🚨 توقف مؤقت للحافلة',
-                            'message' => 'حدث عطل طارئ وتوقفت الحافلة مؤقتاً، سيتم إبلاغكم فور استئناف الرحلة.',
-                            'trip_id' => (string) $trip->id,
-                        ]);
-                    }
-                }
-            } catch (\Throwable $e) {
-                Log::warning("فشل إرسال إشعارات توقف الرحلة ID: {$trip->id} - " . $e->getMessage());
+            if ($breakdownLat !== null && $breakdownLng !== null) {
+                \App\Models\Driver\Driver::where('id', $driverId)->update([
+                    'current_lat' => (float) $breakdownLat,
+                    'current_lng' => (float) $breakdownLng,
+                ]);
             }
 
-            return response()->json([
-                'status'  => 'success',
-                'message' => 'تم تسجيل توقف الرحلة مؤقتاً وإخطار أولياء الأمور.',
-                'data'    => ['trip_id' => (int) $trip->id, 'status' => 'suspended_breakdown'],
-            ], 200);
+            $result = $this->emergencyBreakdownService->reportBreakdown(
+                $trip,
+                $breakdownLat !== null ? (float) $breakdownLat : null,
+                $breakdownLng !== null ? (float) $breakdownLng : null,
+                $reason
+            );
+
+            return response()->json($result, 200);
 
         } catch (Throwable $e) {
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 400);
+        }
+    }
+
+    /**
+     * POST /api/v1/driver/emergency-dispatches/{dispatchId}/accept
+     * قبول مهمة الاستبدال الطارئة من قبل السائق البديل
+     */
+    public function acceptBreakdownDispatch(Request $request, $dispatchId): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            $driverId = $user->driver->id;
+
+            $result = $this->emergencyBreakdownService->acceptBreakdownDispatch((int) $dispatchId, $driverId);
+
+            return response()->json($result, 200);
+        } catch (\Exception $e) {
+            $code = $e->getCode() >= 400 && $e->getCode() < 600 ? $e->getCode() : 400;
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], $code);
+        }
+    }
+
+    /**
+     * POST /api/v1/driver/emergency-dispatches/{dispatchId}/reject
+     * رفض المهمة الطارئة من قبل السائق
+     */
+    public function rejectBreakdownDispatch(Request $request, $dispatchId): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            $driverId = $user->driver->id;
+
+            $result = $this->emergencyBreakdownService->rejectBreakdownDispatch((int) $dispatchId, $driverId);
+
+            return response()->json($result, 200);
+        } catch (\Exception $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 400);
+        }
+    }
+
+    /**
+     * GET /api/v1/driver/emergency-dispatches/available
+     * جلب المهام الطارئة المتاحة لهذا السائق
+     */
+    public function getAvailableBreakdownDispatches(Request $request): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            $driverId = $user->driver->id;
+
+            $dispatches = \App\Models\Shared\TripBreakdownDispatch::where('status', \App\Models\Shared\TripBreakdownDispatch::STATUS_BROADCASTED)
+                ->whereJsonContains('candidate_driver_ids', $driverId)
+                ->where(function ($q) use ($driverId) {
+                    $q->whereNull('rejected_driver_ids')
+                      ->orWhereJsonDoesntContain('rejected_driver_ids', $driverId);
+                })
+                ->where('expires_at', '>', now())
+                ->with(['trip', 'originalDriver.user'])
+                ->get();
+
+            return response()->json([
+                'status' => 'success',
+                'data'   => $dispatches,
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 400);
+        }
+    }
+
+    /**
+     * GET /api/v1/driver/emergency-dispatches/{dispatchId}
+     * جلب تفاصيل مهمة طارئة محددة
+     */
+    public function getBreakdownDispatchDetails(Request $request, $dispatchId): JsonResponse
+    {
+        try {
+            $dispatch = \App\Models\Shared\TripBreakdownDispatch::with([
+                'trip.stops.child.address',
+                'trip.stops.child.school',
+                'originalDriver.user',
+                'substituteDriver.user'
+            ])->findOrFail($dispatchId);
+
+            return response()->json([
+                'status' => 'success',
+                'data'   => $dispatch,
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 404);
         }
     }
 
@@ -646,6 +947,29 @@ class DriverTripController extends Controller
             $trip = Trip::where('id', $tripId)->where('driver_id', $driverId)->firstOrFail();
 
             $subId = $tripChildId ?? $request->trip_child_id;
+
+            if (empty($subId)) {
+                return response()->json([
+                    'status'     => 'error',
+                    'error_code' => 'TRIP_CHILD_REQUIRED',
+                    'message'    => 'يجب تحديد الطفل (trip_child_id) لتنفيذ هذا الإجراء.',
+                ], 422);
+            }
+
+            // ⚠️ كل الإجراءات على الأطفال يجب أن تقع داخل رحلة جارية فعلياً؛ بدون هذا الفحص
+            // كان يمكن تسجيل صعود ونزول وإنهاء رحلة لم تُبدأ أصلاً (تبقى حالتها pending).
+            if (strtolower((string) $trip->status) !== 'in_progress') {
+                $isCompleted = strtolower((string) $trip->status) === 'completed';
+
+                return response()->json([
+                    'status'     => 'error',
+                    'error_code' => $isCompleted ? 'TRIP_ALREADY_COMPLETED' : 'TRIP_NOT_STARTED',
+                    'message'    => $isCompleted
+                        ? 'الرحلة منتهية بالفعل ولا يمكن تعديل حالات الأطفال فيها.'
+                        : 'يجب بدء الرحلة أولاً قبل تسجيل أي حالة للأطفال.',
+                ], 409);
+            }
+
             $action = strtolower($request->action ?? $request->route()->getActionMethod());
 
             // ⚠️ يجب فحص الأسماء الأكثر تحديداً أولاً (dropoff_failed يحتوي جزئياً على "dropoff")
@@ -657,7 +981,16 @@ class DriverTripController extends Controller
             elseif (str_contains($action, 'skip')) $action = 'skip';
 
             // 🔒 التحقق من ملكية الاشتراك للسائق الحالي لمنع التلاعب باشتراكات سائقين آخرين (IDOR)
-            $sub = ActiveSubscription::where('id', $subId)->where('driver_id', $driverId)->firstOrFail();
+            $sub = ActiveSubscription::where('id', $subId)->where('driver_id', $driverId)->first();
+
+            if (!$sub) {
+                return response()->json([
+                    'status'     => 'error',
+                    'error_code' => 'TRIP_CHILD_NOT_FOUND',
+                    'message'    => 'هذا الطفل غير مشترك معك أو رقم الاشتراك غير صحيح.',
+                ], 404);
+            }
+
             $childId = $sub->child_id;
 
             // trip_events.trip_type/location_lat/location_lng أعمدة إلزامية (NOT NULL) في قاعدة البيانات
@@ -682,40 +1015,124 @@ class DriverTripController extends Controller
                             'message'    => 'كود الـ QR غير متطابق مع هذا الطفل.',
                         ], 400);
                     }
-                } elseif ($homeStop) {
-                    if (!$request->has('latitude') || !$request->has('longitude')) {
+
+                    // الـ QR يمنح مرونة في النطاق (لا يُلزم السائق بالوقوف على النقطة بالضبط)
+                    // لكنه لا يُعفي من الوجود في المنطقة: بدون هذا كان يمكن تأكيد صعود طفل
+                    // من مئات الكيلومترات بمجرد امتلاك الكود.
+                    $qrLat = $request->has('latitude') ? (float) $request->latitude : ($request->has('lat') ? (float) $request->lat : null);
+                    $qrLng = $request->has('longitude') ? (float) $request->longitude : ($request->has('lng') ? (float) $request->lng : null);
+
+                    if ($qrLat !== null && $qrLng !== null) {
+                        $qrTargetLat = $homeStop?->lat ?? $sub->pickup_lat;
+                        $qrTargetLng = $homeStop?->lng ?? $sub->pickup_lng;
+
+                        if ($action === 'dropoff') {
+                            $isGoTripQr = \App\Models\Driver\DriverSeatSlot::isGoSlot($trip->shift_slot ?? '')
+                                || (!$trip->shift_slot && ($trip->trip_type === 'Morning' || $trip->trip_type === 'ذهاب'));
+                            if ($isGoTripQr) {
+                                $qrTargetLat = $sub->dropoff_lat ?? $sub->school?->lat ?? $sub->child?->school?->lat;
+                                $qrTargetLng = $sub->dropoff_lng ?? $sub->school?->lng ?? $sub->child?->school?->lng;
+                            }
+                        }
+
+                        if ($qrTargetLat !== null && $qrTargetLng !== null) {
+                            $distanceMeters = \App\Support\GeoEstimator::haversineKm(
+                                $qrLat, $qrLng, (float) $qrTargetLat, (float) $qrTargetLng
+                            ) * 1000;
+
+                            if ($distanceMeters > \App\Services\Trip\GeofenceService::QR_MAX_RADIUS_METERS) {
+                                return response()->json([
+                                    'status'     => 'error',
+                                    'error_code' => 'OUT_OF_RANGE',
+                                    'message'    => sprintf(
+                                        'أنت بعيد جداً عن موقع المحطة (%.0f م) لتأكيد المسح. يرجى الاقتراب من الموقع.',
+                                        $distanceMeters
+                                    ),
+                                ], 422);
+                            }
+                        }
+                    }
+                } else {
+                    $driverLat = $request->has('latitude') ? (float) $request->latitude : ($request->has('lat') ? (float) $request->lat : null);
+                    $driverLng = $request->has('longitude') ? (float) $request->longitude : ($request->has('lng') ? (float) $request->lng : null);
+
+                    if ($driverLat === null || $driverLng === null) {
                         return response()->json([
                             'status'     => 'error',
                             'error_code' => 'LOCATION_REQUIRED',
-                            'message'    => 'يجب إرسال الموقع الجغرافي الحالي للتأكيد اليدوي، أو استخدام مسح QR.',
+                            'message'    => 'يجب إرسال الموقع الجغرافي الحالي (latitude, longitude) للتأكيد اليدوي، أو استخدام مسح QR.',
                         ], 422);
                     }
-                    try {
-                        $this->geofenceService->assertWithinRadius((float) $request->latitude, (float) $request->longitude, $homeStop);
-                    } catch (\App\Services\Trip\GeofenceViolationException $e) {
-                        return response()->json([
-                            'status'     => 'error',
-                            'error_code' => $e->getErrorCode(),
-                            'message'    => $e->getMessage(),
-                        ], $e->getCode());
+
+                    if ($action === 'pickup') {
+                        $targetLat = $homeStop?->lat ?? $sub->pickup_lat ?? $sub->child?->latitude ?? $sub->child?->address?->lat;
+                        $targetLng = $homeStop?->lng ?? $sub->pickup_lng ?? $sub->child?->longitude ?? $sub->child?->address?->lng;
+                        $stopType = \App\Models\Shared\TripStop::TYPE_HOME;
+                    } else {
+                        // dropoff
+                        $isGoTrip = \App\Models\Driver\DriverSeatSlot::isGoSlot($trip->shift_slot ?? '')
+                            || (!$trip->shift_slot && ($trip->trip_type === 'Morning' || $trip->trip_type === 'ذهاب'));
+                        if ($isGoTrip) {
+                            $targetLat = $sub->dropoff_lat ?? $sub->school?->lat ?? $sub->child?->school?->lat;
+                            $targetLng = $sub->dropoff_lng ?? $sub->school?->lng ?? $sub->child?->school?->lng;
+                            $stopType = \App\Models\Shared\TripStop::TYPE_SCHOOL;
+                        } else {
+                            $targetLat = $homeStop?->lat ?? $sub->pickup_lat ?? $sub->child?->latitude ?? $sub->child?->address?->lat;
+                            $targetLng = $homeStop?->lng ?? $sub->pickup_lng ?? $sub->child?->longitude ?? $sub->child?->address?->lng;
+                            $stopType = \App\Models\Shared\TripStop::TYPE_HOME;
+                        }
+                    }
+
+                    if ($targetLat !== null && $targetLng !== null) {
+                        try {
+                            $this->geofenceService->assertWithinCoordinates($driverLat, $driverLng, (float) $targetLat, (float) $targetLng, $stopType);
+                        } catch (\App\Services\Trip\GeofenceViolationException $e) {
+                            return response()->json([
+                                'status'     => 'error',
+                                'error_code' => $e->getErrorCode(),
+                                'message'    => $e->getMessage(),
+                            ], $e->getCode());
+                        }
                     }
                 }
             }
 
             if ($action === 'pickup') {
-                TripEvent::create([
-                    'trip_id'         => $tripId,
-                    'child_id'        => $childId,
-                    'subscription_id' => $sub->id,
-                    'action_type'     => 'picked_up',
-                    'trip_type'       => $eventTripType,
-                    'scanned_at'      => now(),
-                    'location_lat'    => $request->latitude ?? $sub->pickup_lat ?? 0,
-                    'location_lng'    => $request->longitude ?? $sub->pickup_lng ?? 0,
-                    'trip_cost'       => 0,
-                ]);
+                // 🔒 قفل صف المحطة داخل معاملة قاعدة بيانات لمنع تسابق طلبين متزامنين (Race Condition)
+                // على نفس الطفل (مثلاً ضغطتين سريعتين من التطبيق أو إعادة إرسال بعد انقطاع شبكة)
+                $conflict = false;
+                DB::transaction(function () use ($tripId, $childId, $sub, $eventTripType, $homeStop, $request, &$conflict) {
+                    $lockedStop = $homeStop
+                        ? \App\Models\Shared\TripStop::where('id', $homeStop->id)->lockForUpdate()->first()
+                        : null;
 
-                $homeStop?->update(['status' => \App\Models\Shared\TripStop::STATUS_BOARDED]);
+                    if ($lockedStop && $lockedStop->status !== \App\Models\Shared\TripStop::STATUS_PENDING) {
+                        $conflict = true;
+                        return;
+                    }
+
+                    TripEvent::create([
+                        'trip_id'         => $tripId,
+                        'child_id'        => $childId,
+                        'subscription_id' => $sub->id,
+                        'action_type'     => 'picked_up',
+                        'trip_type'       => $eventTripType,
+                        'scanned_at'      => now(),
+                        'location_lat'    => $request->latitude ?? $request->lat ?? $sub->pickup_lat ?? 0,
+                        'location_lng'    => $request->longitude ?? $request->lng ?? $sub->pickup_lng ?? 0,
+                        'trip_cost'       => 0,
+                    ]);
+
+                    $lockedStop?->update(['status' => \App\Models\Shared\TripStop::STATUS_BOARDED]);
+                });
+
+                if ($conflict) {
+                    return response()->json([
+                        'status'     => 'error',
+                        'error_code' => 'ALREADY_PROCESSED',
+                        'message'    => 'تم تسجيل صعود هذا الطفل مسبقاً.',
+                    ], 409);
+                }
 
                 // 🔔 إرسال إشعار لحظي FCM لولي الأمر
                 try {
@@ -734,33 +1151,15 @@ class DriverTripController extends Controller
                     Log::warning("FCM Notification error on pickup: " . $e->getMessage());
                 }
 
-                $nextSub = ActiveSubscription::where('driver_id', $driverId)
-                    ->where('route_id', $sub->route_id)
-                    ->where('id', '>', $sub->id)
-                    ->first();
+                $nextStop = $this->resolveNextStop($trip, $homeStop?->sequence_order);
 
                 return response()->json([
-                    'status'     => 'success',
-                    'message'    => 'تم تأكيد الصعود وإرسال الإشعار لولي الأمر.',
-                    'next_child' => $nextSub ? [
-                        'trip_child_id' => (int) $nextSub->id,
-                        'name'          => $nextSub->child->full_name ?? $nextSub->child->name ?? 'الطفل التالي',
-                    ] : null
+                    'status'    => 'success',
+                    'message'   => 'تم تأكيد الصعود وإرسال الإشعار لولي الأمر.',
+                    'next_stop' => $nextStop,
                 ], 200);
 
             } elseif ($action === 'dropoff') {
-                TripEvent::create([
-                    'trip_id'         => $tripId,
-                    'child_id'        => $childId,
-                    'subscription_id' => $sub->id,
-                    'action_type'     => 'dropped_off',
-                    'trip_type'       => $eventTripType,
-                    'scanned_at'      => now(),
-                    'location_lat'    => $request->latitude ?? $sub->dropoff_lat ?? 0,
-                    'location_lng'    => $request->longitude ?? $sub->dropoff_lng ?? 0,
-                    'trip_cost'       => 0,
-                ]);
-
                 // اتجاه الرحلة يحدد الوجهة النهائية: ذهاب → المدرسة، إياب → المنزل
                 $isGoTrip = \App\Models\Driver\DriverSeatSlot::isGoSlot($trip->shift_slot ?? '')
                     || (!$trip->shift_slot && $trip->trip_type === 'Morning');
@@ -768,7 +1167,54 @@ class DriverTripController extends Controller
                     ? \App\Models\Shared\TripStop::STATUS_DROPPED_OFF_SCHOOL
                     : \App\Models\Shared\TripStop::STATUS_DELIVERED_HOME;
 
-                $homeStop?->update(['status' => $dropoffStatus]);
+                // 🔒 نفس حماية القفل والتزامن المطبقة على الصعود، بالإضافة لمنع النزول قبل الصعود
+                $conflict = false;
+                $notBoarded = false;
+                DB::transaction(function () use ($tripId, $childId, $sub, $eventTripType, $homeStop, $request, $dropoffStatus, &$conflict, &$notBoarded) {
+                    $lockedStop = $homeStop
+                        ? \App\Models\Shared\TripStop::where('id', $homeStop->id)->lockForUpdate()->first()
+                        : null;
+
+                    if ($lockedStop) {
+                        if ($lockedStop->status === \App\Models\Shared\TripStop::STATUS_PENDING) {
+                            $notBoarded = true;
+                            return;
+                        }
+                        if ($lockedStop->status !== \App\Models\Shared\TripStop::STATUS_BOARDED) {
+                            $conflict = true;
+                            return;
+                        }
+                    }
+
+                    TripEvent::create([
+                        'trip_id'         => $tripId,
+                        'child_id'        => $childId,
+                        'subscription_id' => $sub->id,
+                        'action_type'     => 'dropped_off',
+                        'trip_type'       => $eventTripType,
+                        'scanned_at'      => now(),
+                        'location_lat'    => $request->latitude ?? $request->lat ?? $sub->dropoff_lat ?? 0,
+                        'location_lng'    => $request->longitude ?? $request->lng ?? $sub->dropoff_lng ?? 0,
+                        'trip_cost'       => 0,
+                    ]);
+
+                    $lockedStop?->update(['status' => $dropoffStatus]);
+                });
+
+                if ($notBoarded) {
+                    return response()->json([
+                        'status'     => 'error',
+                        'error_code' => 'NOT_BOARDED_YET',
+                        'message'    => 'لا يمكن تأكيد النزول قبل تأكيد صعود الطفل أولاً.',
+                    ], 409);
+                }
+                if ($conflict) {
+                    return response()->json([
+                        'status'     => 'error',
+                        'error_code' => 'ALREADY_PROCESSED',
+                        'message'    => 'تم تسجيل نزول هذا الطفل مسبقاً.',
+                    ], 409);
+                }
 
                 // 🔔 إرسال إشعار لحظي FCM لولي الأمر
                 try {
@@ -787,7 +1233,13 @@ class DriverTripController extends Controller
                     Log::warning("FCM Notification error on dropoff: " . $e->getMessage());
                 }
 
-                return response()->json(['status' => 'success', 'message' => 'تم تأكيد النزول وإرسال الإشعار لولي الأمر.'], 200);
+                $nextStop = $this->resolveNextStop($trip, $homeStop?->sequence_order);
+
+                return response()->json([
+                    'status'    => 'success',
+                    'message'   => 'تم تأكيد النزول وإرسال الإشعار لولي الأمر.',
+                    'next_stop' => $nextStop,
+                ], 200);
 
             } elseif (in_array($action, ['absent', 'skip', 'dropoff_failed', 'direct_parent_handling'], true)) {
                 $actionTypeMap = [
@@ -815,19 +1267,59 @@ class DriverTripController extends Controller
                     'direct_parent_handling' => 'child_direct_parent_handling',
                 ];
 
-                TripEvent::create([
-                    'trip_id'         => $tripId,
-                    'child_id'        => $childId,
-                    'subscription_id' => $sub->id,
-                    'action_type'     => $actionTypeMap[$action],
-                    'trip_type'       => $eventTripType,
-                    'scanned_at'      => now(),
-                    'location_lat'    => $sub->pickup_lat ?? 0,
-                    'location_lng'    => $sub->pickup_lng ?? 0,
-                    'trip_cost'       => 0,
-                ]);
+                // 🔒 قفل ومنع تعارض التزامن: كل إجراء له الحالات المصدر المنطقية المسموح له بالانطلاق منها فقط.
+                // absent/skip منطقياً قبل الصعود فقط (الطفل لم يركب بعد)، dropoff_failed بعد الصعود فقط
+                // (الطفل بالحافلة وتعذّر تسليمه)، direct_parent_handling يصلح في الحالتين.
+                $allowedSourceStatuses = [
+                    'absent'                 => [\App\Models\Shared\TripStop::STATUS_PENDING],
+                    'skip'                   => [\App\Models\Shared\TripStop::STATUS_PENDING],
+                    'dropoff_failed'         => [\App\Models\Shared\TripStop::STATUS_BOARDED],
+                    'direct_parent_handling' => \App\Models\Shared\TripStop::NON_FINAL_STATUSES,
+                ];
 
-                $homeStop?->update(['status' => $stopStatusMap[$action]]);
+                $reasonInput = $request->input('reason')
+                    ?? $request->input('skip_reason')
+                    ?? $request->input('notes')
+                    ?? $request->input('exception_reason');
+
+                $conflict = false;
+                DB::transaction(function () use ($tripId, $childId, $sub, $eventTripType, $homeStop, $action, $actionTypeMap, $stopStatusMap, $allowedSourceStatuses, $reasonInput, &$conflict) {
+                    $lockedStop = $homeStop
+                        ? \App\Models\Shared\TripStop::where('id', $homeStop->id)->lockForUpdate()->first()
+                        : null;
+
+                    if ($lockedStop && !in_array($lockedStop->status, $allowedSourceStatuses[$action], true)) {
+                        $conflict = true;
+                        return;
+                    }
+
+                    TripEvent::create([
+                        'trip_id'         => $tripId,
+                        'child_id'        => $childId,
+                        'subscription_id' => $sub->id,
+                        'action_type'     => $actionTypeMap[$action],
+                        'trip_type'       => $eventTripType,
+                        'scanned_at'      => now(),
+                        'location_lat'    => $sub->pickup_lat ?? 0,
+                        'location_lng'    => $sub->pickup_lng ?? 0,
+                        'trip_cost'       => 0,
+                        'reason'          => $reasonInput,
+                    ]);
+
+                    $stopUpdate = ['status' => $stopStatusMap[$action]];
+                    if ($reasonInput !== null) {
+                        $stopUpdate['reason'] = $reasonInput;
+                    }
+                    $lockedStop?->update($stopUpdate);
+                });
+
+                if ($conflict) {
+                    return response()->json([
+                        'status'     => 'error',
+                        'error_code' => 'ALREADY_PROCESSED',
+                        'message'    => 'تم تسجيل حالة نهائية لهذا الطفل بالفعل.',
+                    ], 409);
+                }
 
                 // 🔔 إرسال إشعار لحظي FCM لولي الأمر
                 try {
@@ -847,7 +1339,13 @@ class DriverTripController extends Controller
                     Log::warning("FCM Notification error on {$action}: " . $e->getMessage());
                 }
 
-                return response()->json(['status' => 'success', 'message' => 'تم تسجيل الحالة بنجاح.'], 200);
+                $nextStop = $this->resolveNextStop($trip, $homeStop?->sequence_order);
+
+                return response()->json([
+                    'status'    => 'success',
+                    'message'   => 'تم تسجيل الحالة بنجاح.',
+                    'next_stop' => $nextStop,
+                ], 200);
             }
 
             return response()->json(['status' => 'error', 'message' => 'الإجراء غير معرف.'], 422);
@@ -855,6 +1353,152 @@ class DriverTripController extends Controller
         } catch (Throwable $e) {
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 400);
         }
+    }
+
+    /**
+     * تحديد المحطة التالية للسائق في الرحلة (قد تكون منزلاً لطفل آخر أو مدرسة لإنزال الطلاب)
+     */
+    private function resolveNextStop(Trip $trip, ?int $currentSequenceOrder = null): ?array
+    {
+        $stopsQuery = \App\Models\Shared\TripStop::where('trip_id', $trip->id)
+            ->where('sequence_order', '>', 0)
+            ->orderBy('sequence_order', 'asc');
+
+        $nextStop = null;
+        if ($currentSequenceOrder !== null) {
+            $nextStop = (clone $stopsQuery)
+                ->where('sequence_order', '>', $currentSequenceOrder)
+                ->whereIn('status', [
+                    \App\Models\Shared\TripStop::STATUS_PENDING,
+                    \App\Models\Shared\TripStop::STATUS_BOARDED
+                ])
+                ->first();
+        }
+
+        if (!$nextStop) {
+            $nextStop = (clone $stopsQuery)
+                ->where('status', \App\Models\Shared\TripStop::STATUS_PENDING)
+                ->first();
+        }
+
+        if ($nextStop) {
+            $isSchool = $nextStop->stop_type === \App\Models\Shared\TripStop::TYPE_SCHOOL;
+            $child = $nextStop->child_id ? \App\Models\Parent\Child::with(['school', 'address'])->find($nextStop->child_id) : null;
+            $school = $nextStop->school_id ? \App\Models\Parent\School::find($nextStop->school_id) : ($child?->school);
+            $sub = $nextStop->child_id
+                ? ActiveSubscription::where('driver_id', $trip->driver_id)->where('child_id', $nextStop->child_id)->first()
+                : null;
+
+            $name = $isSchool
+                ? ($school?->name ?? $nextStop->label ?? 'المدرسة')
+                : ($child?->full_name ?? $child?->name ?? 'طفل');
+
+            $address = $isSchool
+                ? ($school?->address ?? $school?->address_text ?? $nextStop->label ?? 'مقر المدرسة')
+                : ($child?->address?->label ?? $sub?->pickup_label ?? $nextStop->label ?? 'موقع المنزل');
+
+            return [
+                'stop_id'        => (int) $nextStop->id,
+                'stop_type'      => $nextStop->stop_type,
+                'sequence_order' => (int) $nextStop->sequence_order,
+                'name'           => $name,
+                'title'          => $name,
+                'child_id'       => $nextStop->child_id ? (int) $nextStop->child_id : null,
+                'trip_child_id'  => $sub ? (int) $sub->id : null,
+                'child_name'     => $child?->full_name ?? $child?->name ?? null,
+                'school_id'      => $nextStop->school_id ? (int) $nextStop->school_id : ($school?->id ? (int) $school->id : null),
+                'school_name'    => $school?->name ?? null,
+                'latitude'       => (float) $nextStop->lat,
+                'longitude'      => (float) $nextStop->lng,
+                'lat'            => (float) $nextStop->lat,
+                'lng'            => (float) $nextStop->lng,
+                'address'        => $address,
+                'status'         => $nextStop->status,
+                'eta'            => $nextStop->eta ? substr((string) $nextStop->eta, 0, 5) : null,
+            ];
+        }
+
+        // fallback في حال كانت الرحلة بدون سجلات trip_stops مسبقة
+        $unprocessedSubs = ActiveSubscription::where('driver_id', $trip->driver_id)
+            ->where('route_id', $trip->route_id)
+            ->where('status', '!=', 'cancelled')
+            ->whereNotIn('child_id', function ($query) use ($trip) {
+                $query->select('child_id')
+                    ->from('trip_events')
+                    ->where('trip_id', $trip->id)
+                    ->whereIn('action_type', ['picked_up', 'absent', 'skipped', 'dropped_off']);
+            })
+            ->with(['child.school', 'child.address'])
+            ->get();
+
+        if ($unprocessedSubs->isNotEmpty()) {
+            $nextSub = $unprocessedSubs->first();
+            $child = $nextSub->child;
+            $childAddress = $child?->address;
+            $homeLat = $childAddress?->lat ?? $nextSub->pickup_lat ?? $child?->latitude ?? 32.875210;
+            $homeLng = $childAddress?->lng ?? $nextSub->pickup_lng ?? $child?->longitude ?? 13.165420;
+
+            return [
+                'stop_id'        => null,
+                'stop_type'      => 'home',
+                'sequence_order' => null,
+                'name'           => $child?->full_name ?? $child?->name ?? 'طفل',
+                'title'          => $child?->full_name ?? $child?->name ?? 'محطة الطفل',
+                'child_id'       => (int) $nextSub->child_id,
+                'trip_child_id'  => (int) $nextSub->id,
+                'child_name'     => $child?->full_name ?? $child?->name ?? null,
+                'school_id'      => $nextSub->school_id ? (int) $nextSub->school_id : null,
+                'school_name'    => optional($nextSub->school)->name ?? optional($child?->school)->name,
+                'latitude'       => (float) $homeLat,
+                'longitude'      => (float) $homeLng,
+                'lat'            => (float) $homeLat,
+                'lng'            => (float) $homeLng,
+                'address'        => $childAddress?->label ?? $nextSub->pickup_label ?? 'المنزل',
+                'status'         => 'pending',
+                'eta'            => null,
+            ];
+        }
+
+        $isGoTrip = \App\Models\Driver\DriverSeatSlot::isGoSlot($trip->shift_slot ?? '')
+            || (!$trip->shift_slot && ($trip->trip_type === 'Morning' || $trip->trip_type === 'ذهاب'));
+
+        if ($isGoTrip) {
+            $firstSub = ActiveSubscription::where('driver_id', $trip->driver_id)
+                ->where('route_id', $trip->route_id)
+                ->with('child.school')
+                ->first();
+
+            if (!$firstSub && $trip->driver_id) {
+                $firstSub = ActiveSubscription::where('driver_id', $trip->driver_id)
+                    ->with('child.school')
+                    ->first();
+            }
+
+            if ($firstSub && $firstSub->child?->school) {
+                $school = $firstSub->child->school;
+                return [
+                    'stop_id'        => null,
+                    'stop_type'      => 'school',
+                    'sequence_order' => null,
+                    'name'           => $school->name,
+                    'title'          => $school->name,
+                    'child_id'       => null,
+                    'trip_child_id'  => null,
+                    'child_name'     => null,
+                    'school_id'      => (int) $school->id,
+                    'school_name'    => $school->name,
+                    'latitude'       => (float) ($school->lat ?? $school->latitude ?? $firstSub->dropoff_lat ?? 32.890000),
+                    'longitude'      => (float) ($school->lng ?? $school->longitude ?? $firstSub->dropoff_lng ?? 13.180000),
+                    'lat'            => (float) ($school->lat ?? $school->latitude ?? $firstSub->dropoff_lat ?? 32.890000),
+                    'lng'            => (float) ($school->lng ?? $school->longitude ?? $firstSub->dropoff_lng ?? 13.180000),
+                    'address'        => $school->address ?? $school->address_text ?? 'مقر المدرسة',
+                    'status'         => 'pending',
+                    'eta'            => null,
+                ];
+            }
+        }
+
+        return null;
     }
 
     // Wrappers للـ Routes الفردية
@@ -873,9 +1517,9 @@ class DriverTripController extends Controller
         return $this->updateChildTripStatus($request, $tripId);
     }
 
-    public function skip($tripId, $childId): JsonResponse
+    public function skip(Request $request, $tripId, $childId): JsonResponse
     {
-        $request = new Request(['action' => 'skip']);
+        $request->merge(['action' => 'skip']);
         return $this->updateChildTripStatus($request, $tripId, $childId);
     }
 
@@ -908,6 +1552,8 @@ class DriverTripController extends Controller
             $droppedOff = $events->where('action_type', 'dropped_off')->count();
             $absent = $events->whereIn('action_type', ['absent', 'skipped', 'dropoff_failed', 'direct_parent_handling'])->count();
 
+            $trip->refresh();
+
             return response()->json([
                 'status'  => 'success',
                 'message' => $result['message'],
@@ -916,8 +1562,8 @@ class DriverTripController extends Controller
                     'picked_up'   => $pickedUp,
                     'dropped_off' => $droppedOff,
                     'absent'      => $absent,
-                    'duration'    => 48,
-                    'distance'    => 19.3,
+                    'duration'    => $this->calculateTripDurationMinutes($trip),
+                    'distance'    => $this->calculateTripDistanceKm($trip),
                 ]
             ], 200);
 
@@ -933,34 +1579,117 @@ class DriverTripController extends Controller
     }
 
     /**
+     * المدة الفعلية للرحلة بالدقائق (وليست قيمة ثابتة).
+     */
+    private function calculateTripDurationMinutes(Trip $trip): int
+    {
+        $startedAt = $trip->started_at ?? $trip->actual_start_time;
+
+        if ($startedAt && $trip->completed_at) {
+            return (int) Carbon::parse($startedAt)->diffInMinutes(Carbon::parse($trip->completed_at));
+        }
+
+        return (int) ($trip->route?->estimated_duration ?? 0);
+    }
+
+    /**
+     * المسافة الفعلية المقطوعة بالكيلومتر، محسوبة من نقاط التتبع المسجلة للرحلة.
+     */
+    private function calculateTripDistanceKm(Trip $trip): float
+    {
+        $points = \App\Models\Shared\TripTracking::where('trip_id', $trip->id)
+            ->orderBy('recorded_at')
+            ->orderBy('id')
+            ->get(['latitude', 'longitude']);
+
+        if ($points->count() < 2) {
+            return (float) ($trip->route?->total_distance ?? 0);
+        }
+
+        $distanceKm = 0.0;
+        $previous = null;
+
+        foreach ($points as $point) {
+            if ($previous !== null) {
+                $distanceKm += \App\Support\GeoEstimator::haversineKm(
+                    (float) $previous->latitude,
+                    (float) $previous->longitude,
+                    (float) $point->latitude,
+                    (float) $point->longitude
+                );
+            }
+            $previous = $point;
+        }
+
+        return round($distanceKm, 2);
+    }
+
+    /**
      * 11️⃣ GET /api/driver/trips/history
      * سجل الرحلات السابقة
      */
-    public function history(): JsonResponse
+    public function history(Request $request): JsonResponse
     {
         try {
             $user = Auth::user();
+            if (!$user || !$user->driver) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'بيانات السائق غير موجودة أو الحساب غير مصرح له.'
+                ], 403);
+            }
+
             $driverId = $user->driver->id;
+            $perPage = (int) $request->query('per_page', 15);
+            if ($perPage <= 0 || $perPage > 100) {
+                $perPage = 15;
+            }
 
-            $trips = Trip::where('driver_id', $driverId)
+            $query = Trip::where('driver_id', $driverId)
                 ->where('status', 'completed')
-                ->with(['route'])
-                ->orderBy('trip_date', 'desc')
-                ->get();
+                ->with(['route']);
 
-            $data = $trips->map(function ($t) {
+            if ($request->filled('date') && preg_match('/^\d{4}-\d{2}-\d{2}$/', $request->query('date'))) {
+                $query->whereDate('trip_date', $request->query('date'));
+            }
+
+            $paginated = $query->orderBy('trip_date', 'desc')
+                ->orderBy('id', 'desc')
+                ->paginate($perPage);
+
+            $data = collect($paginated->items())->map(function ($t) {
+                $actualStartedAt = $t->started_at ?? $t->actual_start_time;
+                $actualCompletedAt = $t->completed_at;
+
+                $duration = 40;
+                if ($actualStartedAt && $actualCompletedAt) {
+                    $duration = (int) Carbon::parse($actualStartedAt)->diffInMinutes(Carbon::parse($actualCompletedAt));
+                } elseif ($t->route && $t->route->estimated_duration) {
+                    $duration = (int) $t->route->estimated_duration;
+                }
+
                 return [
-                    'trip_id'    => (int) $t->id,
-                    'trip_date'  => $t->trip_date ? Carbon::parse($t->trip_date)->format('Y-m-d') : Carbon::parse($t->created_at)->format('Y-m-d'),
-                    'route_name' => $t->route?->route_name ?? 'المسار العام',
-                    'status'     => 'completed',
-                    'duration'   => 48,
+                    'trip_id'             => (int) $t->id,
+                    'trip_date'           => $t->trip_date ? Carbon::parse($t->trip_date)->format('Y-m-d') : Carbon::parse($t->created_at)->format('Y-m-d'),
+                    'route_name'          => $t->route?->route_name ?? 'المسار العام',
+                    'status'              => 'completed',
+                    'actual_started_at'   => $actualStartedAt ? Carbon::parse($actualStartedAt)->format('Y-m-d H:i:s') : null,
+                    'actual_completed_at' => $actualCompletedAt ? Carbon::parse($actualCompletedAt)->format('Y-m-d H:i:s') : null,
+                    'duration'            => $duration,
                 ];
             })->values();
 
             return response()->json([
-                'status' => 'success',
-                'data'   => $data
+                'status'     => 'success',
+                'data'       => $data,
+                'pagination' => [
+                    'current_page' => $paginated->currentPage(),
+                    'total_pages'  => $paginated->lastPage(),
+                    'last_page'    => $paginated->lastPage(),
+                    'per_page'     => $paginated->perPage(),
+                    'total'        => $paginated->total(),
+                    'has_more'     => $paginated->hasMorePages(),
+                ]
             ], 200);
 
         } catch (Throwable $e) {
@@ -1014,7 +1743,7 @@ class DriverTripController extends Controller
 
                 $pickupEvent = $childEvents->first(fn($e) => in_array($e->action_type, ['picked_up', 'pickup']));
                 $dropoffEvent = $childEvents->first(fn($e) => in_array($e->action_type, ['dropped_off', 'dropoff']));
-                $absentEvent = $childEvents->first(fn($e) => in_array($e->action_type, ['absent', 'skip']));
+                $absentEvent = $childEvents->first(fn($e) => in_array($e->action_type, ['absent', 'skip', 'skipped']));
                 $latestEvent = $childEvents->sortByDesc('scanned_at')->first();
 
                 $childObj = $pickupEvent?->child 
@@ -1046,8 +1775,23 @@ class DriverTripController extends Controller
                 } elseif ($pickupEvent) {
                     $status = 'picked_up';
                 } elseif ($absentEvent) {
-                    $status = 'absent';
+                    if (in_array($absentEvent->action_type, ['skip', 'skipped']) || ($stop && $stop->status === \App\Models\Shared\TripStop::STATUS_SKIPPED_UNRESPONSIVE)) {
+                        $status = 'skipped';
+                    } else {
+                        $status = 'absent';
+                    }
+                } elseif ($stop) {
+                    if ($stop->status === \App\Models\Shared\TripStop::STATUS_SKIPPED_UNRESPONSIVE) {
+                        $status = 'skipped';
+                    } elseif (in_array($stop->status, [\App\Models\Shared\TripStop::STATUS_ABSENT_PRE, \App\Models\Shared\TripStop::STATUS_ABSENT_LATE])) {
+                        $status = 'absent';
+                    }
                 }
+
+                $reason = $absentEvent?->reason 
+                    ?? $stop?->reason 
+                    ?? $latestEvent?->reason 
+                    ?? null;
 
                 $scannedAt = $latestEvent?->scanned_at 
                     ? Carbon::parse($latestEvent->scanned_at)->format('Y-m-d H:i:s') 
@@ -1066,26 +1810,49 @@ class DriverTripController extends Controller
                     'scanned_pickup_at'  => $pickupEvent?->scanned_at ? Carbon::parse($pickupEvent->scanned_at)->format('Y-m-d H:i:s') : null,
                     'scanned_dropoff_at' => $dropoffEvent?->scanned_at ? Carbon::parse($dropoffEvent->scanned_at)->format('Y-m-d H:i:s') : null,
                     'status'             => $status,
-                    'pickup_status'      => $pickupEvent ? 'completed' : ($absentEvent ? 'absent' : 'pending'),
+                    'reason'             => $reason,
+                    'pickup_status'      => $pickupEvent ? 'completed' : ($absentEvent ? ($status === 'skipped' ? 'skipped' : 'absent') : ($status === 'absent' ? 'absent' : ($status === 'skipped' ? 'skipped' : 'pending'))),
                     'dropoff_status'     => $dropoffEvent ? 'completed' : 'pending',
                     'action_type'        => $latestEvent->action_type ?? $status,
                     'scanned_at'         => $scannedAt,
                 ];
             })->values();
 
-            $routeName = $trip->route?->formatted_route_name 
+            $routeName = $trip->route?->route_name
+                ?? $trip->route?->formatted_route_name
                 ?? RouteModel::generateGenericRouteName(null, 'both', $trip->trip_type);
+
+            $actualStartedAt = $trip->started_at ?? $trip->actual_start_time;
+            $actualCompletedAt = $trip->completed_at;
+
+            $duration = 40;
+            if ($actualStartedAt && $actualCompletedAt) {
+                $duration = (int) Carbon::parse($actualStartedAt)->diffInMinutes(Carbon::parse($actualCompletedAt));
+            } elseif ($trip->route && $trip->route->estimated_duration) {
+                $duration = (int) $trip->route->estimated_duration;
+            }
+
+            $totalStudents = $children->count();
+            $pickedUpCount = $children->filter(fn($c) => in_array($c['status'], ['completed', 'picked_up']))->count();
+            $absentCount = $children->filter(fn($c) => in_array($c['status'], ['absent', 'skipped']))->count();
 
             return response()->json([
                 'status' => 'success',
                 'data'   => [
-                    'trip_id'    => (int) $trip->id,
-                    'trip_date'  => $trip->trip_date ? Carbon::parse($trip->trip_date)->format('Y-m-d') : Carbon::parse($trip->created_at)->format('Y-m-d'),
-                    'route_name' => $routeName,
-                    'status'     => 'completed',
-                    'duration'   => (int) ($trip->route?->estimated_duration ?? 48),
-                    'distance'   => (float) ($trip->route?->total_distance ?? 19.3),
-                    'children'   => $children,
+                    'trip_id'             => (int) $trip->id,
+                    'trip_date'           => $trip->trip_date ? Carbon::parse($trip->trip_date)->format('Y-m-d') : Carbon::parse($trip->created_at)->format('Y-m-d'),
+                    'route_name'          => $routeName,
+                    'status'              => 'completed',
+                    'actual_started_at'   => $actualStartedAt ? Carbon::parse($actualStartedAt)->format('Y-m-d H:i:s') : null,
+                    'actual_completed_at' => $actualCompletedAt ? Carbon::parse($actualCompletedAt)->format('Y-m-d H:i:s') : null,
+                    'duration'            => $duration,
+                    'distance'            => $this->calculateTripDistanceKm($trip),
+                    'summary'             => [
+                        'total_students' => $totalStudents,
+                        'picked_up'      => $pickedUpCount,
+                        'absent'         => $absentCount,
+                    ],
+                    'children'            => $children,
                 ]
             ], 200);
 

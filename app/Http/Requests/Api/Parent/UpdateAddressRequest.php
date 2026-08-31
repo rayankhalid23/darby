@@ -27,7 +27,8 @@ class UpdateAddressRequest extends FormRequest
                 'string',
                 'min:2',
                 'max:100',
-                'regex:/^[\p{Arabic}\s]+$/u',
+                // نفس قاعدة الإنشاء: الأرقام مسموحة في مسميات العناوين («شقة 5»).
+                'regex:/^[\p{Arabic}\p{N}\s\-\/]+$/u',
                 Rule::unique('addresses', 'label')
                     ->where(function ($query) use ($parentId) {
                         return $query->where('parent_id', $parentId)->whereNull('deleted_at');
@@ -64,7 +65,7 @@ class UpdateAddressRequest extends FormRequest
             'label.string'   => 'مسمى العنوان يجب أن يكون نصاً.',
             'label.min'      => 'مسمى العنوان يجب ألا يقل عن حرفين.',
             'label.max'      => 'مسمى العنوان يجب ألا يتجاوز 100 حرف.',
-            'label.regex'    => 'مسمى العنوان يجب أن يكون باللغة العربية فقط.',
+            'label.regex'    => 'مسمى العنوان يجب أن يكون بالعربية (ويمكن أن يتضمن أرقاماً).',
             'label.unique'   => 'اسم العنوان مسجل لديك مسبقاً في عنوان آخر.',
 
             // خط العرض (Lat)

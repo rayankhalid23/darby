@@ -68,4 +68,15 @@ class Trip extends Model
     {
         return $this->hasMany(TripStop::class, 'trip_id')->orderBy('sequence_order');
     }
+
+    public function breakdownDispatches()
+    {
+        return $this->hasMany(TripBreakdownDispatch::class, 'trip_id');
+    }
+
+    public function driverAbsences()
+    {
+        return $this->belongsToMany(\App\Models\Driver\DriverAbsence::class, 'driver_absence_trips', 'trip_id', 'driver_absence_id')
+            ->withTimestamps();
+    }
 }
