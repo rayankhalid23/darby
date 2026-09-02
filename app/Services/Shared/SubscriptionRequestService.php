@@ -61,6 +61,13 @@ class SubscriptionRequestService
                 throw new \InvalidArgumentException("حساب ولي الأمر (Parent Profile) غير مكتمل أو غير موجود لهذا المستخدم.");
             }
 
+            // 0. تحميل بيانات الأطفال مع منازلهم ومدارسهم مرة واحدة (تفادي N+1)
+            //    تُستخدم لتعبئة لقطة الموقع في request_children تلقائياً.
+            $childModels = Child::with(['address', 'school'])
+                ->whereIn('id', collect($data['children'])->pluck('child_id')->filter()->all())
+                ->get()
+                ->keyBy('id');
+
             // 1. جلب إعدادات التسعير من قاعدة البيانات
             $pricingSetting = PricingSetting::first();
             $discountOne       = (float) ($pricingSetting->discount_one_child ?? 0.00);
@@ -109,7 +116,14 @@ class SubscriptionRequestService
                 $totalOrderDiscount           += $childDiscount;
                 $totalOrderAmountAfterDiscount += $childTotalAfterDiscount;
 
+                // لقطة اسم وإحداثيات المنزل والمدرسة وقت إنشاء الطلب
+                $locationSnapshot = $this->resolveChildLocationSnapshot(
+                    $child,
+                    $childModels->get((int) $child['child_id'])
+                );
+
                 $childrenPivotData[$child['child_id']] = [
+                    ...$locationSnapshot,
                     'subscription_type'           => $child['subscription_type'],
                     'trip_direction'              => $child['trip_direction'] ?? $child['direction'] ?? 'both',
                     'timing'                      => $child['timing'] ?? 'BOTH',
@@ -173,6 +187,49 @@ class SubscriptionRequestService
         return $subscriptionRequest;
     }
    
+
+    /**
+     * تجهيز لقطة (Snapshot) لاسم وإحداثيات منزل الطفل ومدرسته لتُحفظ في request_children.
+     *
+     * أولوية المصادر:
+     *   1. ما أرسله الفرونت صراحة مع الطفل (home_lat / school_label ... إلخ) — لطلب من عنوان مختلف.
+     *   2. التعبئة التلقائية من بيانات الطفل المربوطة: children.address_id و children.school_id.
+     *   3. null إن لم يتوفر أي مصدر (الأعمدة nullable ولا تُعطِّل إنشاء الطلب).
+     *
+     * الهدف تجميد الموقع لحظة الاشتراك: تغيير ولي الأمر لعنوانه أو مدرسة طفله لاحقاً
+     * يجب ألا يُعيد كتابة العنوان المعروض في طلب قديم حُسبت مسافته وسعره على العنوان السابق.
+     *
+     * @param  array  $childInput  عنصر الطفل كما ورد في payload الطلب
+     * @param  \App\Models\Parent\Child|null  $childModel  الطفل مع علاقتَي address و school
+     * @return array<string, mixed>
+     */
+    private function resolveChildLocationSnapshot(array $childInput, ?Child $childModel): array
+    {
+        $address = $childModel?->address;
+        $school  = $childModel?->school;
+
+        $pick = function (array $keys, $fallback) use ($childInput) {
+            foreach ($keys as $key) {
+                $value = $childInput[$key] ?? null;
+                if ($value !== null && $value !== '') {
+                    return $value;
+                }
+            }
+
+            return $fallback;
+        };
+
+        $toCoordinate = fn ($value) => is_numeric($value) ? (float) $value : null;
+
+        return [
+            'home_label'   => $pick(['home_label', 'pickup_label'], $address?->label),
+            'home_lat'     => $toCoordinate($pick(['home_lat', 'pickup_lat'], $address?->lat)),
+            'home_lng'     => $toCoordinate($pick(['home_lng', 'pickup_lng'], $address?->lng)),
+            'school_label' => $pick(['school_label', 'school_name', 'dropoff_label'], $school?->name),
+            'school_lat'   => $toCoordinate($pick(['school_lat', 'dropoff_lat'], $school?->lat)),
+            'school_lng'   => $toCoordinate($pick(['school_lng', 'dropoff_lng'], $school?->lng)),
+        ];
+    }
 
     /**
      * حساب عدد أيام العمل الفعلية (استثناء الجمعة والسبت)

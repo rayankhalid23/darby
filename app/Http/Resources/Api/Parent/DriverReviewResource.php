@@ -21,13 +21,6 @@ class DriverReviewResource extends JsonResource
             'created_at'  => $this->created_at?->format('Y-m-d H:i:s'),
             'updated_at'  => $this->updated_at?->format('Y-m-d H:i:s'),
 
-            // نتيجة الفرز والتحليل الآلي (AI) لتعليق المراجعة
-            'ai_analysis' => $this->ai_action ? [
-                'action'     => $this->ai_action,
-                'confidence' => $this->ai_confidence !== null ? (float) $this->ai_confidence : null,
-                'severity'   => $this->ai_severity !== null ? (int) $this->ai_severity : null,
-                'message'    => $this->ai_analysis_message,
-            ] : null,
             'parent'      => $this->whenLoaded('parent', function () {
                 $user = $this->parent instanceof \App\Models\User
                     ? $this->parent

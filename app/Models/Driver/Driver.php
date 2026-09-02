@@ -33,6 +33,8 @@ class Driver extends Model implements Wallet
         'license_expiry',
         'license_expiry_notified_milestone',
         'status',
+        'is_searchable',
+        'rating_avg',
         'current_lat',
         'current_lng',
         'morning_go',
@@ -49,10 +51,11 @@ class Driver extends Model implements Wallet
     protected function casts(): array
     {
         return [
-            'current_lat'    => 'float',
-            'current_lng'    => 'float',
-            'last_ping_at'   => 'datetime',
-            'license_expiry' => 'date',
+            'is_searchable'    => 'boolean',
+            'current_lat'      => 'float',
+            'current_lng'      => 'float',
+            'last_ping_at'     => 'datetime',
+            'license_expiry'   => 'date',
             'morning_go'       => 'boolean',
             'morning_return'   => 'boolean',
             'afternoon_go'     => 'boolean',
@@ -60,6 +63,14 @@ class Driver extends Model implements Wallet
             'shift'            => DriverShift::class,
             'school_stages'    => 'array', // تحويل تلقائي لقراءة الـ value والـ label للـ Enum
         ];
+    }
+
+    /**
+     * نطاق الفلترة بالسائقين القابلين للظهور في نتائج البحث والفلترة فقط
+     */
+    public function scopeSearchable(Builder $query): Builder
+    {
+        return $query->where('drivers.is_searchable', true);
     }
 
     /**

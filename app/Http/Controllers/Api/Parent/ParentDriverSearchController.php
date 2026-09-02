@@ -17,9 +17,10 @@ class ParentDriverSearchController extends Controller
     public function index(FilterDriversRequest $request): JsonResponse
     {
         try {
-            // الاستعلام الأساسي للسائقين الذين حالتهم Approved أو Active
+            // الاستعلام الأساسي للسائقين الذين حالتهم Approved أو Active وقابلين للبحث (is_searchable = true)
             $query = Driver::query()
                 ->whereIn('drivers.status', ['Active', 'Approved'])
+                ->where('drivers.is_searchable', true)
                 ->with(['user', 'vehicles']);
 
             // 1️⃣ الفلترة بالاسم أو الهاتف (باستخدام الحروف الأولى)

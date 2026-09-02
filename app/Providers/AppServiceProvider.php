@@ -2,10 +2,6 @@
 
 namespace App\Providers;
 
-use App\Models\Shared\Complaint;
-use App\Models\Shared\DriverReview;
-use App\Observers\ComplaintObserver;
-use App\Observers\DriverReviewObserver;
 use Illuminate\Foundation\Console\ServeCommand;
 use Illuminate\Support\ServiceProvider;
 
@@ -49,8 +45,5 @@ class AppServiceProvider extends ServiceProvider
         if (str_starts_with((string) config('app.url'), 'https://')) {
             \Illuminate\Support\Facades\URL::forceScheme('https');
         }
-
-        Complaint::observe(ComplaintObserver::class);
-        DriverReview::observe(DriverReviewObserver::class);
     }
 }

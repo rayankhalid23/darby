@@ -143,18 +143,20 @@ class SubscriptionRequestDetailsResource extends JsonResource
                         'timing'            => $pivot->timing ?? $subReq->timing ?? null,
                     ],
 
+                    // اللقطة المحفوظة في request_children لها الأولوية: السائق يجب أن يرى
+                    // العنوان الذي قَبِل الاشتراك عليه، لا عنواناً غيّره ولي الأمر بعد ذلك.
                     'school' => [
                         'id'      => $school->id,
-                        'name'    => $school->name,
+                        'name'    => $pivot->school_label ?? $school->name,
                         'address' => $school->address,
-                        'lat'     => (float) ($school->lat ?? $school->latitude ?? $this->dropoff_lat ?? 0),
-                        'lng'     => (float) ($school->lng ?? $school->longitude ?? $this->dropoff_lng ?? 0),
+                        'lat'     => (float) ($pivot->school_lat ?? $school->lat ?? $school->latitude ?? $this->dropoff_lat ?? 0),
+                        'lng'     => (float) ($pivot->school_lng ?? $school->lng ?? $school->longitude ?? $this->dropoff_lng ?? 0),
                     ],
 
                     'home' => [
-                        'address' => $this->pickup_label ?? $address->label ?? $address->address ?? 'منزل ولي الأمر',
-                        'lat'     => (float) ($this->pickup_lat ?? $address->lat ?? $address->latitude ?? 0),
-                        'lng'     => (float) ($this->pickup_lng ?? $address->lng ?? $address->longitude ?? 0),
+                        'address' => $pivot->home_label ?? $this->pickup_label ?? $address->label ?? $address->address ?? 'منزل ولي الأمر',
+                        'lat'     => (float) ($pivot->home_lat ?? $this->pickup_lat ?? $address->lat ?? $address->latitude ?? 0),
+                        'lng'     => (float) ($pivot->home_lng ?? $this->pickup_lng ?? $address->lng ?? $address->longitude ?? 0),
                     ],
                 ];
             })->values(),

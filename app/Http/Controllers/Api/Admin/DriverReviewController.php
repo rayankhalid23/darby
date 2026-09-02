@@ -18,18 +18,6 @@ class DriverReviewController extends Controller
         $query = DriverReview::with(['parent', 'driver.user'])
             ->where('driver_id', $driverId);
 
-        if (request()->filled('ai_action')) {
-            $query->where('ai_action', request('ai_action'));
-        }
-
-        if (request()->filled('min_severity')) {
-            $query->where('ai_severity', '>=', (int) request('min_severity'));
-        }
-
-        if (request()->boolean('flagged_only')) {
-            $query->where('ai_severity', '>=', 2);
-        }
-
         $reviews = $query->latest()->paginate(request('per_page', 10));
 
         return response()->json([
@@ -77,18 +65,6 @@ class DriverReviewController extends Controller
     {
         try {
             $query = DriverReview::with(['parent', 'driver.user']);
-
-            if (request()->filled('ai_action')) {
-                $query->where('ai_action', request('ai_action'));
-            }
-
-            if (request()->filled('min_severity')) {
-                $query->where('ai_severity', '>=', (int) request('min_severity'));
-            }
-
-            if (request()->boolean('flagged_only')) {
-                $query->where('ai_severity', '>=', 2);
-            }
 
             $reviews = $query->latest()
                 ->paginate(request('per_page', 15));

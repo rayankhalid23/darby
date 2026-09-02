@@ -32,10 +32,11 @@ class DriverMatchingService
         // 1. استرجاع بيانات الأطفال المحددين بناءً على child_ids
         $children = $this->resolveChildren($filters['child_ids'] ?? [], $parentId);
 
-        // 2. الاستعلام الأساسي واستثناء السائقين ذوي الوثائق المنتهية
+        // 2. الاستعلام الأساسي واستثناء السائقين غير القابلين للبحث أو ذوي الوثائق المنتهية
         $query = Driver::query()
             ->select('drivers.*')
             ->whereIn('drivers.status', ['Approved', 'Active'])
+            ->where('drivers.is_searchable', true)
             ->whereDoesntHave('documents', function ($q) {
                 $q->whereIn('doc_type', ['LICENSE', 'INSURANCE', 'STAMP', 'TECHNICAL_INSPECTION'])
                   ->where('status', 'Expired');

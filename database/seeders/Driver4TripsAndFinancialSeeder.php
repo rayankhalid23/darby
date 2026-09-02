@@ -1145,10 +1145,6 @@ class Driver4TripsAndFinancialSeeder extends Seeder
                 'resolution_note'       => 'تم حل المشكلة وتنسيق توقيت الانطلاق الجديد مع السائق وولي الأمر.',
                 'action_taken'          => 'resolved_mutually',
                 'action_details'        => 'تسوية ودية وتعديل وقت الانطلاق 5 دقائق أبكر.',
-                'ai_action'             => 'low_severity_delay',
-                'ai_confidence'         => 0.96,
-                'ai_severity'           => 1,
-                'ai_analysis_message'   => 'تأخير ناتج عن حركة المرور الطبيعية بطرابلس.',
                 'resolved_at'           => Carbon::now()->subDays(2),
             ]
         );
@@ -1320,29 +1316,21 @@ class Driver4TripsAndFinancialSeeder extends Seeder
                 'parent'     => 'parent4_1@darby.ly',
                 'rating'     => 5.0,
                 'comment'    => 'ما شاء الله الكابتن سالم قمة في الأخلاق والالتزام بالمواعيد، أولادي مرتاحين جداً معاه وقيادته هادئة وممتازة.',
-                'ai_action'  => 'positive_feedback',
-                'confidence' => 0.99,
             ],
             [
                 'parent'     => 'parent4_2@darby.ly',
                 'rating'     => 5.0,
                 'comment'    => 'حافلة نظيفة ومكيفة وتواصل ممتاز عند أي طارئ أو ازدحام مروري. بارك الله فيك كابتن سالم.',
-                'ai_action'  => 'positive_feedback',
-                'confidence' => 0.98,
             ],
             [
                 'parent'     => 'parent4_4@darby.ly',
                 'rating'     => 5.0,
                 'comment'    => 'سائق محترم وأمين جداً، يوصل بنتي رتاج لباب المدرسة وينتظر حتى تدخل بأمان.',
-                'ai_action'  => 'positive_feedback',
-                'confidence' => 0.97,
             ],
             [
                 'parent'     => 'parent4_5@darby.ly',
                 'rating'     => 4.5,
                 'comment'    => 'خدمة رائعة جداً وسائق موثوق، نتمنى الاستمرار بنفس هذا المستوى من الاحترافية.',
-                'ai_action'  => 'positive_feedback',
-                'confidence' => 0.95,
             ],
         ];
 
@@ -1356,10 +1344,6 @@ class Driver4TripsAndFinancialSeeder extends Seeder
                     'subscription_request_id' => $req->id,
                     'rating'                  => $rev['rating'],
                     'comment'                 => $rev['comment'],
-                    'ai_action'               => $rev['ai_action'],
-                    'ai_confidence'           => $rev['confidence'],
-                    'ai_severity'             => 1,
-                    'ai_analysis_message'     => 'تقييم إيجابي يعكس التزام السائق بالأمان وحسن المعاملة.',
                     'status'                  => 'published',
                 ]
             );

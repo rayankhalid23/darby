@@ -14,6 +14,8 @@ use App\Http\Controllers\Api\Admin\AdminAuditLogController;
 use App\Http\Controllers\Api\Admin\MunicipalityController;
 use App\Http\Controllers\Api\Admin\SubMunicipalityController;
 use App\Http\Controllers\Api\Admin\MunicipalityZoneController;
+use App\Http\Controllers\Api\Admin\AdminAiAlertsController;
+use App\Http\Controllers\Api\Admin\AdminDriverActionController;
 
 // =========================================================================
 // 🖼️ صور المشرفين (عامة بلا توكن)
@@ -127,6 +129,22 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/{id}/review', [AdminDriverController::class, 'review'])
             ->middleware('permission:drivers.review_initial')
             ->name('api.admin.drivers.review');
+
+        // 7. مسار إلغاء حظر وإعادة تفعيل السائق يدوياً للإدارة
+        Route::post('/{driverId}/unblock', [AdminDriverActionController::class, 'unblockDriver'])
+            ->name('api.admin.drivers.unblock');
+    });
+
+    // =========================================================================
+    // 🤖 مسارات مراجعة تنبيهات وإجراءات الذكاء الاصطناعي للإدارة (360 Breakdown)
+    // =========================================================================
+    Route::prefix('ai-alerts')->group(function () {
+        Route::get('/', [AdminAiAlertsController::class, 'index'])
+            ->name('api.admin.ai-alerts.index');
+        Route::get('/{id}', [AdminAiAlertsController::class, 'show'])
+            ->name('api.admin.ai-alerts.show');
+        Route::post('/{id}/resolve', [AdminDriverActionController::class, 'resolveAlert'])
+            ->name('api.admin.ai-alerts.resolve');
     });
 
     // =========================================================================

@@ -105,15 +105,11 @@ class NotificationTextAndFormattingTest extends TestCase
             NotificationFormatter::TYPE_DRIVER_DOC_EXPIRED => [],
             NotificationFormatter::TYPE_DRIVER_DOC_EXPIRED_ADMIN => [],
 
-            // الشكاوى والذكاء الاصطناعي
+            // الشكاوى والقرارات الإدارية
             NotificationFormatter::TYPE_NEW_COMPLAINT_SUBMITTED => [],
             NotificationFormatter::TYPE_COMPLAINT_RESOLVED => [],
-            NotificationFormatter::TYPE_DRIVER_AI_NEEDS_REVIEW => [],
-            NotificationFormatter::TYPE_DRIVER_AI_SUSPENDED => [],
             NotificationFormatter::TYPE_DRIVER_SUSPENDED => [],
             NotificationFormatter::TYPE_DRIVER_AI_ALERT => [],
-            NotificationFormatter::TYPE_DRIVER_REVIEW_FLAGGED => [],
-            NotificationFormatter::TYPE_AI_SERVICE_OUTAGE => [],
             NotificationFormatter::TYPE_GENERAL_ANNOUNCEMENT => [],
         ];
 

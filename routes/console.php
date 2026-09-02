@@ -16,3 +16,6 @@ Schedule::command('subscriptions:check-pending')->everySixHours();
 
 // فحص يومي لتواريخ انتهاء رخص القيادة ووثائق التأمين للسائقين + إرسال تذكيرات/تنبيهات
 Schedule::command('drivers:check-document-expiry')->dailyAt('08:00');
+
+// تشغيل يومي لمحرك تقييم سياسات السائقين عبر الذكاء الاصطناعي الساعة 2:00 فجراً
+Schedule::command('driver:evaluate-ai')->dailyAt('02:00');

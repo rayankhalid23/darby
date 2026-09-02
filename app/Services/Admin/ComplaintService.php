@@ -191,6 +191,7 @@ class ComplaintService
     {
         $driver = Driver::findOrFail($driverId);
         $driver->status = 'Suspended';
+        $driver->is_searchable = false;
         $driver->save();
 
         return $driver;

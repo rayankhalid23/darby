@@ -101,19 +101,22 @@ class SubscriptionRequestDetailsResource extends JsonResource
                             'platform_commission_amount'  => $platformFeeAmount,
                             'driver_net_price'            => $driverNetPrice,
                         ],
+                        // اللقطة المحفوظة في request_children هي المصدر الأول: هي عنوان الطفل
+                        // ومدرسته لحظة الاشتراك، والتي حُسبت عليها المسافة والسعر. العلاقة الحية
+                        // تبقى احتياطاً للطلبات القديمة التي أُنشئت قبل وجود هذه الأعمدة.
                         'Home' => [
                             'id'        => $homeAddr?->id,
-                            'name'      => $homeAddr?->label ?? 'منزل ولي الأمر', // ✅ اسم الحوش (المنزل)
+                            'name'      => $pivot?->home_label ?? $homeAddr?->label ?? 'منزل ولي الأمر', // ✅ اسم الحوش (المنزل)
                             'address'   => $homeAddr?->address_line ?? 'عنوان غير متوفر',
-                            'latitude'  => (float) ($homeAddr?->lat ?? $homeAddr?->latitude ?? 32.8872),
-                            'longitude' => (float) ($homeAddr?->lng ?? $homeAddr?->longitude ?? 13.1913),
+                            'latitude'  => (float) ($pivot?->home_lat ?? $homeAddr?->lat ?? $homeAddr?->latitude ?? 32.8872),
+                            'longitude' => (float) ($pivot?->home_lng ?? $homeAddr?->lng ?? $homeAddr?->longitude ?? 13.1913),
                         ],
                         'School' => [
                             'id'        => $school?->id,
-                            'name'      => $school?->name ?? 'المدرسة', // ✅ اسم المدرسة
+                            'name'      => $pivot?->school_label ?? $school?->name ?? 'المدرسة', // ✅ اسم المدرسة
                             'address'   => $school?->address_line ?? $school?->address ?? 'عنوان غير متوفر',
-                            'latitude'  => (float) ($school?->lat ?? $school?->latitude ?? 32.8700),
-                            'longitude' => (float) ($school?->lng ?? $school?->longitude ?? 13.1800),
+                            'latitude'  => (float) ($pivot?->school_lat ?? $school?->lat ?? $school?->latitude ?? 32.8700),
+                            'longitude' => (float) ($pivot?->school_lng ?? $school?->lng ?? $school?->longitude ?? 13.1800),
                         ],
                     ];
                 });

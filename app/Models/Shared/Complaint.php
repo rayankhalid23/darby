@@ -27,10 +27,6 @@ class Complaint extends Model
         'action_taken',
         'action_details',
         'resolved_at',
-        'ai_action',
-        'ai_confidence',
-        'ai_severity',
-        'ai_analysis_message',
     ];
 
     // تحويل التواريخ تلقائياً إلى كائنات Carbon للتعامل معها باحترافية
@@ -38,8 +34,6 @@ class Complaint extends Model
         'resolved_at'   => 'datetime',
         'created_at'    => 'datetime',
         'updated_at'    => 'datetime',
-        'ai_confidence' => 'float',
-        'ai_severity'   => 'integer',
     ];
 
     /**

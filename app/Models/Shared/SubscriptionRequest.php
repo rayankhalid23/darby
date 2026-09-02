@@ -90,7 +90,16 @@ class SubscriptionRequest extends Model
                         'start_date',
                         'end_date',
                         'working_days_count',
-                        'distance_km',                    
+                        'distance_km',
+                        // لقطة اسم وإحداثيات المنزل والمدرسة لحظة إنشاء الطلب.
+                        // مصدرها التلقائي بيانات الطفل (address / school) في SubscriptionRequestService::createRequest،
+                        // وتُقرأ منها لاحقاً بدل العلاقة الحية حتى لا يُعيد تغيير العنوان كتابة تاريخ الطلبات القديمة.
+                        'home_label',
+                        'home_lat',
+                        'home_lng',
+                        'school_label',
+                        'school_lat',
+                        'school_lng',
                         'price_per_child',
                         'trip_price',
                         'discount_amount',            

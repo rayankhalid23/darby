@@ -86,15 +86,13 @@ class NotificationFormatter
     public const TYPE_DRIVER_DOC_EXPIRED        = 'driver_document_expired';
     public const TYPE_DRIVER_DOC_EXPIRED_ADMIN  = 'driver_document_expired_admin_alert';
 
-    // --- الشكاوى والذكاء الاصطناعي والدعم الفني ---
+    // --- الشكاوى والدعم الفني ---
     public const TYPE_NEW_COMPLAINT_SUBMITTED          = 'new_complaint_submitted';
     public const TYPE_COMPLAINT_RESOLVED               = 'complaint_resolved';
-    public const TYPE_DRIVER_AI_NEEDS_REVIEW           = 'driver_ai_needs_review';
-    public const TYPE_DRIVER_AI_SUSPENDED              = 'driver_ai_suspended';
     public const TYPE_DRIVER_SUSPENDED                 = 'driver_suspended';
+    // ملاحظة: اسم النوع 'driver_ai_alert' مُبقى كما هو حفاظاً على توافق تطبيقات الواجهة
+    // التي تتعامل معه، لكنه الآن تنبيه إداري بحت يرسله الأدمن عند البت في شكوى.
     public const TYPE_DRIVER_AI_ALERT                  = 'driver_ai_alert';
-    public const TYPE_DRIVER_REVIEW_FLAGGED            = 'driver_review_flagged';
-    public const TYPE_AI_SERVICE_OUTAGE                = 'ai_service_outage';
     public const TYPE_GENERAL_ANNOUNCEMENT             = 'general_announcement';
     public const TYPE_SUPPORT_TICKET_CREATED           = 'support_ticket_created';
     public const TYPE_SUPPORT_TICKET_REPLY             = 'support_ticket_reply';
@@ -657,7 +655,7 @@ class NotificationFormatter
                 break;
 
             // =========================================================
-            // 🤖 7. الشكاوى وتحليلات الذكاء الاصطناعي
+            // 📩 7. الشكاوى والقرارات الإدارية
             // =========================================================
             case self::TYPE_NEW_COMPLAINT_SUBMITTED:
                 $title = $customTitle ?? 'شكوى جديدة 📩';
@@ -675,22 +673,6 @@ class NotificationFormatter
                 $action = 'open_complaint';
                 break;
 
-            case self::TYPE_DRIVER_AI_NEEDS_REVIEW:
-                $title = $customTitle ?? '⚠️ شكوى تحتاج مراجعة عاجلة';
-                $message = $customMessage ?? 'صنّف النظام الشكوى كمخالفة تستدعي المراجعة والتدقيق اليدوي من المشرف.';
-                $screen = 'ADMIN_COMPLAINT_DETAILS';
-                $entityType = 'complaint';
-                $action = 'open_complaint';
-                break;
-
-            case self::TYPE_DRIVER_AI_SUSPENDED:
-                $title = $customTitle ?? 'إيقاف تلقائي لسائق ⛔';
-                $message = $customMessage ?? 'أوقف النظام السائق تلقائياً بناءً على تحليل الذكاء الاصطناعي لشكوى جسيمة.';
-                $screen = 'ADMIN_COMPLAINT_DETAILS';
-                $entityType = 'complaint';
-                $action = 'open_complaint';
-                break;
-
             case self::TYPE_DRIVER_SUSPENDED:
                 $title = $customTitle ?? 'تم إيقاف حسابك مؤقتاً ⛔';
                 $message = $customMessage ?? 'تم إيقاف حسابك بناءً على مراجعة شكوى وردت بحقك، يرجى التواصل مع الدعم.';
@@ -700,26 +682,10 @@ class NotificationFormatter
                 break;
 
             case self::TYPE_DRIVER_AI_ALERT:
-                $title = $customTitle ?? 'تنبيه سلوكي ⚠️';
-                $message = $customMessage ?? 'تم رصد ملاحظة على أدائك، يرجى الالتزام بمعايير جودة وأمان الخدمة.';
+                $title = $customTitle ?? 'تنبيه إداري رسمي ⚠️';
+                $message = $customMessage ?? 'تم تسجيل تنبيه إداري بحقك بعد مراجعة شكوى، يرجى الالتزام بمعايير جودة وأمان الخدمة.';
                 $screen = 'DRIVER_PROFILE';
                 $entityType = 'complaint';
-                $action = 'open';
-                break;
-
-            case self::TYPE_DRIVER_REVIEW_FLAGGED:
-                $title = $customTitle ?? '📝 تعليق تقييم يحتاج مراجعة';
-                $message = $customMessage ?? 'تعليق ولي أمر على تقييم سائق صُنِّف كملاحظة تستدعي مراجعة المشرف.';
-                $screen = 'ADMIN_DRIVER_REVIEW';
-                $entityType = 'driver_review';
-                $action = 'open_driver_review';
-                break;
-
-            case self::TYPE_AI_SERVICE_OUTAGE:
-                $title = $customTitle ?? 'تنبيه عطل خدمة الذكاء الاصطناعي ⚠️';
-                $message = $customMessage ?? 'خدمة تحليل الذكاء الاصطناعي غير متوفرة مؤقتاً، تعمل المعالجة اليدوية بدلاً عنها.';
-                $screen = 'ADMIN_DASHBOARD';
-                $entityType = 'system';
                 $action = 'open';
                 break;
 

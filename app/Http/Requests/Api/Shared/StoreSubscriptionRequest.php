@@ -99,6 +99,40 @@ class StoreSubscriptionRequest extends FormRequest
                 'min:0',
             ],
             
+            // موقع المنزل والمدرسة — اختيارية بالكامل. عند إغفالها تُعبأ تلقائياً في
+            // SubscriptionRequestService من عنوان الطفل ومدرسته المربوطين به.
+            // وجودها هنا ضروري لأن validated() يُسقِط أي مفتاح بلا قاعدة تحقّق.
+            'children.*.home_label' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+            'children.*.home_lat' => [
+                'nullable',
+                'numeric',
+                'between:-90,90',
+            ],
+            'children.*.home_lng' => [
+                'nullable',
+                'numeric',
+                'between:-180,180',
+            ],
+            'children.*.school_label' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+            'children.*.school_lat' => [
+                'nullable',
+                'numeric',
+                'between:-90,90',
+            ],
+            'children.*.school_lng' => [
+                'nullable',
+                'numeric',
+                'between:-180,180',
+            ],
+
             'children.*.start_date' => [
                 'required',
                 'date',

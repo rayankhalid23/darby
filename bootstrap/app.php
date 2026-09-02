@@ -39,6 +39,10 @@ return Application::configure(basePath: dirname(__DIR__))
             // 3. تسجيل مسارات المشرفين ولوحة التحكم (Admin Module)
             Route::middleware('api')
                 ->prefix('api/admin')
+                ->group(base_path('routes/Admin.php'));
+
+            Route::middleware('api')
+                ->prefix('api/v1/admin')
                 ->group(base_path('routes/Admin.php'));    
             
             // 4. تسجيل مسارات طلبات الاشتراكات الموحدة (Requests Module)

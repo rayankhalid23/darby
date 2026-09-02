@@ -17,7 +17,9 @@ return [
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],
-
+    'fastapi' => [
+    'base_url' => env('FASTAPI_BASE_URL', 'http://127.0.0.1:8000'),
+],
     'resend' => [
         'key' => env('RESEND_API_KEY'),
     ],
@@ -42,12 +44,6 @@ return [
         'sid'   => env('TWILIO_SID'),
         'token' => env('TWILIO_TOKEN'),
         'from'  => env('TWILIO_SMS_FROM'),
-    ],
-
-    'driver_ai' => [
-        'url'     => env('DRIVER_AI_URL', 'http://127.0.0.1:8000/api/v1/predict'),
-        'timeout' => env('DRIVER_AI_TIMEOUT', 3),
-        'api_key' => env('DRIVER_AI_API_KEY'),
     ],
 
 ];

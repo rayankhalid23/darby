@@ -1764,19 +1764,15 @@ class MasterComprehensiveSeeder extends Seeder
     // =========================================================
     private function seedReviewsAndComplaints(array $p, array $d, User $adminUser): void
     {
-        $this->command->info('1️⃣4️⃣ إنشاء التقييمات، الشكاوى، وتحليلات الذكاء الاصطناعي (Reviews & Complaints)...');
+        $this->command->info('1️⃣4️⃣ إنشاء التقييمات والشكاوى (Reviews & Complaints)...');
 
-        // تقييم إيجابي مع تحليل AI
+        // تقييم إيجابي
         DriverReview::create([
             'subscription_request_id' => null,
             'parent_id'               => $p['p1User']->id,
             'driver_id'               => $d['d1']->id,
             'rating'                  => 5,
             'comment'                 => 'السائق عبد السلام قمة في الأخلاق والالتزام بالمواعيد، يعامل الأطفال كأبنائه والمركبة نظيفة ومكيفة دائماً.',
-            'ai_action'               => 'approve_highlight',
-            'ai_confidence'           => 0.9850,
-            'ai_severity'             => 1,
-            'ai_analysis_message'     => 'تقييم إيجابي ممتاز يعزز موثوقية السائق في المنطقة.',
             'status'                  => 'active',
         ]);
 
@@ -1787,9 +1783,6 @@ class MasterComprehensiveSeeder extends Seeder
             'driver_id'               => $d['d2']->id,
             'rating'                  => 4,
             'comment'                 => 'سائق ممتاز وقيادة هادئة ولكن نأمل تقليل وقت التأخير عند محطات التجمع.',
-            'ai_action'               => 'none',
-            'ai_confidence'           => 0.8800,
-            'ai_severity'             => 2,
             'status'                  => 'active',
         ]);
 
@@ -1803,10 +1796,6 @@ class MasterComprehensiveSeeder extends Seeder
             'status'              => 'Open',
             'action_taken'        => 'under_investigation',
             'action_details'      => 'جاري مراجعة حالة المركبة والتواصل مع السائق للتأكد من كفاءة المكيف.',
-            'ai_action'           => 'flag_ac_issue',
-            'ai_confidence'       => 0.9200,
-            'ai_severity'         => 3,
-            'ai_analysis_message' => 'شكوى تتعلق براحة الطلاب والتكييف تتطلب متابعة المشرف الميداني.',
         ]);
 
         // شكوى محلولة بإجراء إنذار

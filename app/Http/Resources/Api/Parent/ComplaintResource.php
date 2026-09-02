@@ -23,15 +23,6 @@ class ComplaintResource extends JsonResource
             'created_at'     => $this->created_at?->format('Y-m-d H:i:s'),
             'resolved_at'    => $this->resolved_at?->format('Y-m-d H:i:s'),
 
-            // نتيجة الفرز الآلي (AI) — قد تكون null إن لم تتم معالجة الشكوى بعد
-            'ai_analysis'    => $this->ai_action ? [
-                'action'      => $this->ai_action,
-                'confidence'  => $this->ai_confidence,
-                'severity'    => $this->ai_severity,
-                'message'     => $this->ai_analysis_message,
-            ] : null,
-
-
             'driver'         => $this->whenLoaded('driver', function () {
                 return [
                     'id'   => (int) $this->driver?->id,
