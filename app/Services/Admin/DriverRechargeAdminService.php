@@ -76,7 +76,11 @@ class DriverRechargeAdminService
 
             // تحويل المبلغ إلى قروش وإيداعه في محفظة السائق
             $amountCents = (int) round($recharge->amount * 100);
+            $balanceBefore = (int) ($driver->balance ?? 0);
             $driver->deposit($amountCents);
+
+            // مرآة الأحواض: كل إيداع في محفظة سائق يقابله ارتفاع في حوض أرصدتهم المتاحة.
+            \App\Models\Shared\MasterEscrowVault::getVault()->increment('driver_available_pool', $amountCents);
 
             $recharge->update([
                 'status'      => DriverRechargeRequest::STATUS_APPROVED,
@@ -85,21 +89,18 @@ class DriverRechargeAdminService
                 'approved_at' => now(),
             ]);
 
-            // تسجيل القيد في السجل المالي
-            try {
-                $this->ledgerService->recordLedgerEntry(
-                    'platform_cash_inflow',
-                    "driver_wallet_{$driver->id}",
-                    $amountCents,
-                    'driver_recharge',
-                    0,
-                    (int) ($driver->balance ?? 0),
-                    "RECHARGE-DRV-{$recharge->id}",
-                    ['recharge_id' => $recharge->id, 'admin_id' => $adminId]
-                );
-            } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning("فشل تسجيل قيد السجل المالي لشحن السائق #{$recharge->id}: " . $e->getMessage());
-            }
+            // القيد جزء من المعاملة لا ملحق اختياري بها: شحن بلا قيد يعني مالاً
+            // دخل النظام دون أثر يمكن تدقيقه.
+            $this->ledgerService->recordLedgerEntry(
+                'platform_cash_inflow',
+                FinancialLedgerService::driverAccount($driver),
+                $amountCents,
+                'driver_recharge',
+                $balanceBefore,
+                (int) ($driver->balance ?? 0),
+                "RECHARGE-DRV-{$recharge->id}",
+                ['recharge_id' => $recharge->id, 'admin_id' => $adminId]
+            );
 
             // إرسال إشعار فوري للسائق
             if ($driver->user) {

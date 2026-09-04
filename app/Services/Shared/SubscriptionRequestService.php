@@ -24,13 +24,16 @@ class SubscriptionRequestService
 {
     protected \App\Services\Trip\MasterRouteStopSyncService $masterRouteStopSyncService;
     protected NotificationService $notificationService;
+    protected PricingCalculator $pricingCalculator;
 
     public function __construct(
         \App\Services\Trip\MasterRouteStopSyncService $masterRouteStopSyncService,
-        NotificationService $notificationService
+        NotificationService $notificationService,
+        ?PricingCalculator $pricingCalculator = null
     ) {
         $this->masterRouteStopSyncService = $masterRouteStopSyncService;
         $this->notificationService = $notificationService;
+        $this->pricingCalculator = $pricingCalculator ?? app(PricingCalculator::class);
     }
     public function createRequest(array $data, $user): SubscriptionRequest
     {
@@ -70,19 +73,20 @@ class SubscriptionRequestService
 
             // 1. جلب إعدادات التسعير من قاعدة البيانات
             $pricingSetting = PricingSetting::first();
-            $discountOne       = (float) ($pricingSetting->discount_one_child ?? 0.00);
-            $discountTwo       = (float) ($pricingSetting->discount_two_children ?? 10.00);
-            $discountThreePlus = (float) ($pricingSetting->discount_three_plus_children ?? 15.00);
-            $commissionRate    = (float) ($pricingSetting->platform_commission_rate ?? 8.00);
 
             // تحديد نسبة الخصم بناءً على إجمالي عدد الأطفال بالطلب
             $childrenCount = count($data['children']);
-            $discountPercent = match (true) {
-                $childrenCount === 1 => 0.0, // لا يوجد تخفيض إذا كان الطلب لطفل واحد
-                $childrenCount === 2 => $discountTwo,
-                $childrenCount >= 3  => $discountThreePlus,
-                default              => 0.0,
-            };
+            $discountPercent = $this->pricingCalculator
+                ->discountPercentForChildrenCount($childrenCount, $pricingSetting);
+
+            // ⚠️ السعر يُحسب على الخادم ولا يُقبل من العميل. كان الكود يأخذ
+            // `price_per_child ?? trip_price` كما أرسلهما التطبيق ويحجز الناتج من
+            // المحفظة مباشرة. والمفتاحان يحملان معنيين مختلفين (إجمالي الاشتراك
+            // مقابل سعر اليوم الواحد)، فإرسال `trip_price` وحده كان يجعل إجمالي
+            // اشتراك الشهر مساوياً لسعر يوم واحد — تسعير أقل بعشرات الأضعاف يقرّره
+            // العميل. الآن يُحسب من نفس معادلة شاشة البحث عن سائق، فيرى ولي الأمر
+            // عند الطلب نفس الرقم الذي رآه عند اختيار السائق.
+            $driverModel = Driver::with('vehicles')->find($data['driver_id']);
 
             $totalOrderRawPrice = 0.0;
             $totalOrderDiscount = 0.0;
@@ -90,37 +94,26 @@ class SubscriptionRequestService
             $childrenPivotData = [];
 
             foreach ($data['children'] as $child) {
-                $workingDays = $this->calculateWorkingDays(
-                    $child['start_date'], 
-                    $child['end_date'] ?? $child['start_date']
+                $childModel = $childModels->get((int) $child['child_id']);
+
+                $pricing = $this->pricingCalculator->calculateForChild(
+                    child:            $childModel,
+                    driver:           $driverModel,
+                    subscriptionType: $child['subscription_type'],
+                    direction:        $child['trip_direction'] ?? $child['direction'] ?? 'both',
+                    startDate:        $child['start_date'],
+                    endDate:          $child['end_date'] ?? $child['start_date'],
+                    distanceKm:       isset($child['distance_km']) ? (float) $child['distance_km'] : null,
+                    discountPercent:  $discountPercent,
+                    settings:         $pricingSetting,
                 );
 
-                // إجمالي سعر الطفل قبل التخفيض وسعر الرحلة
-                $childRawPrice = (float) ($child['price_per_child'] ?? $child['trip_price'] ?? 0);
-                $rawTripPrice  = (float) ($child['trip_price'] ?? $childRawPrice);
-
-                // حساب قيمة التخفيض للطفل
-                $childDiscount = round(($childRawPrice * $discountPercent) / 100, 2);
-                
-                // السعر بعد التخفيض (أو السعر الأصلي كاملاً إن لم يكن هناك تخفيض)
-                $childTotalAfterDiscount = max(0, round($childRawPrice - $childDiscount, 2));
-
-                // سعر الرحلة الواحدة بعد التخفيض (حفظ سعر الرحلة بعد تطبيق الخصم)
-                $tripPriceAfterDiscount = max(0, round($rawTripPrice * (1 - ($discountPercent / 100)), 2));
-
-                // حساب عمولة المنصة وصافي أرباح السائق للطفل الواحد
-                $platformCommission = round(($childTotalAfterDiscount * $commissionRate) / 100, 2);
-                $driverNetPrice     = max(0, round($childTotalAfterDiscount - $platformCommission, 2));
-
-                $totalOrderRawPrice           += $childRawPrice;
-                $totalOrderDiscount           += $childDiscount;
-                $totalOrderAmountAfterDiscount += $childTotalAfterDiscount;
+                $totalOrderRawPrice            += $pricing['raw_total'];
+                $totalOrderDiscount            += $pricing['discount_amount'];
+                $totalOrderAmountAfterDiscount += $pricing['total_after_discount'];
 
                 // لقطة اسم وإحداثيات المنزل والمدرسة وقت إنشاء الطلب
-                $locationSnapshot = $this->resolveChildLocationSnapshot(
-                    $child,
-                    $childModels->get((int) $child['child_id'])
-                );
+                $locationSnapshot = $this->resolveChildLocationSnapshot($child, $childModel);
 
                 $childrenPivotData[$child['child_id']] = [
                     ...$locationSnapshot,
@@ -129,17 +122,21 @@ class SubscriptionRequestService
                     'timing'                      => $child['timing'] ?? 'BOTH',
                     'start_date'                  => $child['start_date'],
                     'end_date'                    => $child['end_date'] ?? $child['start_date'],
-                    'working_days_count'          => $workingDays,
-                    'distance_km'                 => $child['distance_km'] ?? 0,
-                    'trip_price'                  => $tripPriceAfterDiscount,
-                    'price_per_child'             => $childRawPrice,
-                    'discount_amount'             => $childDiscount,
-                    'total_amount_after_discount' => $childTotalAfterDiscount,
-                    'driver_net_price'            => $driverNetPrice,
+                    'working_days_count'          => $pricing['working_days'],
+                    'distance_km'                 => $pricing['distance_km'],
+                    'trip_price'                  => $pricing['trip_price_after_discount'],
+                    'price_per_child'             => $pricing['raw_total'],
+                    'discount_amount'             => $pricing['discount_amount'],
+                    'total_amount_after_discount' => $pricing['total_after_discount'],
+                    'driver_net_price'            => $pricing['driver_net'],
                     'created_at'                  => now(),
                     'updated_at'                  => now(),
                 ];
             }
+
+            $totalOrderRawPrice            = round($totalOrderRawPrice, 2);
+            $totalOrderDiscount            = round($totalOrderDiscount, 2);
+            $totalOrderAmountAfterDiscount = round($totalOrderAmountAfterDiscount, 2);
 
             // فحص الرصيد لكل أنواع الاشتراكات (لا اليومي فقط) ليتطابق مع الحجز عند القبول.
             // ⚠️ بدون ذلك يستطيع ولي الأمر إرسال طلب شهري لا يملك قيمته، فيفشل الحجز لاحقاً
@@ -684,6 +681,16 @@ class SubscriptionRequestService
             $this->holdSubscriptionFundsOnAcceptance($req, $parent);
         }
 
+        // 6.3 إصدار الفاتورة المبدئية للاشتراك.
+        // ⚠️ لم تكن تُصدر من أي مسار حيّ إطلاقاً، فبقيت شاشات الفواتير لولي الأمر
+        // والسائق والأدمن فارغة، وبقي أمر التسوية بلا مدخلات. الفشل هنا لا يُسقط
+        // قبول الطلب: الفاتورة مستند عرض، والحركة المالية تمت وسُجّلت قبله.
+        try {
+            app(\App\Services\Shared\FinancialService::class)->generateProformaInvoice($req);
+        } catch (\Throwable $e) {
+            Log::warning("فشل إصدار الفاتورة المبدئية للطلب ID {$req->id}: " . $e->getMessage());
+        }
+
         // 6.5 مزامنة المسار الرئيسي (Master Route) لكل فترة/اتجاه مطلوبة (route_stops)
         try {
             $this->masterRouteStopSyncService->syncOnAcceptance($req, $route, $slots);
@@ -803,23 +810,22 @@ class SubscriptionRequestService
             'held_at'                    => now(),
         ]);
 
-        try {
-            app(\App\Services\Shared\FinancialLedgerService::class)->recordLedgerEntry(
-                "parent_wallet_{$parent->user_id}",
-                "parents_escrow_pool",
-                $amountCents,
-                'subscription_hold',
-                $balBefore,
-                $balAfter,
-                "REQ-HOLD-{$req->id}",
-                [
-                    'subscription_request_id' => $req->id,
-                    'platform_finance_id'     => $platformFinance->id,
-                ]
-            );
-        } catch (\Throwable $e) {
-            Log::warning("فشل تسجيل حركة السجل المالي لحجز الاشتراك ID {$req->id}: " . $e->getMessage());
-        }
+        // ⚠️ القيد ليس ملحقاً اختيارياً بالحركة المالية بل جزء منها. ابتلاع فشله
+        // بـ Log::warning في دفتر يوصف بأنه «غير قابل للمسح» يعني مالاً تحرّك بلا
+        // أثر يمكن تدقيقه أو تسويته. الفشل هنا يجب أن يُسقط المعاملة كاملة.
+        app(\App\Services\Shared\FinancialLedgerService::class)->recordLedgerEntry(
+            \App\Services\Shared\FinancialLedgerService::parentAccount($parent),
+            "parents_escrow_pool",
+            $amountCents,
+            'subscription_hold',
+            $balBefore,
+            $balAfter,
+            "REQ-HOLD-{$req->id}",
+            [
+                'subscription_request_id' => $req->id,
+                'platform_finance_id'     => $platformFinance->id,
+            ]
+        );
     }
 
     /**
@@ -873,7 +879,10 @@ class SubscriptionRequestService
             return null;
         }
 
-        $parent = ParentModel::find($finance->parent_id) ?? ParentModel::where('user_id', $finance->parent_id)->first();
+        // platform_finances تخزّن ParentModel::id (لا User::id) — الدلالة مثبتة في
+        // holdSubscriptionFundsOnAcceptance()، والمُحلّل يسجّل تحذيراً إن لجأ للاحتياطية.
+        $ledgerService = app(\App\Services\Shared\FinancialLedgerService::class);
+        $parent = $ledgerService->resolveParent($finance->parent_id, preferUserId: false);
         $driver = Driver::find($finance->driver_id) ?? Driver::where('user_id', $finance->driver_id)->first();
         $vault = \App\Models\Shared\MasterEscrowVault::getVault();
 
@@ -889,8 +898,40 @@ class SubscriptionRequestService
                 ->exists();
         }
 
-        $totalDinar = (float) $finance->total_amount;
-        $totalCents = (int) round($totalDinar * 100);
+        // ⚠️ المبلغ القابل للاسترجاع هو ما تبقّى في الأمانة فعلاً، لا قيمة الاشتراك
+        // الكاملة. سجل PlatformFinance يبقى بحالة `held` طوال التسوية الجزئية (لا
+        // يصبح `completed` إلا بعد آخر رحلة)، وكانت هذه الدالة تعتمد على
+        // total_amount وتتجاهل settled_amount تماماً. فاشتراك من ٢٠ رحلة نُفّذ منه
+        // ٥ وصُرفت حصصها للسائق ثم أُلغي، كان يخصم كامل المبلغ من حوض الأمانات —
+        // وهو لم يعد موجوداً فيه — ويودع ١٠٠٪ في محفظة ولي الأمر، فيدفع النظام
+        // ١٢٥٪ من قيمة الاشتراك على حساب أمانات أولياء أمور آخرين.
+        $totalDinar     = (float) $finance->total_amount;
+        $settledDinar   = (float) ($finance->settled_amount ?? 0);
+        $refundedDinar  = (float) ($finance->refunded_amount ?? 0);
+        $remainingDinar = max(0.0, round($totalDinar - $settledDinar - $refundedDinar, 2));
+        $remainingCents = (int) round($remainingDinar * 100);
+
+        // لم يتبقّ شيء في الأمانة: كل المبلغ صُرف مقابل رحلات نُفّذت فعلاً.
+        if ($remainingCents <= 0) {
+            $finance->update([
+                'status'      => \App\Models\Shared\PlatformFinance::STATUS_COMPLETED,
+                'settled_at'  => $finance->settled_at ?? now(),
+                'notes'       => 'أُلغي الاشتراك بعد صرف كامل قيمته مقابل الرحلات المنفّذة — لا يوجد مبلغ قابل للاسترجاع.',
+            ]);
+
+            return [
+                'refund_amount'    => 0.0,
+                'compensation_fee' => 0.0,
+                'driver_net_pay'   => 0.0,
+                'platform_fee'     => 0.0,
+                'settled_amount'   => $settledDinar,
+                'status'           => 'nothing_to_refund',
+            ];
+        }
+
+        // من هنا فصاعداً `totalDinar` تعني المتبقي في الأمانة القابل للتوزيع.
+        $totalDinar = $remainingDinar;
+        $totalCents = $remainingCents;
 
         // احتساب رسوم طلبات تغيير الموقع المعتمدة غير المسواة
         $activeSubIds = ActiveSubscription::where('subscription_request_id', $requestId)->pluck('id');
@@ -927,14 +968,16 @@ class SubscriptionRequestService
                 $vault->increment('platform_revenue_pool', $commissionCents);
             }
 
+            // ⚠️ لا تُكتب قيم التعويض فوق platform_commission_amount و driver_net_amount:
+            // هذان الحقلان يحملان خطة الاشتراك كما اتُّفق عليها عند القبول، والمصروف
+            // الفعلي يُقرأ من settled_amount ومن جدول platform_finance_trip_settlements.
+            // الكتابة فوقهما بقيم تعويض إلغاء تمحو الخطة والفعلي معاً.
             $finance->update([
-                'status'                     => \App\Models\Shared\PlatformFinance::STATUS_PARTIALLY_REFUNDED,
-                'compensation_fee'           => $nominalCompDinar,
-                'platform_commission_amount' => $commissionOnComp,
-                'driver_net_amount'          => $driverNetComp,
-                'refunded_amount'            => $refundToParent,
-                'refunded_at'                => now(),
-                'notes'                      => 'تم إلغاء الرحلة بعد تحرك السائق. تم خصم تعويض وقود ورسوم تغيير المواقع للسائق واقتطاع عمولة المنصة منه وإرجاع باقي المبلغ لولي الأمر.',
+                'status'            => \App\Models\Shared\PlatformFinance::STATUS_PARTIALLY_REFUNDED,
+                'compensation_fee'  => $nominalCompDinar,
+                'refunded_amount'   => round($refundedDinar + $refundToParent, 2),
+                'refunded_at'       => now(),
+                'notes'             => 'تم إلغاء الاشتراك بعد تحرك السائق. صُرف تعويض وقود ورسوم تغيير المواقع للسائق واقتُطعت عمولة المنصة منه، وأُرجع باقي المتبقي في الأمانة لولي الأمر.',
             ]);
 
             \App\Models\Shared\LocationChangeRequest::whereIn('id', $approvedChanges->pluck('id'))->update(['is_settled' => true]);
@@ -944,7 +987,7 @@ class SubscriptionRequestService
                 if ($refundCents > 0 && $parent) {
                     $ledger->recordLedgerEntry(
                         'parents_escrow_pool',
-                        "parent_wallet_{$parent->user_id}",
+                        \App\Services\Shared\FinancialLedgerService::parentAccount($parent),
                         $refundCents,
                         'subscription_refund',
                         0,
@@ -956,7 +999,7 @@ class SubscriptionRequestService
                 if ($driverCompCents > 0 && $driver) {
                     $ledger->recordLedgerEntry(
                         'parents_escrow_pool',
-                        "driver_wallet_{$driver->id}",
+                        \App\Services\Shared\FinancialLedgerService::driverAccount($driver),
                         $driverCompCents,
                         'driver_fuel_compensation',
                         0,
@@ -1016,13 +1059,11 @@ class SubscriptionRequestService
             }
 
             $finance->update([
-                'status'                     => \App\Models\Shared\PlatformFinance::STATUS_PARTIALLY_REFUNDED,
-                'compensation_fee'           => $locationCompDinar,
-                'platform_commission_amount' => $commissionOnComp,
-                'driver_net_amount'          => $driverNetComp,
-                'refunded_amount'            => $refundToParent,
-                'refunded_at'                => now(),
-                'notes'                      => 'تم استرجاع المبلغ لولي الأمر مع خصم رسوم تغيير المواقع المعتمدة لصالح السائق والمنصة.',
+                'status'            => \App\Models\Shared\PlatformFinance::STATUS_PARTIALLY_REFUNDED,
+                'compensation_fee'  => $locationCompDinar,
+                'refunded_amount'   => round($refundedDinar + $refundToParent, 2),
+                'refunded_at'       => now(),
+                'notes'             => 'تم استرجاع المتبقي في الأمانة لولي الأمر مع خصم رسوم تغيير المواقع المعتمدة لصالح السائق والمنصة.',
             ]);
 
             \App\Models\Shared\LocationChangeRequest::whereIn('id', $approvedChanges->pluck('id'))->update(['is_settled' => true]);
@@ -1037,36 +1078,45 @@ class SubscriptionRequestService
                 'status'                 => 'partially_refunded',
             ];
         } else {
-            // قبل تحرك السائق وبدون رسوم إضافية، أو إذا كان الإلغاء من السائق أو تلقائياً -> استرجاع كامل 100% لولي الأمر
+            // قبل تحرك السائق وبدون رسوم إضافية، أو إلغاء من السائق أو تلقائي:
+            // يُسترجع كامل **المتبقي في الأمانة** لولي الأمر — وليس كامل قيمة
+            // الاشتراك، لأن ما صُرف مقابل رحلات نُفّذت فعلاً لم يعد في الحوض.
             $vault->decrement('parents_escrow_pool', $totalCents);
 
             if ($parent) {
                 $parent->deposit($totalCents);
             }
 
+            $isFullyRefunded = $settledDinar <= 0;
+
             $finance->update([
-                'status'                     => \App\Models\Shared\PlatformFinance::STATUS_REFUNDED,
-                'refunded_amount'            => $totalDinar,
-                'compensation_fee'           => 0.00,
-                'platform_commission_amount' => 0.00,
-                'driver_net_amount'          => 0.00,
-                'refunded_at'                => now(),
-                'notes'                      => 'تم استرجاع كامل المبلغ لولي الأمر (إلغاء قبل تحرك السائق أو إلغاء من السائق).',
+                'status'            => $isFullyRefunded
+                    ? \App\Models\Shared\PlatformFinance::STATUS_REFUNDED
+                    : \App\Models\Shared\PlatformFinance::STATUS_PARTIALLY_REFUNDED,
+                'refunded_amount'   => round($refundedDinar + $totalDinar, 2),
+                'compensation_fee'  => 0.00,
+                'refunded_at'       => now(),
+                'notes'             => $isFullyRefunded
+                    ? 'تم استرجاع كامل المبلغ لولي الأمر (إلغاء قبل تحرك السائق أو إلغاء من السائق).'
+                    : "تم استرجاع المتبقي في الأمانة ({$totalDinar} د.ل) لولي الأمر بعد صرف {$settledDinar} د.ل مقابل الرحلات المنفّذة.",
             ]);
 
-            try {
+            // القيد جزء من نفس المعاملة: استرجاع بلا قيد يعني مالاً تحرّك بلا أثر.
+            if ($parent) {
                 app(\App\Services\Shared\FinancialLedgerService::class)->recordLedgerEntry(
                     'parents_escrow_pool',
-                    "parent_wallet_{$parent?->user_id}",
+                    \App\Services\Shared\FinancialLedgerService::parentAccount($parent),
                     $totalCents,
                     'subscription_refund',
                     0,
-                    (int) ($parent?->balance ?? 0),
+                    (int) $parent->balance,
                     "REFUND-FULL-{$requestId}",
-                    ['subscription_request_id' => $requestId, 'cancelled_by' => $cancelledBy]
+                    [
+                        'subscription_request_id' => $requestId,
+                        'cancelled_by'            => $cancelledBy,
+                        'already_settled_dinar'   => $settledDinar,
+                    ]
                 );
-            } catch (\Throwable $e) {
-                Log::warning("فشل تسجيل حركة السجل المالي للاسترجاع الكامل ID {$requestId}: " . $e->getMessage());
             }
 
             return [
@@ -1074,7 +1124,8 @@ class SubscriptionRequestService
                 'compensation_fee' => 0.00,
                 'driver_net_pay'   => 0.00,
                 'platform_fee'     => 0.00,
-                'status'           => 'refunded',
+                'settled_amount'   => $settledDinar,
+                'status'           => $isFullyRefunded ? 'refunded' : 'partially_refunded',
             ];
         }
     }

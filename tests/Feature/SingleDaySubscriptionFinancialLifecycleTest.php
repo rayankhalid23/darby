@@ -227,6 +227,7 @@ class SingleDaySubscriptionFinancialLifecycleTest extends TestCase
     {
         // شحن رصيد ولي الأمر بـ 50 د.ل (5000 قرش)
         $this->parent->deposit(5000);
+        $escrowBefore = (int) MasterEscrowVault::getVault()->parents_escrow_pool;
 
         $request = SubscriptionRequest::create([
             'parent_id'                   => $this->parent->id,
@@ -266,9 +267,11 @@ class SingleDaySubscriptionFinancialLifecycleTest extends TestCase
         // تم خصم 25 د.ل (2500 قرش) من محفظة ولي الأمر -> المتبقي 25 د.ل (2500 قرش)
         $this->assertEquals(2500, $this->parent->fresh()->balance);
 
-        // تم زيادة مسبح الأمانات في الخزينة المركزية بـ 2500 قرش
+        // تم زيادة مسبح الأمانات في الخزينة المركزية بـ 2500 قرش.
+        // الفحص بالفارق لا بالقيمة المطلقة: الخزينة سجل واحد مشترك يحمل رصيد
+        // النظام كله، فتأكيد قيمة مطلقة يفشل مع أي حالة قائمة في قاعدة البيانات.
         $vault = MasterEscrowVault::getVault();
-        $this->assertEquals(2500, $vault->parents_escrow_pool);
+        $this->assertEquals($escrowBefore + 2500, (int) $vault->fresh()->parents_escrow_pool);
 
         // تم إنشاء سجل مالية المنصة بحالة held وتوزيع القيم الصحيحة
         $this->assertDatabaseHas('platform_finances', [
@@ -379,6 +382,7 @@ class SingleDaySubscriptionFinancialLifecycleTest extends TestCase
     public function test_cancelling_subscription_before_driver_movement_refunds_100_percent_to_parent(): void
     {
         $this->parent->deposit(5000);
+        $escrowBefore = (int) MasterEscrowVault::getVault()->parents_escrow_pool;
 
         $request = SubscriptionRequest::create([
             'parent_id'                   => $this->parent->id,
@@ -430,8 +434,9 @@ class SingleDaySubscriptionFinancialLifecycleTest extends TestCase
             'compensation_fee'        => 0.00,
         ]);
 
+        // الحجز خرج من الأمانات كما دخل — فحص بالفارق لأن الخزينة سجل مشترك.
         $vault = MasterEscrowVault::getVault();
-        $this->assertEquals(0, $vault->parents_escrow_pool);
+        $this->assertEquals($escrowBefore, (int) $vault->fresh()->parents_escrow_pool);
     }
 
     /**
@@ -512,15 +517,122 @@ class SingleDaySubscriptionFinancialLifecycleTest extends TestCase
         // مبلغ الاشتراك المحجوز (2500 قرش) يخرج بالكامل من الأمانات عند الإلغاء
         $this->assertEquals($escrowBefore - 2500, (int) $vault->parents_escrow_pool);
 
-        // سجل مالية المنصة يوثق التعويض والاسترجاع الجزئي
+        // سجل مالية المنصة يوثق التعويض والاسترجاع الجزئي.
+        //
+        // ملاحظة على الدلالة: platform_commission_amount و driver_net_amount
+        // يحملان **خطة** الاشتراك كما اتُّفق عليها عند القبول (25 د.ل ← عمولة
+        // 2.00 وصافي 23.00) ولا يُكتب فوقهما. كان مسار الإلغاء يستبدلهما بقيم
+        // التعويض وحدها، فتضيع الخطة ويضيع معها ما صُرف فعلاً عن رحلات منفّذة
+        // في الاشتراكات الشهرية. المصروف الفعلي يُقرأ من compensation_fee و
+        // settled_amount ومن جدول platform_finance_trip_settlements.
         $this->assertDatabaseHas('platform_finances', [
             'subscription_request_id'    => $request->id,
             'status'                     => 'partially_refunded',
             'compensation_fee'           => 3.00,
-            'platform_commission_amount' => 0.24,
-            'driver_net_amount'          => 2.76,
             'refunded_amount'            => 22.00,
+            'platform_commission_amount' => 2.00,  // الخطة، سليمة كما هي
+            'driver_net_amount'          => 23.00, // الخطة، سليمة كما هي
         ]);
+    }
+
+    /**
+     * ⚠️ حارس انحدار للخلل الأخطر: إلغاء اشتراك نُفّذ جزء من رحلاته يجب أن
+     * يسترجع **المتبقي في الأمانة فقط**، لا كامل قيمة الاشتراك.
+     *
+     * سجل PlatformFinance يبقى بحالة `held` طوال التسوية الجزئية، وكان مسار
+     * الاسترجاع يعتمد على total_amount ويتجاهل settled_amount، فيدفع النظام
+     * ١٢٥٪ من قيمة الاشتراك: السائق قبض حصص الرحلات المنفّذة وولي الأمر
+     * استرجع ١٠٠٪، والفرق يُستنزف من أمانات أولياء أمور آخرين.
+     */
+    public function test_cancelling_partially_settled_subscription_refunds_only_the_remaining_escrow(): void
+    {
+        $this->parent->deposit(5000);
+
+        $request = SubscriptionRequest::create([
+            'parent_id'                   => $this->parent->id,
+            'driver_id'                   => $this->driver->id,
+            'total_price'                 => 100.00,
+            'discount_amount'             => 0.00,
+            'total_amount_after_discount' => 100.00,
+            'status'                      => SubscriptionRequest::STATUS_ACCEPTED,
+        ]);
+
+        // أمانة اشتراك من 10 رحلات، صُرفت حصص 4 منها (40 د.ل) والباقي 60 د.ل
+        $finance = PlatformFinance::create([
+            'subscription_request_id'    => $request->id,
+            'parent_id'                  => $this->parent->id,
+            'driver_id'                  => $this->driver->id,
+            'total_amount'               => 100.00,
+            'platform_commission_rate'   => 8.00,
+            'platform_commission_amount' => 8.00,
+            'driver_net_amount'          => 92.00,
+            'expected_trips_count'       => 10,
+            'settled_trips_count'        => 4,
+            'settled_amount'             => 40.00,
+            'status'                     => PlatformFinance::STATUS_HELD,
+            'held_at'                    => now(),
+        ]);
+
+        $vault = MasterEscrowVault::getVault();
+        $vault->increment('parents_escrow_pool', 6000); // المتبقي فعلاً في الحوض
+        $escrowBefore  = (int) $vault->fresh()->parents_escrow_pool;
+        $balanceBefore = (int) $this->parent->fresh()->balance;
+
+        app(\App\Services\Shared\SubscriptionRequestService::class)
+            ->refundHeldFundsOnCancellation($request->id, 'system');
+
+        // يُسترجع 60 د.ل (6000 قرش) — وليس 100 د.ل
+        $this->assertEquals($balanceBefore + 6000, (int) $this->parent->fresh()->balance);
+        $this->assertEquals($escrowBefore - 6000, (int) MasterEscrowVault::getVault()->parents_escrow_pool);
+
+        $this->assertDatabaseHas('platform_finances', [
+            'id'              => $finance->id,
+            'status'          => 'partially_refunded',
+            'refunded_amount' => 60.00,
+            'settled_amount'  => 40.00,
+        ]);
+    }
+
+    /**
+     * ⚠️ حارس انحدار: اشتراك صُرفت كل حصصه لا يُسترجع منه شيء، ولا يُخصم من
+     * حوض الأمانات مبلغ لم يعد فيه.
+     */
+    public function test_cancelling_fully_settled_subscription_refunds_nothing(): void
+    {
+        $request = SubscriptionRequest::create([
+            'parent_id'                   => $this->parent->id,
+            'driver_id'                   => $this->driver->id,
+            'total_price'                 => 100.00,
+            'discount_amount'             => 0.00,
+            'total_amount_after_discount' => 100.00,
+            'status'                      => SubscriptionRequest::STATUS_ACCEPTED,
+        ]);
+
+        PlatformFinance::create([
+            'subscription_request_id'    => $request->id,
+            'parent_id'                  => $this->parent->id,
+            'driver_id'                  => $this->driver->id,
+            'total_amount'               => 100.00,
+            'platform_commission_rate'   => 8.00,
+            'platform_commission_amount' => 8.00,
+            'driver_net_amount'          => 92.00,
+            'expected_trips_count'       => 10,
+            'settled_trips_count'        => 10,
+            'settled_amount'             => 100.00,
+            'status'                     => PlatformFinance::STATUS_HELD,
+            'held_at'                    => now(),
+        ]);
+
+        $balanceBefore = (int) $this->parent->fresh()->balance;
+        $escrowBefore  = (int) MasterEscrowVault::getVault()->parents_escrow_pool;
+
+        $result = app(\App\Services\Shared\SubscriptionRequestService::class)
+            ->refundHeldFundsOnCancellation($request->id, 'parent');
+
+        $this->assertEquals('nothing_to_refund', $result['status']);
+        $this->assertEquals(0.0, $result['refund_amount']);
+        $this->assertEquals($balanceBefore, (int) $this->parent->fresh()->balance);
+        $this->assertEquals($escrowBefore, (int) MasterEscrowVault::getVault()->parents_escrow_pool);
     }
 
     /**

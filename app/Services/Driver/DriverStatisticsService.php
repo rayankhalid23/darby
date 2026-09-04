@@ -54,7 +54,7 @@ class DriverStatisticsService
         $previousMonthEnd = $currentMonthStart->copy()->subMonth()->endOfMonth();
 
         // 1. أرباح الشهر الحالي الصافية
-        $currentMonthLedgerCents = (int) FinancialLedger::where('destination_account', "driver_wallet_{$driver->id}")
+        $currentMonthLedgerCents = (int) FinancialLedger::where('destination_account', \App\Services\Shared\FinancialLedgerService::driverAccount($driver))
             ->whereIn('type', ['driver_payout', 'trip_payout', 'payout'])
             ->whereBetween('created_at', [$currentMonthStart, $currentMonthEnd])
             ->sum('amount');
@@ -78,7 +78,7 @@ class DriverStatisticsService
         ), 2);
 
         // 2. أرباح الشهر السابق الصافية
-        $previousMonthLedgerCents = (int) FinancialLedger::where('destination_account', "driver_wallet_{$driver->id}")
+        $previousMonthLedgerCents = (int) FinancialLedger::where('destination_account', \App\Services\Shared\FinancialLedgerService::driverAccount($driver))
             ->whereIn('type', ['driver_payout', 'trip_payout', 'payout'])
             ->whereBetween('created_at', [$previousMonthStart, $previousMonthEnd])
             ->sum('amount');
@@ -102,7 +102,7 @@ class DriverStatisticsService
         ), 2);
 
         // 3. إجمالي الأرباح الصافية التراكمية (من حركات السجل المالي والمحافظ وحجوزات الضمان المفرج عنها)
-        $ledgerTotalPayoutCents = (int) FinancialLedger::where('destination_account', "driver_wallet_{$driver->id}")
+        $ledgerTotalPayoutCents = (int) FinancialLedger::where('destination_account', \App\Services\Shared\FinancialLedgerService::driverAccount($driver))
             ->whereIn('type', ['driver_payout', 'trip_payout', 'payout'])
             ->sum('amount');
 

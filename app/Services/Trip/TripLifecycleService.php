@@ -550,6 +550,21 @@ class TripLifecycleService
             // 4. تسوية الأمانات المالية وتحويل مستحقات السائق واقتطاع عمولة المنصة
             $this->settlePlatformFinancesForCompletedTrip($trip);
 
+            // 4.1 تحصيل حجوزات الرحلات اليومية المفتوحة على هذه الرحلة.
+            // ⚠️ كانت captureTripOnCompletion() معرّفة ولا تُستدعى من أي مكان، فيبقى
+            // كل مبلغ محجوز عبر /wallet/hold-trip في حالة `held` إلى الأبد: لا يصل
+            // السائق ولا يعود لولي الأمر. الآن ينتقل إلى المستحقات المعلّقة، ومنها
+            // إلى رصيد السائق المتاح بعد انقضاء نافذة النزاع عبر المهمة المجدولة.
+            try {
+                app(\App\Services\Shared\FinancialLedgerService::class)->captureTripOnCompletion($trip);
+            } catch (\Illuminate\Database\Eloquent\ModelNotFoundException) {
+                // لا حجز يومي مفتوح على هذه الرحلة — الحالة الطبيعية للاشتراكات الشهرية.
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning(
+                    "فشل تحصيل حجز الرحلة اليومية ID {$trip->id}: " . $e->getMessage()
+                );
+            }
+
             // 5. تسوية مستحقات السائق البديل إن كانت هذه الرحلة رحلة إنقاذ طارئة
             $this->settleEmergencyBreakdownDispatchesForTrip($trip);
 
@@ -752,6 +767,11 @@ class TripLifecycleService
 
                 if ($driver) {
                     $driver->deposit($driverNetCents);
+                    // ⚠️ إلزامي مع كل إيداع في محفظة سائق: كان هذا السطر غائباً عن
+                    // المسار المالي الرئيسي للنظام، فيرتفع رصيد المحفظة بينما يبقى
+                    // driver_available_pool ثابتاً، وينحرف فحص السلامة المالية مع
+                    // كل رحلة تُنفَّذ حتى يصبح رقم الفرق بلا معنى.
+                    $vault->increment('driver_available_pool', $driverNetCents);
                 }
 
                 $newSettledTrips  = $settledTrips + 1;
@@ -771,7 +791,7 @@ class TripLifecycleService
                 try {
                     $ledger->recordLedgerEntry(
                         'parents_escrow_pool',
-                        "driver_wallet_{$trip->driver_id}",
+                        \App\Services\Shared\FinancialLedgerService::driverAccount($trip->driver_id),
                         $driverNetCents,
                         'driver_payout',
                         0,

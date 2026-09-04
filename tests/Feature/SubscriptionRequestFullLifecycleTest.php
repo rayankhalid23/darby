@@ -36,6 +36,18 @@ class SubscriptionRequestFullLifecycleTest extends TestCase
             ['id' => 3, 'name' => 'Parent', 'display_name' => 'ولي أمر'],
         ]);
 
+        // تثبيت إعدادات التسعير: السعر يُحسب على الخادم، فترك الإعدادات لما
+        // تصادف وجوده في قاعدة البيانات يجعل كل رقم متوقع في هذا الملف عشوائياً.
+        \App\Models\Shared\PricingSetting::query()->delete();
+        \App\Models\Shared\PricingSetting::create([
+            'discount_one_child'           => 0.00,
+            'discount_two_children'        => 10.00,
+            'discount_three_plus_children' => 15.00,
+            'platform_commission_rate'     => 8.00,
+            'price_per_km_ac'              => 2.50,
+            'price_per_km_non_ac'          => 2.00,
+        ]);
+
         // 1. Driver User & Model
         $this->driverUser = User::create([
             'full_name'     => 'سائق تجريبي دورة حياة',
@@ -158,22 +170,22 @@ class SubscriptionRequestFullLifecycleTest extends TestCase
                     'subscription_type' => 'multi_day',
                     'trip_direction'    => 'both',
                     'timing'            => 'MORNING',
-                    'start_date'        => now()->addDays(2)->format('Y-m-d'),
-                    'end_date'          => now()->addMonths(1)->format('Y-m-d'),
+                    // نافذة ثابتة (الأحد 3 يناير -> الخميس 14 يناير) = 10 أيام عمل.
+                    // 5 كم × 2.50 د.ل/كم = 12.50 للاتجاه × 2 = 25 لليوم × 10 = 250 د.ل للطفل.
+                    'start_date'        => '2027-01-03',
+                    'end_date'          => '2027-01-14',
                     'distance_km'       => 5.0,
-                    'trip_price'        => 25.0,
-                    'price_per_child'   => 250.00,
                 ],
                 [
                     'child_id'          => $this->child2->id,
                     'subscription_type' => 'multi_day',
                     'trip_direction'    => 'both',
                     'timing'            => 'MORNING',
-                    'start_date'        => now()->addDays(2)->format('Y-m-d'),
-                    'end_date'          => now()->addMonths(1)->format('Y-m-d'),
+                    // نافذة ثابتة (الأحد 3 يناير -> الخميس 14 يناير) = 10 أيام عمل.
+                    // 5 كم × 2.50 د.ل/كم = 12.50 للاتجاه × 2 = 25 لليوم × 10 = 250 د.ل للطفل.
+                    'start_date'        => '2027-01-03',
+                    'end_date'          => '2027-01-14',
                     'distance_km'       => 5.0,
-                    'trip_price'        => 25.0,
-                    'price_per_child'   => 250.00,
                 ]
             ]
         ];

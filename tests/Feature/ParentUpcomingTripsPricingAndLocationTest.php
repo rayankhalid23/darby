@@ -220,8 +220,8 @@ class ParentUpcomingTripsPricingAndLocationTest extends TestCase
                     'timing'            => 'MORNING',
                     'start_date'        => now()->subDays(2)->format('Y-m-d'),
                     'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-                    'price_per_child'   => 150.00,
-                    'trip_price'        => 10.00, // يصبح 9.00 بعد خصم 10%
+                    // 4 كم × 2.50 د.ل/كم (مركبة مكيفة) = 10.00 للاتجاه الواحد -> 9.00 بعد خصم 10%
+                    'distance_km'       => 4.0,
                 ],
                 [
                     'child_id'          => $this->child2->id,
@@ -230,8 +230,8 @@ class ParentUpcomingTripsPricingAndLocationTest extends TestCase
                     'timing'            => 'MORNING',
                     'start_date'        => now()->subDays(2)->format('Y-m-d'),
                     'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-                    'price_per_child'   => 100.00,
-                    'trip_price'        => 6.00,  // يصبح 5.40 بعد خصم 10%
+                    // 8 كم × 2.50 د.ل/كم = 20.00 للاتجاه الواحد -> 18.00 بعد خصم 10%
+                    'distance_km'       => 8.0,
                 ]
             ]
         ];
@@ -286,15 +286,15 @@ class ParentUpcomingTripsPricingAndLocationTest extends TestCase
         $this->assertEquals($this->child2->id, $child2Data['child_id']);
         $this->assertEquals('سارة محمد', $child2Data['child_name']);
         $this->assertEquals('مدرسة النخبة الدولية', $child2Data['school_name']);
-        $this->assertEquals('5.40', $child2Data['cost_per_child']);
+        $this->assertEquals('18.00', $child2Data['cost_per_child']);
         $this->assertArrayHasKey('home_location', $child2Data);
         $this->assertArrayHasKey('school_location', $child2Data);
         $this->assertEquals('مدرسة النخبة الدولية', $child2Data['school_location']['name']);
         $this->assertEquals(32.8950, $child2Data['school_location']['lat']);
 
-        // التسعير الإجمالي للرحلة (9.00 + 5.40 = 14.40)
-        $this->assertEquals('14.40', $firstTrip['pricing']['total_trip_cost']);
-        $this->assertEquals('7.20', $firstTrip['pricing']['cost_per_child']);
+        // التسعير الإجمالي للرحلة (9.00 + 18.00 = 27.00)
+        $this->assertEquals('27.00', $firstTrip['pricing']['total_trip_cost']);
+        $this->assertEquals('13.50', $firstTrip['pricing']['cost_per_child']);
         $this->assertEquals('LYD', $firstTrip['pricing']['currency']);
     }
 }

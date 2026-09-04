@@ -11,6 +11,10 @@ use App\Models\User;
 use App\Services\Notification\NotificationService;
 use App\Services\Shared\FinancialLedgerService;
 use Illuminate\Support\Facades\DB;
+// ⚠️ كان هذا الاستيراد ناقصاً بينما تستخدم completeRecharge() و failRecharge()
+// الاسم المجرّد Log داخل كتل catch، فيُحلّ إلى App\Services\Parent\Log ويُسقط
+// الطلب بخطأ قاتل في اللحظة التي يُفترض أن يلتقط فيها الخطأ الأصلي.
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -135,27 +139,26 @@ class WalletRechargeService
 
             // تحويل المبلغ إلى قروش وإيداعه في المحفظة
             $amountCents = (int) round($recharge->amount * 100);
+            $balanceBefore = (int) ($parent->balance ?? 0);
             $parent->deposit($amountCents);
 
-            // تحديث حوض أمانات أولياء الأمور في الخزينة المركزية
-            $vault = MasterEscrowVault::getVault();
-            $vault->increment('parents_escrow_pool', $amountCents);
+            // ⚠️ لا يُزاد حوض الأمانات هنا. المال المشحون يجلس في محفظة ولي الأمر
+            // ولم يُحجز مقابل أي خدمة بعد؛ حوض الأمانات يرتفع فقط لحظة قبول السائق
+            // للطلب. زيادته هنا كانت تعني احتساب نفس المبلغ مرتين — مرة عند الشحن
+            // ومرة عند الحجز — فيستحيل على فحص السلامة المالية أن يتوازن أبداً.
 
-            // تسجيل القيد في السجل المالي المزدوج
-            try {
-                $this->ledgerService->recordLedgerEntry(
-                    'payment_gateway_clearing',
-                    "parent_wallet_{$parent->id}",
-                    $amountCents,
-                    'parent_deposit',
-                    0,
-                    (int) ($parent->balance ?? 0),
-                    "RECHARGE-PRNT-{$recharge->id}",
-                    ['recharge_id' => $recharge->id, 'transaction_ref' => $recharge->transaction_ref]
-                );
-            } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning("فشل تسجيل قيد السجل المالي لشحن ولي الأمر #{$recharge->id}: " . $e->getMessage());
-            }
+            // تسجيل القيد في السجل المالي المزدوج — جزء من نفس المعاملة: شحن بلا
+            // قيد يعني مالاً دخل النظام دون أثر محاسبي يمكن تدقيقه.
+            $this->ledgerService->recordLedgerEntry(
+                'payment_gateway_clearing',
+                FinancialLedgerService::parentAccount($parent),
+                $amountCents,
+                'parent_deposit',
+                $balanceBefore,
+                (int) ($parent->balance ?? 0),
+                "RECHARGE-PRNT-{$recharge->id}",
+                ['recharge_id' => $recharge->id, 'transaction_ref' => $recharge->transaction_ref]
+            );
 
             // إنشاء فاتورة/إيصال مالي تلقائي
             $invoiceNumber = 'INV-' . date('Y') . '-' . str_pad((string) $recharge->id, 6, '0', STR_PAD_LEFT);
@@ -234,7 +237,21 @@ class WalletRechargeService
             }
 
             $amountCents = (int) round($request->amount * 100);
+            $balanceBefore = (int) ($parent->balance ?? 0);
             $parent->deposit($amountCents);
+
+            // هذا المسار كان يودع المال بلا أي قيد في دفتر الأستاذ، فلا يظهر
+            // الشحن اليدوي في أي تقرير ولا يمكن تدقيقه لاحقاً.
+            $this->ledgerService->recordLedgerEntry(
+                'manual_admin_clearing',
+                FinancialLedgerService::parentAccount($parent),
+                $amountCents,
+                'parent_deposit',
+                $balanceBefore,
+                (int) ($parent->balance ?? 0),
+                "RECHARGE-MANUAL-{$request->id}",
+                ['recharge_id' => $request->id, 'admin_id' => $adminId]
+            );
 
             $request->update([
                 'status'       => 'completed',

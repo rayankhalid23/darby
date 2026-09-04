@@ -19,3 +19,19 @@ Schedule::command('drivers:check-document-expiry')->dailyAt('08:00');
 
 // تشغيل يومي لمحرك تقييم سياسات السائقين عبر الذكاء الاصطناعي الساعة 2:00 فجراً
 Schedule::command('driver:evaluate-ai')->dailyAt('02:00');
+
+// ────────────────────────── الجدولة المالية ──────────────────────────
+// ⚠️ هذه المهام كانت معرّفة في الكود وغير مجدولة إطلاقاً، فبقيت آثارها معلّقة:
+// الأرباح المحجوزة لا تصل السائقين، والفواتير النهائية لا تصدر.
+
+// تحرير أرباح الرحلات اليومية المعلّقة بعد انقضاء نافذة النزاع (24 ساعة)
+Schedule::call(function () {
+    app(\App\Services\Shared\FinancialLedgerService::class)->releasePendingTripEscrows();
+})->hourly()->name('escrow:release-pending')->withoutOverlapping();
+
+// إصدار الفواتير النهائية للاشتراكات المنتهية وإرسال تذكيرات ما قبل الاستحقاق
+Schedule::command('subscriptions:settle')->dailyAt('01:00')->withoutOverlapping();
+
+// فحص يومي للسلامة المالية — يسجّل Log::emergency عند أي انحراف بين أحواض
+// الخزينة والالتزامات الفعلية، دون تعديل أي بيانات (التصحيح يدوي عبر --fix).
+Schedule::command('finance:reconcile')->dailyAt('03:00')->withoutOverlapping();

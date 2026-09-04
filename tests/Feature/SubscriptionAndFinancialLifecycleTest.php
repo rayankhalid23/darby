@@ -147,15 +147,79 @@ class SubscriptionAndFinancialLifecycleTest extends TestCase
         $this->assertEquals($this->subReq->id, $invoice->subscription_request_id);
         $this->assertEquals(220.00, (float) $invoice->amount);
 
-        // 2. إيداع رصيد لولي الأمر للتسوية
-        $this->parent->deposit(30000); // 300 د.ل
+        // 2. ما دام الاشتراك لم تُغلق أمانته بعد، تبقى الفاتورة مبدئية.
+        //    الفاتورة النهائية مستند يعكس ما صُرف فعلاً، ولا تُصدر قبل أن يُغلق
+        //    سجل PlatformFinance — الصرف نفسه يتم تناسبياً عند إنهاء كل رحلة.
+        $stillProforma = $financialService->settleSubscription($this->subReq);
+        $this->assertEquals('proforma', $stillProforma->type);
+        $this->assertEquals('pending', $stillProforma->status);
 
-        // 3. إجراء التسوية المالية
+        // 3. بعد إغلاق أمانة الاشتراك تصدر الفاتورة النهائية بقيمة ما صُرف فعلاً.
+        \App\Models\Shared\PlatformFinance::create([
+            'subscription_request_id'    => $this->subReq->id,
+            'parent_id'                  => $this->parent->id,
+            'driver_id'                  => $this->driver->id,
+            'total_amount'               => 220.00,
+            'platform_commission_rate'   => 8.00,
+            'platform_commission_amount' => 17.60,
+            'driver_net_amount'          => 202.40,
+            'expected_trips_count'       => 10,
+            'settled_trips_count'        => 10,
+            'settled_amount'             => 220.00,
+            'status'                     => \App\Models\Shared\PlatformFinance::STATUS_COMPLETED,
+            'held_at'                    => now()->subDays(10),
+            'settled_at'                 => now(),
+        ]);
+
         $settled = $financialService->settleSubscription($this->subReq);
 
         $this->assertEquals('final', $settled->type);
         $this->assertEquals('paid', $settled->status);
         $this->assertNotNull($settled->paid_at);
+        $this->assertEquals(220.00, (float) $settled->calculated_amount);
+
+        // الفاتورة تحمل تفصيل ما صُرف فعلاً لا إعادة حساب مستقلة.
+        $this->assertEquals(220.00, $settled->details['settled_amount']);
+        $this->assertEquals(10, $settled->details['settled_trips_count']);
+    }
+
+    /**
+     * الفاتورة المبدئية تُصدر مرة واحدة لكل طلب مهما تكرر الاستدعاء.
+     */
+    public function test_proforma_invoice_is_not_duplicated_on_repeated_generation()
+    {
+        $financialService = app(FinancialService::class);
+
+        $first  = $financialService->generateProformaInvoice($this->subReq);
+        $second = $financialService->generateProformaInvoice($this->subReq);
+
+        $this->assertEquals($first->id, $second->id);
+        $this->assertEquals(1, Invoice::where('subscription_request_id', $this->subReq->id)
+            ->where('type', 'proforma')
+            ->count());
+    }
+
+    /**
+     * ⚠️ حارس انحدار: التسوية عبر FinancialService مستند محاسبي ولا تحرّك أي مال.
+     *
+     * كانت تنفّذ transfer() مباشرة من محفظة ولي الأمر إلى محفظة السائق بلا مرور
+     * بحوض الأمانات وبلا عمولة منصة، فلو عملت إلى جانب المسار الفعلي لخُصم من
+     * ولي الأمر مرتين.
+     */
+    public function test_financial_service_settlement_does_not_move_any_money()
+    {
+        $financialService = app(FinancialService::class);
+        $financialService->generateProformaInvoice($this->subReq);
+
+        $this->parent->deposit(30000);
+
+        $parentBalanceBefore = (int) $this->parent->fresh()->balance;
+        $driverBalanceBefore = (int) $this->driver->fresh()->balance;
+
+        $financialService->settleSubscription($this->subReq);
+
+        $this->assertEquals($parentBalanceBefore, (int) $this->parent->fresh()->balance);
+        $this->assertEquals($driverBalanceBefore, (int) $this->driver->fresh()->balance);
     }
 
     /**

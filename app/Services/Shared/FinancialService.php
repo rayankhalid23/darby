@@ -36,7 +36,22 @@ class FinancialService
 
         $subscriptionRequest->loadMissing(['parent.user', 'driver.user']);
 
-        $invoiceNumber = 'INV-REQ-' . $subscriptionRequest->id . '-' . strtoupper(substr(uniqid(), -4));
+        // فاتورة مبدئية واحدة لكل طلب: إعادة الاستدعاء تُعيد القائمة بدل إنشاء
+        // نسخة ثانية تنافسها على نفس الاشتراك.
+        $existing = Invoice::where('subscription_request_id', $subscriptionRequest->id)
+            ->where('type', 'proforma')
+            ->latest('id')
+            ->first();
+
+        if ($existing) {
+            return $existing;
+        }
+
+        // ⚠️ أربعة أحرف من uniqid() ليست ضماناً ضد التصادم على عمود unique،
+        // وفشلها يظهر للمستخدم كخطأ قاعدة بيانات. رقم تسلسلي مشتق من مُعرّف
+        // الطلب نفسه فريد بحكم البناء.
+        $sequence      = Invoice::where('subscription_request_id', $subscriptionRequest->id)->count() + 1;
+        $invoiceNumber = sprintf('INV-REQ-%d-%03d', $subscriptionRequest->id, $sequence);
 
         $parentUserId = $subscriptionRequest->parent?->user_id ?? $subscriptionRequest->parent_id;
         $driverId     = $subscriptionRequest->driver_id;
@@ -70,7 +85,19 @@ class FinancialService
     }
 
     /**
-     * تسوية الاشتراك المالي
+     * إصدار الفاتورة النهائية للاشتراك (مستند محاسبي — لا يحرّك أي مال).
+     *
+     * ⚠️ كانت هذه الدالة مساراً مالياً ثانياً كاملاً: تنفّذ
+     * `$parent->transfer($driver, $netAmountCents)` مباشرة من محفظة إلى محفظة،
+     * بلا مرور بحوض الأمانات وبلا اقتطاع أي عمولة للمنصة. ولو عملت إلى جانب
+     * المسار الفعلي (PlatformFinance + الخزينة) لخُصم من ولي الأمر مرتين ولحصل
+     * السائق على 100٪ بدل 92٪. لم تكن معطّلة بقرار، بل بالصدفة: لا أحد يستدعي
+     * generateProformaInvoice() في مسار حيّ، وأمر subscriptions:settle غير مجدول.
+     *
+     * الآن: الصرف الفعلي يتم تناسبياً عند إنهاء كل رحلة في
+     * TripLifecycleService::settlePlatformFinancesForCompletedTrip()، وهذه الدالة
+     * تقرأ ما صُرف فعلاً من سجل PlatformFinance وتحوّله إلى فاتورة نهائية للعرض
+     * والأرشفة فقط.
      */
     public function settleSubscription(SubscriptionRequest|ActiveSubscription $sub): Invoice
     {
@@ -103,7 +130,6 @@ class FinancialService
                 $q->where('subscription_request_id', $subscriptionRequest->id);
             })->where('driver_id', $subscriptionRequest->driver_id)->get();
 
-            $totalTrips = max($trips->count(), 1);
             $completedTrips = $trips->where('status', 'completed');
             $completedCount = $completedTrips->count();
 
@@ -117,79 +143,46 @@ class FinancialService
                     ->count();
             }
 
-            $totalPrice = (float) ($subscriptionRequest->total_amount_after_discount ?? $subscriptionRequest->total_price ?? 0);
-            $perTripCost = $totalPrice / $totalTrips;
-            $totalCost = $completedCount * $perTripCost;
-            $deductions = $driverAbsences * $perTripCost;
-            $netAmount = max($totalCost - $deductions, 0);
+            // المبلغ المفوتر = ما صُرف فعلاً من الأمانة، مقروءاً من السجل المالي
+            // للاشتراك. لا إعادة حساب هنا: أي معادلة مستقلة ستنحرف عاجلاً أو آجلاً
+            // عمّا نفّذه محرّك التسوية.
+            $finance = \App\Models\Shared\PlatformFinance::where('subscription_request_id', $subscriptionRequest->id)
+                ->latest('id')
+                ->first();
 
-            $parentWallet = $parent;
-            $driverWallet = $driver;
+            $settledAmount  = (float) ($finance->settled_amount ?? 0);
+            $refundedAmount = (float) ($finance->refunded_amount ?? 0);
+            $isClosed       = $finance
+                && in_array($finance->status, [
+                    \App\Models\Shared\PlatformFinance::STATUS_COMPLETED,
+                    \App\Models\Shared\PlatformFinance::STATUS_REFUNDED,
+                    \App\Models\Shared\PlatformFinance::STATUS_PARTIALLY_REFUNDED,
+                ], true);
 
-            $netAmountCents = (int) round($netAmount * 100);
-            $parentBalance = $parentWallet->balance ?? 0;
-            $sufficient = $parentBalance >= $netAmountCents;
+            $proforma->update([
+                'status'            => $isClosed ? 'paid' : 'pending',
+                'type'              => $isClosed ? 'final' : 'proforma',
+                'completed_trips'   => $completedCount,
+                'driver_absences'   => $driverAbsences,
+                'student_absences'  => $studentAbsences,
+                'calculated_amount' => $settledAmount,
+                'paid_at'           => $isClosed ? ($finance->settled_at ?? now()) : null,
+                'details'           => [
+                    'settled_amount'      => $settledAmount,
+                    'refunded_amount'     => $refundedAmount,
+                    'settled_trips_count' => (int) ($finance->settled_trips_count ?? 0),
+                    'expected_trips'      => (int) ($finance->expected_trips_count ?? 0),
+                    'finance_status'      => $finance->status ?? null,
+                ],
+            ]);
 
-            if ($sufficient) {
-                $parentWallet->transfer($driverWallet, $netAmountCents);
-
-                $proforma->update([
-                    'status'            => 'paid',
-                    'type'              => 'final',
-                    'completed_trips'   => $completedCount,
-                    'driver_absences'   => $driverAbsences,
-                    'student_absences'  => $studentAbsences,
-                    'calculated_amount' => $netAmount,
-                    'paid_at'           => now(),
+            if ($isClosed && isset($parent->user)) {
+                $this->notificationService->sendToUser($parent->user, 'settlement_paid', [
+                    'title'      => 'الفاتورة النهائية للاشتراك',
+                    'message'    => "صدرت الفاتورة النهائية للاشتراك رقم #{$subscriptionRequest->id} بقيمة {$settledAmount} د.ل.",
+                    'amount'     => $settledAmount,
+                    'invoice_id' => (string) $proforma->id,
                 ]);
-
-                if (isset($parent->user)) {
-                    $this->notificationService->sendToUser($parent->user, 'settlement_paid', [
-                        'title'      => 'تم تسوية الاشتراك',
-                        'message'    => "تم خصم {$netAmount} د.ل من محفظتك لقاء الاشتراك رقم #{$subscriptionRequest->id}.",
-                        'amount'     => $netAmount,
-                        'invoice_id' => (string) $proforma->id,
-                    ]);
-                }
-
-                if (isset($driver->user)) {
-                    $this->notificationService->sendToUser($driver->user, 'settlement_received', [
-                        'title'      => 'تم إيداع مستحقات الاشتراك',
-                        'message'    => "تم إيداع {$netAmount} د.ل في محفظتك لقاء الاشتراك رقم #{$subscriptionRequest->id}.",
-                        'amount'     => $netAmount,
-                        'invoice_id' => (string) $proforma->id,
-                    ]);
-                }
-            } else {
-                $overdueInvoices = Invoice::where('subscription_request_id', $subscriptionRequest->id)
-                    ->where('status', 'overdue')
-                    ->exists();
-
-                if ($overdueInvoices) {
-                    $subscriptionRequest->update(['status' => 'cancelled']);
-
-                    ActiveSubscription::where('subscription_request_id', $subscriptionRequest->id)
-                        ->update(['status' => 'suspended_unpaid']);
-                }
-
-                $proforma->update([
-                    'status'            => 'overdue',
-                    'type'              => 'final',
-                    'completed_trips'   => $completedCount,
-                    'driver_absences'   => $driverAbsences,
-                    'student_absences'  => $studentAbsences,
-                    'calculated_amount' => $netAmount,
-                    'action_taken'      => 'overdue_unpaid',
-                ]);
-
-                if (isset($parent->user)) {
-                    $this->notificationService->sendToUser($parent->user, 'settlement_overdue', [
-                        'title'      => 'فاتورة غير مدفوعة',
-                        'message'    => "رصيد محفظتك غير كافٍ لتسوية {$netAmount} د.ل للاشتراك #{$subscriptionRequest->id}. يرجى شحن المحفظة.",
-                        'amount'     => $netAmount,
-                        'invoice_id' => (string) $proforma->id,
-                    ]);
-                }
             }
 
             return $proforma->fresh();

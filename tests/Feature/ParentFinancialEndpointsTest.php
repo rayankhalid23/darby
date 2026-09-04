@@ -247,10 +247,12 @@ class ParentFinancialEndpointsTest extends TestCase
     // إصلاح 3: hold-trip يرجع المبلغ بالدينار
     // =========================================================
 
-    public function test_hold_trip_amount_response_is_in_dinar_not_cents(): void
+    /**
+     * يجهّز رحلة مرتبطة بمسار الاشتراك النشط لولي الأمر، مع سجل أمانة يحدّد
+     * سعر الرحلة على الخادم (255 د.ل ÷ 10 رحلات = 25.5 د.ل للرحلة).
+     */
+    private function makeTripOnParentRoute(): Trip
     {
-        $this->parent->deposit(100000); // 1000 د.ل
-
         $vehicleId = DB::table('vehicles')->where('driver_id', $this->driver->id)->value('id');
 
         $route = RouteModel::create([
@@ -263,7 +265,25 @@ class ParentFinancialEndpointsTest extends TestCase
             'status'     => 'Active',
         ]);
 
-        $trip = Trip::create([
+        // ربط الاشتراك النشط بالمسار: هو الرابط الذي يثبت أن الرحلة تخص هذا الطفل.
+        $this->activeSub->update(['route_id' => $route->id]);
+
+        \App\Models\Shared\PlatformFinance::create([
+            'subscription_request_id'    => $this->subscriptionRequestId,
+            'parent_id'                  => $this->parent->id,
+            'driver_id'                  => $this->driver->id,
+            'total_amount'               => 255.00,
+            'platform_commission_rate'   => 8.00,
+            'platform_commission_amount' => 20.40,
+            'driver_net_amount'          => 234.60,
+            'expected_trips_count'       => 10,
+            'settled_trips_count'        => 0,
+            'settled_amount'             => 0,
+            'status'                     => \App\Models\Shared\PlatformFinance::STATUS_HELD,
+            'held_at'                    => now(),
+        ]);
+
+        return Trip::create([
             'driver_id'    => $this->driver->id,
             'route_id'     => $route->id,
             'trip_type'    => 'Morning',
@@ -272,12 +292,15 @@ class ParentFinancialEndpointsTest extends TestCase
             'trip_date'    => now()->toDateString(),
             'scheduled_at' => now()->addHours(2),
         ]);
+    }
+
+    public function test_hold_trip_amount_response_is_in_dinar_not_cents(): void
+    {
+        $this->parent->deposit(100000); // 1000 د.ل
+        $trip = $this->makeTripOnParentRoute();
 
         $response = $this->actingAs($this->parentUser)
-            ->postJson('/api/parent/wallet/hold-trip', [
-                'trip_id' => $trip->id,
-                'amount'  => 25.5,
-            ]);
+            ->postJson('/api/parent/wallet/hold-trip', ['trip_id' => $trip->id]);
 
         $response->assertStatus(201);
         $response->assertJsonPath('data.amount', 25.5);
@@ -287,5 +310,80 @@ class ParentFinancialEndpointsTest extends TestCase
             'trip_id' => $trip->id,
             'amount'  => 2550,
         ]);
+    }
+
+    /**
+     * ⚠️ حارس انحدار: المبلغ يُحسب على الخادم ولا يُقبل من العميل.
+     * كان المنفذ يخصم أي مبلغ يرسله التطبيق، فيقرّر ولي الأمر بنفسه ما يدفعه.
+     */
+    public function test_hold_trip_ignores_client_supplied_amount(): void
+    {
+        $this->parent->deposit(100000);
+        $trip = $this->makeTripOnParentRoute();
+
+        $response = $this->actingAs($this->parentUser)
+            ->postJson('/api/parent/wallet/hold-trip', [
+                'trip_id' => $trip->id,
+                'amount'  => 0.5, // محاولة دفع نصف دينار بدل 25.5
+            ]);
+
+        $response->assertStatus(201);
+        $response->assertJsonPath('data.amount', 25.5);
+
+        $this->assertDatabaseHas('trip_escrow_holds', [
+            'trip_id' => $trip->id,
+            'amount'  => 2550,
+        ]);
+    }
+
+    /**
+     * ⚠️ حارس انحدار: لا حجز على رحلة تخص عائلة أخرى.
+     */
+    public function test_hold_trip_is_rejected_for_a_trip_of_another_family(): void
+    {
+        $trip = $this->makeTripOnParentRoute();
+
+        $otherUser = User::create([
+            'full_name'     => 'ولي أمر آخر',
+            'email'         => 'other.hold.' . uniqid() . '@darby.test',
+            'phone_number'  => '093' . rand(1000000, 9999999),
+            'password_hash' => bcrypt('password123'),
+            'role_id'       => 3,
+            'is_active'     => 1,
+        ]);
+        $otherParent = ParentModel::create(['user_id' => $otherUser->id, 'is_trusted' => 1]);
+        $otherParent->deposit(100000);
+
+        $response = $this->actingAs($otherUser)
+            ->postJson('/api/parent/wallet/hold-trip', ['trip_id' => $trip->id]);
+
+        $response->assertStatus(403);
+        $this->assertDatabaseMissing('trip_escrow_holds', ['trip_id' => $trip->id]);
+    }
+
+    /**
+     * ⚠️ حارس انحدار: لا اعتراض مالي على رحلة تخص عائلة أخرى — كان أي ولي أمر
+     * يستطيع تجميد مستحقات سائق لا علاقة له به.
+     */
+    public function test_dispute_is_rejected_for_a_trip_of_another_family(): void
+    {
+        $trip = $this->makeTripOnParentRoute();
+
+        $otherUser = User::create([
+            'full_name'     => 'ولي أمر ثالث',
+            'email'         => 'other.disp.' . uniqid() . '@darby.test',
+            'phone_number'  => '093' . rand(1000000, 9999999),
+            'password_hash' => bcrypt('password123'),
+            'role_id'       => 3,
+            'is_active'     => 1,
+        ]);
+        ParentModel::create(['user_id' => $otherUser->id, 'is_trusted' => 1]);
+
+        $response = $this->actingAs($otherUser)
+            ->postJson("/api/parent/trips/{$trip->id}/dispute", [
+                'reason' => 'سبب اعتراض وهمي من طرف ثالث',
+            ]);
+
+        $response->assertStatus(403);
     }
 }

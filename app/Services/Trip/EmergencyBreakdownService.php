@@ -706,7 +706,7 @@ class EmergencyBreakdownService
                     $newOrigBal = (int) $originalDriver->balance;
 
                     $this->financialLedgerService->recordLedgerEntry(
-                        "driver_wallet_{$originalDriver->id}",
+                        \App\Services\Shared\FinancialLedgerService::driverAccount($originalDriver),
                         "substitute_driver_pool",
                         $fareCents,
                         'breakdown_substitute_deduction',
@@ -728,7 +728,7 @@ class EmergencyBreakdownService
             try {
                 $this->financialLedgerService->recordLedgerEntry(
                     "substitute_driver_pool",
-                    "driver_wallet_{$substituteDriver->id}",
+                    \App\Services\Shared\FinancialLedgerService::driverAccount($substituteDriver),
                     $fareCents,
                     'breakdown_substitute_payout',
                     $subBalanceBefore,

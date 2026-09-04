@@ -470,6 +470,15 @@ class LocationChangeService
                     'status'       => LocationChangeRequest::STATUS_APPROVED,
                     'responded_at' => now(),
                 ]);
+
+                // 💰 تحصيل رسم تغيير الموقع فوراً — داخل نفس معاملة الموافقة.
+                //
+                // ⚠️ كان الرسم يُسجَّل في `fee_amount` ويصل ولي الأمر إشعار بأنه
+                // «سيُحسب مع الاشتراك»، ثم لا يمرّ الاشتراك المكتمل بأي كود يحوّله
+                // لأحد: المكان الوحيد الذي كان يستهلكه هو مسار الإلغاء، ودالة
+                // التقارير settleMonthlySubscription() كانت تعلّمه `is_settled`
+                // دون تحريك قرش. أي إيراد ضائع في كل مرة ثم يُعلَّم كأنه حُصِّل.
+                $this->collectLocationChangeFee($changeRequest, $activeSub);
             } else {
                 $changeRequest->update([
                     'status'           => LocationChangeRequest::STATUS_REJECTED,
@@ -492,7 +501,11 @@ class LocationChangeService
                         $this->notifyUser(
                             $parentUser,
                             'تمت الموافقة على تغيير الموقع 🟢',
-                            "وافق السائق على تغيير موقع {$pointLabel} الطفل ({$childName}){$dayText}، وتم تحديث مسار هذه الرحلة وفرض رسوم إضافية {$fee} د.ل ستُحسب مع الاشتراك.",
+                            // الصياغة تتبع السلوك الفعلي: الرسم يُخصم لحظة الموافقة
+                            // لا «مع الاشتراك» كما كان الإشعار يَعِد بينما لا يُحصَّل أبداً.
+                            $changeRequest->fresh()->is_settled
+                                ? "وافق السائق على تغيير موقع {$pointLabel} الطفل ({$childName}){$dayText}، وتم تحديث مسار الرحلة وخصم رسوم التغيير ({$fee} د.ل) من محفظتك."
+                                : "وافق السائق على تغيير موقع {$pointLabel} الطفل ({$childName}){$dayText}، وتم تحديث مسار الرحلة. رسوم التغيير ({$fee} د.ل) مستحقة وسيتم تحصيلها عند توفر رصيد في محفظتك.",
                             'location_change_approved',
                             (string) $changeRequest->id,
                             ['child_name' => $childName, 'fee' => $fee]
@@ -514,6 +527,90 @@ class LocationChangeService
 
             return $changeRequest->fresh(['child', 'parent', 'driver.user', 'activeSubscription']);
         });
+    }
+
+    /**
+     * تحصيل رسم تغيير الموقع لحظة موافقة السائق.
+     *
+     * تسلسل الحركة: محفظة ولي الأمر ← عمولة المنصة + صافي السائق.
+     * الرسم مقابل عمل إضافي أنجزه السائق فوراً (تعديل المسار)، فلا معنى لحجزه
+     * في الأمانات بانتظار رحلات لاحقة — يُصرف في نفس اللحظة ويُقفل السجل بـ
+     * `is_settled` الذي صار الآن يعني «حُصِّل فعلاً» لا «حُسِب في تقرير».
+     *
+     * إن لم يكفِ رصيد ولي الأمر، تمضي الموافقة ويبقى الرسم غير محصّل ويُسجَّل
+     * تحذير: رفض تغيير الموقع لأجل بضعة دنانير يعطّل خدمة الطفل بلا داعٍ،
+     * والمبلغ يبقى مستحقاً على السجل لتسويته لاحقاً.
+     */
+    protected function collectLocationChangeFee(LocationChangeRequest $changeRequest, ActiveSubscription $activeSub): void
+    {
+        $feeDinar = (float) ($changeRequest->fee_amount ?? 0);
+
+        if ($feeDinar <= 0 || $changeRequest->is_settled) {
+            return;
+        }
+
+        $ledger = app(\App\Services\Shared\FinancialLedgerService::class);
+
+        $parent = $ledger->resolveParent($changeRequest->parent_id);
+        $driver = Driver::find($activeSub->driver_id);
+
+        if (!$parent || !$driver) {
+            Log::warning("تعذّر تحصيل رسم تغيير الموقع للطلب ID {$changeRequest->id}: بيانات ولي الأمر أو السائق ناقصة.");
+            return;
+        }
+
+        $feeCents = (int) round($feeDinar * 100);
+
+        if ((int) $parent->balance < $feeCents) {
+            Log::warning(
+                "رصيد ولي الأمر لا يغطي رسم تغيير الموقع للطلب ID {$changeRequest->id} "
+                . "({$feeDinar} د.ل). اعتُمد التغيير ويبقى الرسم غير محصّل."
+            );
+            return;
+        }
+
+        $commissionCents = (int) round($feeCents * PricingSetting::commissionRateFraction());
+        $driverNetCents  = max(0, $feeCents - $commissionCents);
+
+        $parentBefore = (int) $parent->balance;
+        $driverBefore = (int) $driver->balance;
+
+        $parent->withdraw($feeCents);
+        $driver->deposit($driverNetCents);
+
+        $vault = \App\Models\Shared\MasterEscrowVault::getVault();
+        $vault->increment('driver_available_pool', $driverNetCents);
+        $vault->increment('platform_revenue_pool', $commissionCents);
+
+        $ledger->recordLedgerEntry(
+            \App\Services\Shared\FinancialLedgerService::parentAccount($parent),
+            \App\Services\Shared\FinancialLedgerService::driverAccount($driver),
+            $driverNetCents,
+            'location_change_fee',
+            $parentBefore,
+            (int) $parent->fresh()->balance,
+            "LOCCHG-{$changeRequest->id}",
+            [
+                'location_change_request_id' => $changeRequest->id,
+                'active_subscription_id'     => $activeSub->id,
+                'driver_balance_before'      => $driverBefore,
+            ]
+        );
+
+        if ($commissionCents > 0) {
+            $ledger->recordLedgerEntry(
+                \App\Services\Shared\FinancialLedgerService::parentAccount($parent),
+                'platform_revenue_pool',
+                $commissionCents,
+                'platform_commission',
+                0,
+                $commissionCents,
+                "LOCCHG-COMMISSION-{$changeRequest->id}",
+                ['location_change_request_id' => $changeRequest->id]
+            );
+        }
+
+        $changeRequest->update(['is_settled' => true]);
     }
 
     public function getParentRequests(int $userId)

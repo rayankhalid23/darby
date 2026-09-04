@@ -2,9 +2,11 @@
 
 namespace App\Services\Driver;
 
+use App\Models\Shared\MasterEscrowVault;
 use App\Models\Shared\WithdrawalRequest;
 use App\Models\Driver\Driver;
 use App\Services\Notification\NotificationService;
+use App\Services\Shared\FinancialLedgerService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -12,10 +14,12 @@ use Illuminate\Validation\ValidationException;
 class WithdrawalService
 {
     protected ?NotificationService $notificationService;
+    protected FinancialLedgerService $ledgerService;
 
-    public function __construct(?NotificationService $notificationService = null)
+    public function __construct(?NotificationService $notificationService = null, ?FinancialLedgerService $ledgerService = null)
     {
         $this->notificationService = $notificationService ?? app(NotificationService::class);
+        $this->ledgerService       = $ledgerService ?? app(FinancialLedgerService::class);
     }
 
     public function requestWithdrawal(int $driverId, float $amount, ?array $paymentDetails = null): WithdrawalRequest
@@ -36,9 +40,12 @@ class WithdrawalService
             ]);
         }
 
-        if ($amount < 5) {
+        // الحد الأدنى يُقرأ من ثابت النظام المالي بدل رقم مكتوب هنا: كان الثابت
+        // يقول 50 د.ل والرقم الصريح هنا يقول 5، فيختلف ما يطبّقه النظام عمّا يوثّقه.
+        $minWithdrawalDinar = FinancialLedgerService::MIN_WITHDRAWAL_AMOUNT / 100;
+        if ($amount < $minWithdrawalDinar) {
             throw ValidationException::withMessages([
-                'amount' => ['الحد الأدنى للسحب هو 5 دنانير.'],
+                'amount' => ["الحد الأدنى للسحب هو {$minWithdrawalDinar} د.ل."],
             ]);
         }
 
@@ -59,7 +66,27 @@ class WithdrawalService
         // السحب وإنشاء الطلب في معاملة واحدة: بدونها قد تُخصم المحفظة
         // ثم يفشل إنشاء سجل الطلب فيضيع المبلغ بلا أثر يمكن تتبّعه أو استرجاعه.
         return DB::transaction(function () use ($driver, $driverId, $amount, $amountCents, $balance, $paymentDetails) {
+            $balanceBefore = (int) $driver->balance;
             $driver->wallet->withdraw($amountCents);
+
+            // ⚠️ كان المبلغ يخرج من المحفظة دون أي تعديل على الخزينة ودون قيد في
+            // دفتر الأستاذ، فينحرف حوض أرصدة السائقين عن المحافظ ويختفي المال من
+            // المحاسبة تماماً بين لحظة الطلب ولحظة قرار الأدمن. الآن ينتقل إلى
+            // حوض السحوبات المعلّقة الذي يحمله في تلك الفترة.
+            $vault = MasterEscrowVault::getVault();
+            $vault->decrement('driver_available_pool', $amountCents);
+            $vault->increment('pending_withdrawal_pool', $amountCents);
+
+            $this->ledgerService->recordLedgerEntry(
+                FinancialLedgerService::driverAccount($driver),
+                'pending_withdrawal_pool',
+                $amountCents,
+                'withdrawal_requested',
+                $balanceBefore,
+                (int) $driver->fresh()->balance,
+                "WITHDRAW-REQ-{$driverId}-" . now()->timestamp,
+                ['driver_id' => $driverId]
+            );
 
             return WithdrawalRequest::create([
                 'driver_id'                => $driverId,
@@ -73,15 +100,37 @@ class WithdrawalService
 
     public function approveWithdrawal(int $withdrawalId, int $adminId): WithdrawalRequest
     {
-        $request = WithdrawalRequest::where('id', $withdrawalId)
-            ->where('status', 'pending')
-            ->firstOrFail();
+        $request = DB::transaction(function () use ($withdrawalId, $adminId) {
+            $request = WithdrawalRequest::where('id', $withdrawalId)
+                ->where('status', 'pending')
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $request->update([
-            'status'       => 'approved',
-            'admin_id'     => $adminId,
-            'processed_at' => now(),
-        ]);
+            $amountCents = (int) round((float) $request->amount * 100);
+
+            // الموافقة تعني خروج المال من المنظومة فعلياً إلى حساب السائق البنكي:
+            // يُفرَّغ حوض السحوبات المعلّقة ويُسجَّل القيد الختامي للحركة.
+            MasterEscrowVault::getVault()->decrement('pending_withdrawal_pool', $amountCents);
+
+            $this->ledgerService->recordLedgerEntry(
+                'pending_withdrawal_pool',
+                'external_bank_payout',
+                $amountCents,
+                'withdrawal_paid',
+                $amountCents,
+                0,
+                "WITHDRAW-PAID-{$request->id}",
+                ['withdrawal_id' => $request->id, 'admin_id' => $adminId]
+            );
+
+            $request->update([
+                'status'       => 'approved',
+                'admin_id'     => $adminId,
+                'processed_at' => now(),
+            ]);
+
+            return $request;
+        });
 
         $fresh = $request->fresh(['driver.user']);
 
@@ -107,20 +156,43 @@ class WithdrawalService
 
     public function rejectWithdrawal(int $withdrawalId, int $adminId, string $reason): WithdrawalRequest
     {
-        $request = WithdrawalRequest::where('id', $withdrawalId)
-            ->where('status', 'pending')
-            ->firstOrFail();
+        $request = DB::transaction(function () use ($withdrawalId, $adminId, $reason) {
+            $request = WithdrawalRequest::where('id', $withdrawalId)
+                ->where('status', 'pending')
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $driver = Driver::findOrFail($request->driver_id);
-        // amount مُعرَّف كـ decimal:2 فيصل كنص؛ التحويل الصريح يمنع أي انحراف بالقروش عند الإرجاع.
-        $driver->deposit((int) round((float) $request->amount * 100));
+            $driver = Driver::findOrFail($request->driver_id);
+            // amount مُعرَّف كـ decimal:2 فيصل كنص؛ التحويل الصريح يمنع أي انحراف بالقروش عند الإرجاع.
+            $amountCents   = (int) round((float) $request->amount * 100);
+            $balanceBefore = (int) $driver->balance;
+            $driver->deposit($amountCents);
 
-        $request->update([
-            'status'           => 'rejected',
-            'admin_id'         => $adminId,
-            'rejection_reason' => $reason,
-            'processed_at'     => now(),
-        ]);
+            // المبلغ يعود من حوض السحوبات المعلّقة إلى حوض أرصدة السائقين المتاحة.
+            $vault = MasterEscrowVault::getVault();
+            $vault->decrement('pending_withdrawal_pool', $amountCents);
+            $vault->increment('driver_available_pool', $amountCents);
+
+            $this->ledgerService->recordLedgerEntry(
+                'pending_withdrawal_pool',
+                FinancialLedgerService::driverAccount($driver),
+                $amountCents,
+                'withdrawal_rejected',
+                $balanceBefore,
+                (int) $driver->fresh()->balance,
+                "WITHDRAW-REJECT-{$request->id}",
+                ['withdrawal_id' => $request->id, 'admin_id' => $adminId, 'reason' => $reason]
+            );
+
+            $request->update([
+                'status'           => 'rejected',
+                'admin_id'         => $adminId,
+                'rejection_reason' => $reason,
+                'processed_at'     => now(),
+            ]);
+
+            return $request;
+        });
 
         $fresh = $request->fresh(['driver.user']);
 

@@ -27,6 +27,11 @@ class Invoice extends Model
         'student_absences',
         'calculated_amount',
         'action_taken',
+        // ⚠️ كان مسار شحن المحفظة يمرّر هذين الحقلين لـ Invoice::create() وهما
+        // غير موجودين لا في $fillable ولا في الجدول، فتُهمل بيانات بوابة الدفع
+        // بصمت ويتعذّر مطابقة الإيصال بمعاملته عند أي نزاع.
+        'payment_method',
+        'details',
         'paid_at',
         'resolved_at',
     ];
@@ -34,6 +39,7 @@ class Invoice extends Model
     protected $casts = [
         'amount'            => 'decimal:2',
         'calculated_amount' => 'decimal:2',
+        'details'           => 'array',
         'due_date'          => 'date',
         'paid_at'           => 'datetime',
         'resolved_at'       => 'datetime',

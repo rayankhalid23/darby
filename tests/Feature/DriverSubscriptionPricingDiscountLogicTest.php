@@ -15,6 +15,13 @@ use App\Models\Shared\PricingSetting;
 use App\Models\Shared\SubscriptionRequest;
 use App\Services\Shared\SubscriptionRequestService;
 
+/**
+     * التسعير يُحسب على الخادم من: المسافة × سعر الكيلومتر × اتجاهات اليوم × أيام العمل.
+     * الثوابت هنا مُثبّتة عمداً ليكون الرقم قابلاً للتحقق يدوياً:
+     *   10 كم × 2.00 د.ل/كم (مركبة غير مكيفة) = 20 د.ل للاتجاه الواحد
+     *   × 2 اتجاه = 40 د.ل لليوم × 5 أيام عمل (الأحد→الخميس) = 200 د.ل للطفل.
+     *
+ */
 class DriverSubscriptionPricingDiscountLogicTest extends TestCase
 {
     use DatabaseTransactions;
@@ -79,6 +86,9 @@ class DriverSubscriptionPricingDiscountLogicTest extends TestCase
             'year'            => 2023,
             'color'           => 'أبيض',
             'plate_number'    => 'PR-' . rand(1000, 9999),
+            // صريح لا افتراضي: عمود has_ac افتراضه 1 في قاعدة البيانات، وسعر
+            // الكيلومتر يختلف بين المكيفة وغير المكيفة، فتثبيته يجعل الرقم المتوقع محسوباً لا مصادفة.
+            'has_ac'          => 0,
             'capacity_manual' => 12,
             'capacity_ai'     => 12,
             'status'          => 'Active',
@@ -172,10 +182,9 @@ class DriverSubscriptionPricingDiscountLogicTest extends TestCase
                     'subscription_type' => 'multi_day',
                     'trip_direction'    => 'both',
                     'timing'            => 'MORNING',
-                    'start_date'        => now()->addDays(2)->format('Y-m-d'),
-                    'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-                    'price_per_child'   => 200.00,
-                    'trip_price'        => 10.00,
+                    'start_date'        => '2027-01-03', // الأحد
+                    'end_date'          => '2027-01-07', // الخميس -> 5 أيام عمل
+                    'distance_km'       => 10.0,
                 ]
             ]
         ];
@@ -231,20 +240,18 @@ class DriverSubscriptionPricingDiscountLogicTest extends TestCase
                     'subscription_type' => 'multi_day',
                     'trip_direction'    => 'both',
                     'timing'            => 'MORNING',
-                    'start_date'        => now()->addDays(2)->format('Y-m-d'),
-                    'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-                    'price_per_child'   => 200.00,
-                    'trip_price'        => 10.00,
+                    'start_date'        => '2027-01-03', // الأحد
+                    'end_date'          => '2027-01-07', // الخميس -> 5 أيام عمل
+                    'distance_km'       => 10.0,
                 ],
                 [
                     'child_id'          => $this->child2->id,
                     'subscription_type' => 'multi_day',
                     'trip_direction'    => 'both',
                     'timing'            => 'MORNING',
-                    'start_date'        => now()->addDays(2)->format('Y-m-d'),
-                    'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-                    'price_per_child'   => 200.00,
-                    'trip_price'        => 10.00,
+                    'start_date'        => '2027-01-03', // الأحد
+                    'end_date'          => '2027-01-07', // الخميس -> 5 أيام عمل
+                    'distance_km'       => 10.0,
                 ]
             ]
         ];
@@ -293,30 +300,27 @@ class DriverSubscriptionPricingDiscountLogicTest extends TestCase
                     'subscription_type' => 'multi_day',
                     'trip_direction'    => 'both',
                     'timing'            => 'MORNING',
-                    'start_date'        => now()->addDays(2)->format('Y-m-d'),
-                    'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-                    'price_per_child'   => 200.00,
-                    'trip_price'        => 10.00,
+                    'start_date'        => '2027-01-03', // الأحد
+                    'end_date'          => '2027-01-07', // الخميس -> 5 أيام عمل
+                    'distance_km'       => 10.0,
                 ],
                 [
                     'child_id'          => $this->child2->id,
                     'subscription_type' => 'multi_day',
                     'trip_direction'    => 'both',
                     'timing'            => 'MORNING',
-                    'start_date'        => now()->addDays(2)->format('Y-m-d'),
-                    'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-                    'price_per_child'   => 200.00,
-                    'trip_price'        => 10.00,
+                    'start_date'        => '2027-01-03', // الأحد
+                    'end_date'          => '2027-01-07', // الخميس -> 5 أيام عمل
+                    'distance_km'       => 10.0,
                 ],
                 [
                     'child_id'          => $this->child3->id,
                     'subscription_type' => 'multi_day',
                     'trip_direction'    => 'both',
                     'timing'            => 'MORNING',
-                    'start_date'        => now()->addDays(2)->format('Y-m-d'),
-                    'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-                    'price_per_child'   => 200.00,
-                    'trip_price'        => 10.00,
+                    'start_date'        => '2027-01-03', // الأحد
+                    'end_date'          => '2027-01-07', // الخميس -> 5 أيام عمل
+                    'distance_km'       => 10.0,
                 ]
             ]
         ];
@@ -362,20 +366,18 @@ class DriverSubscriptionPricingDiscountLogicTest extends TestCase
                     'subscription_type' => 'multi_day',
                     'trip_direction'    => 'both',
                     'timing'            => 'MORNING',
-                    'start_date'        => now()->addDays(2)->format('Y-m-d'),
-                    'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-                    'price_per_child'   => 200.00,
-                    'trip_price'        => 10.00,
+                    'start_date'        => '2027-01-03', // الأحد
+                    'end_date'          => '2027-01-07', // الخميس -> 5 أيام عمل
+                    'distance_km'       => 10.0,
                 ],
                 [
                     'child_id'          => $this->child2->id,
                     'subscription_type' => 'multi_day',
                     'trip_direction'    => 'both',
                     'timing'            => 'MORNING',
-                    'start_date'        => now()->addDays(2)->format('Y-m-d'),
-                    'end_date'          => now()->addMonths(1)->format('Y-m-d'),
-                    'price_per_child'   => 200.00,
-                    'trip_price'        => 10.00,
+                    'start_date'        => '2027-01-03', // الأحد
+                    'end_date'          => '2027-01-07', // الخميس -> 5 أيام عمل
+                    'distance_km'       => 10.0,
                 ]
             ]
         ];

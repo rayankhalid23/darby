@@ -133,15 +133,35 @@ class WalletController extends Controller
      */
     public function holdTripAmount(\Illuminate\Http\Request $request): JsonResponse
     {
+        // ⚠️ لا `amount` من العميل. كان هذا المنفذ يقبل المبلغ الذي يرسله التطبيق
+        // ويخصمه كما هو، فيقرّر ولي الأمر بنفسه كم يدفع مقابل الرحلة. السعر يُحسب
+        // على الخادم من اشتراك الطفل، ولا يُقبل من الطلب إطلاقاً.
         $request->validate([
             'trip_id' => 'required|integer|exists:trips,id',
-            'amount'  => 'required|numeric|min:0.5',
         ]);
 
         $trip = \App\Models\Shared\Trip::findOrFail($request->trip_id);
-        $ledgerService = app(\App\Services\Shared\FinancialLedgerService::class);
 
-        $hold = $ledgerService->holdTripAmount($trip, auth()->id(), (float) $request->amount);
+        // ⚠️ ولا حجز على رحلة لا تخص أطفال هذا المستخدم: كان أي ولي أمر مسجّل
+        // يستطيع الحجز على رحلة أي عائلة أخرى.
+        if (!$this->tripBelongsToParent($trip, (int) auth()->id())) {
+            return response()->json([
+                'success' => false,
+                'message' => 'هذه الرحلة لا تخص أياً من أطفالك.',
+            ], 403);
+        }
+
+        $ledgerService = app(\App\Services\Shared\FinancialLedgerService::class);
+        $amount = $this->resolveTripPriceForParent($trip, (int) auth()->id());
+
+        if ($amount <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'تعذّر تحديد قيمة هذه الرحلة من بيانات الاشتراك.',
+            ], 422);
+        }
+
+        $hold = $ledgerService->holdTripAmount($trip, auth()->id(), $amount);
 
         return response()->json([
             'success' => true,
@@ -162,6 +182,61 @@ class WalletController extends Controller
     }
 
     /**
+     * هل تخدم هذه الرحلة طفلاً من أطفال هذا المستخدم؟
+     *
+     * الربط: الرحلة → مسارها → الاشتراكات النشطة على ذلك المسار → ولي الأمر.
+     * (`active_subscriptions.parent_id` يخزّن User::id.)
+     */
+    private function tripBelongsToParent(\App\Models\Shared\Trip $trip, int $parentUserId): bool
+    {
+        if (!$trip->route_id) {
+            return false;
+        }
+
+        return \App\Models\Shared\ActiveSubscription::where('route_id', $trip->route_id)
+            ->where('parent_id', $parentUserId)
+            ->exists();
+    }
+
+    /**
+     * حصة الرحلة الواحدة من قيمة اشتراك هذا الطفل — تُحسب على الخادم بنفس
+     * المعادلة التي يوزّع بها نظام التسوية المال عند اكتمال الرحلة، فلا يختلف
+     * ما يُحجز عمّا يُصرف.
+     */
+    private function resolveTripPriceForParent(\App\Models\Shared\Trip $trip, int $parentUserId): float
+    {
+        $subscriptionIds = \App\Models\Shared\ActiveSubscription::where('route_id', $trip->route_id)
+            ->where('parent_id', $parentUserId)
+            ->pluck('subscription_request_id')
+            ->filter()
+            ->unique();
+
+        $total = 0.0;
+
+        foreach ($subscriptionIds as $requestId) {
+            $finance = \App\Models\Shared\PlatformFinance::where('subscription_request_id', $requestId)
+                ->latest('id')
+                ->first();
+
+            if ($finance) {
+                $expected = max(1, (int) ($finance->expected_trips_count ?? 1));
+                $total += round(((float) $finance->total_amount) / $expected, 2);
+                continue;
+            }
+
+            $request = \App\Models\Shared\SubscriptionRequest::find($requestId);
+            if (!$request) {
+                continue;
+            }
+
+            $expected = max(1, (int) ($request->days_count ?? 1));
+            $total += round(((float) ($request->total_amount_after_discount ?? $request->total_price ?? 0)) / $expected, 2);
+        }
+
+        return round($total, 2);
+    }
+
+    /**
      * 6️⃣ تقديم اعتراض مالي على رحلة
      */
     public function openDispute(\Illuminate\Http\Request $request, int $tripId): JsonResponse
@@ -169,6 +244,18 @@ class WalletController extends Controller
         $request->validate([
             'reason' => 'required|string|min:5|max:1000',
         ]);
+
+        // ⚠️ فحص الملكية إلزامي: بدونه كان أي ولي أمر مسجّل يفتح نزاعاً على رحلة
+        // أي عائلة أخرى، فيتحوّل الحجز إلى `disputed` ويُجمَّد مال السائق حتى
+        // تدخّل الإدارة — تعطيل مستحقات من طرف ثالث لا علاقة له بالرحلة.
+        $trip = \App\Models\Shared\Trip::findOrFail($tripId);
+
+        if (!$this->tripBelongsToParent($trip, (int) auth()->id())) {
+            return response()->json([
+                'success' => false,
+                'message' => 'لا يمكنك الاعتراض على رحلة لا تخص أياً من أطفالك.',
+            ], 403);
+        }
 
         $ledgerService = app(\App\Services\Shared\FinancialLedgerService::class);
         $dispute = $ledgerService->openDispute($tripId, auth()->id(), $request->reason);

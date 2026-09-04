@@ -529,10 +529,52 @@ class LocationChangeRequestTest extends TestCase
         // final_settled_amount يشمل رسوم التغييرات
         $this->assertGreaterThanOrEqual(10.00, $settlement['final_settled_amount']);
 
-        // التحقق من تعيين is_settled = true
+        // ⚠️ حارس انحدار: كشف المقاصة تقرير للقراءة فقط ولا يعلّم أي رسم كأنه
+        // حُصِّل. كانت هذه الدالة تكتب is_settled = true دون تحويل قرش لأحد،
+        // فيضيع الإيراد ويُسجَّل كأنه قُبض. التحصيل الفعلي صار لحظة موافقة
+        // السائق في LocationChangeService.
         $this->assertDatabaseHas('location_change_requests', [
             'active_subscription_id' => $this->activeSub->id,
-            'is_settled'             => 1,
+            'is_settled'             => 0,
+        ]);
+    }
+
+    /**
+     * رسم تغيير الموقع يُخصم من محفظة ولي الأمر لحظة موافقة السائق،
+     * ويُوزَّع فوراً بين صافي السائق وعمولة المنصة.
+     */
+    public function test_location_change_fee_is_collected_on_driver_approval(): void
+    {
+        $this->parent->deposit(10000); // 100 د.ل
+
+        $changeRequest = LocationChangeRequest::create([
+            'active_subscription_id' => $this->activeSub->id,
+            'child_id'               => $this->child->id,
+            'parent_id'              => $this->parentUser->id,
+            'driver_id'              => $this->driver->id,
+            'point_type'             => 'pickup',
+            'change_date'            => now()->addDay()->toDateString(),
+            'is_single_day'          => true,
+            'new_lat'                => 32.95, 'new_lng' => 13.25, 'new_label' => 'الموقع الجديد',
+            'fee_amount'             => 5.00,
+            'status'                 => LocationChangeRequest::STATUS_PENDING,
+        ]);
+
+        $parentBefore = (int) $this->parent->fresh()->balance;
+        $driverBefore = (int) $this->driver->fresh()->balance;
+        $revenueBefore = (int) MasterEscrowVault::getVault()->platform_revenue_pool;
+
+        app(\App\Services\Shared\LocationChangeService::class)
+            ->respondToChange($this->driverUser->id, $changeRequest->id, true);
+
+        // 5 د.ل = 500 قرش، عمولة 8٪ = 40 قرشاً، صافي السائق 460 قرشاً
+        $this->assertEquals($parentBefore - 500, (int) $this->parent->fresh()->balance);
+        $this->assertEquals($driverBefore + 460, (int) $this->driver->fresh()->balance);
+        $this->assertEquals($revenueBefore + 40, (int) MasterEscrowVault::getVault()->platform_revenue_pool);
+
+        $this->assertDatabaseHas('location_change_requests', [
+            'id'         => $changeRequest->id,
+            'is_settled' => 1,
         ]);
     }
 
